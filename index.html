@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.3</title>
+    <title>HexPolitics v4.4</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -72,6 +72,8 @@
         
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
+        polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; cursor: not-allowed; }
+        polygon.hex.chasm-hex:hover { stroke: #030712 !important; fill-opacity: 0.95 !important; }
 
         /* Іконки на гексах */
         .map-icon {
@@ -192,8 +194,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.3</h2>
-            <p id="loader-desc">Виправлення помилки заснування бази після вайпу...</p>
+            <h2 id="loader-status">HexPolitics v4.4</h2>
+            <p id="loader-desc">Генерація процедурного ландшафту та прірв...</p>
         </div>
     </div>
 
@@ -299,7 +301,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.3";
+        const CURRENT_VERSION = "4.4";
 
         let mode = "login";
         let currentUsername = "";
@@ -335,8 +337,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.3";
-            document.getElementById('loader-desc').innerText = "Виправлення помилки заснування бази після вайпу...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.4";
+            document.getElementById('loader-desc').innerText = "Генерація ландшафту та прірв...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -472,7 +474,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v4.3)
+        // ЕКОНОМІКА
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -547,12 +549,48 @@
             });
         }
 
+        // Процедурна генерація прірв (~30% карти)
+        function generateChasms() {
+            let chasms = {};
+            // Крок 1: Початкове заповнення білим шумом (~32%)
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    if (Math.random() < 0.32) {
+                        chasms[`${r}_${c}`] = { type: 'chasm' };
+                    }
+                }
+            }
+            // Крок 2: Згладжування клітинними автоматами (створює кластери/масиви)
+            for (let step = 0; step < 2; step++) {
+                let newChasms = { ...chasms };
+                for (let r = 0; r < GRID_ROWS; r++) {
+                    for (let c = 0; c < GRID_COLS; c++) {
+                        const key = `${r}_${c}`;
+                        const neighbors = getNeighbors(r, c);
+                        let chasmNeighbors = 0;
+                        neighbors.forEach(n => {
+                            if (chasms[n.key]) chasmNeighbors++;
+                        });
+                        if (chasmNeighbors >= 3) {
+                            newChasms[key] = { type: 'chasm' };
+                        } else if (chasmNeighbors <= 1) {
+                            delete newChasms[key];
+                        }
+                    }
+                }
+                chasms = newChasms;
+            }
+            return chasms;
+        }
+
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту і скине золото та рівні всіх гравців до базових, зберігаючи акаунти.");
+            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий процедурний ландшафт і скине золото гравців.");
             if (!confirmWipe) return;
 
             try {
-                await remove(ref(db, 'world_hexes'));
+                // Генеруємо новий ландшафт з прірвами
+                const newChasms = generateChasms();
+                await set(ref(db, 'world_hexes'), newChasms);
 
                 const usersSnapshot = await get(ref(db, 'users'));
                 if (usersSnapshot.exists()) {
@@ -565,7 +603,7 @@
                     await update(ref(db), updates);
                 }
 
-                alert("💥 Сезон успішно перезапущено!");
+                alert("💥 Сезон та ландшафт успішно перезапущено!");
             } catch (err) {
                 alert("Помилка вайпу: " + err.message);
             }
@@ -852,7 +890,11 @@
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
 
-            // Динамічна перевірка: чи дійсно існує ратуша гравця на карті
+            // Якщо це непрохідна прірва — нічого не робимо
+            if (hexInfo && hexInfo.type === 'chasm') {
+                return;
+            }
+
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
 
             if (hexInfo) {
@@ -868,10 +910,9 @@
                 return;
             }
 
-            // Якщо ратуші на карті немає, гравець МОЖЕ заснувати нову базу!
             if (!userHasBaseOnMap) {
                 if (!checkDistanceValid(r, c)) {
-                    alert('Занадто близько до території іншого гравця! Потрібен щонайменше 1 вільний гекс розриву.');
+                    alert('Занадто близько до території іншого гравця або в прірві! Потрібен вільний сухий простір.');
                     return;
                 }
                 selectedHexCoords = { r, c };
@@ -954,6 +995,7 @@
             };
 
             neighbors.forEach(n => {
+                // Не затираємо прірви навколо бази
                 if (!hexWorldData[n.key]) {
                     updates[`world_hexes/${n.key}`] = {
                         owner: currentUsername,
@@ -1202,7 +1244,7 @@
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
-                el.classList.remove('occupied-core', 'occupied-border');
+                el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex');
             });
 
             Object.keys(hexWorldData).forEach(key => {
@@ -1211,45 +1253,49 @@
                 const polygon = document.getElementById(`hex-${r}-${c}`);
 
                 if (polygon) {
-                    polygon.style.fill = hexData.color;
-                    polygon.style.stroke = hexData.color;
-
-                    const center = hexToPixel(parseInt(r), parseInt(c));
-
-                    if (hexData.type === 'core') {
-                        polygon.classList.add('occupied-core');
-
-                        const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        castleText.setAttribute("x", center.x);
-                        castleText.setAttribute("y", center.y + 2);
-                        castleText.setAttribute("class", "map-icon");
-                        castleText.textContent = "🏰";
-                        svg.appendChild(castleText);
-
-                        const lvl = hexData.level || 1;
-                        const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
-                        renderLabel(svg, center, labelContent);
-
-                    } else if (hexData.type === 'farm') {
-                        polygon.classList.add('occupied-border');
-                        const farmText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        farmText.setAttribute("x", center.x);
-                        farmText.setAttribute("y", center.y + 2);
-                        farmText.setAttribute("class", "map-icon");
-                        farmText.textContent = "🌾";
-                        svg.appendChild(farmText);
-
-                    } else if (hexData.type === 'mill') {
-                        polygon.classList.add('occupied-border');
-                        const millText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        millText.setAttribute("x", center.x);
-                        millText.setAttribute("y", center.y + 2);
-                        millText.setAttribute("class", "map-icon");
-                        millText.textContent = "🛞🌀";
-                        svg.appendChild(millText);
-
+                    if (hexData.type === 'chasm') {
+                        polygon.classList.add('chasm-hex');
                     } else {
-                        polygon.classList.add('occupied-border');
+                        polygon.style.fill = hexData.color;
+                        polygon.style.stroke = hexData.color;
+
+                        const center = hexToPixel(parseInt(r), parseInt(c));
+
+                        if (hexData.type === 'core') {
+                            polygon.classList.add('occupied-core');
+
+                            const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                            castleText.setAttribute("x", center.x);
+                            castleText.setAttribute("y", center.y + 2);
+                            castleText.setAttribute("class", "map-icon");
+                            castleText.textContent = "🏰";
+                            svg.appendChild(castleText);
+
+                            const lvl = hexData.level || 1;
+                            const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
+                            renderLabel(svg, center, labelContent);
+
+                        } else if (hexData.type === 'farm') {
+                            polygon.classList.add('occupied-border');
+                            const farmText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                            farmText.setAttribute("x", center.x);
+                            farmText.setAttribute("y", center.y + 2);
+                            farmText.setAttribute("class", "map-icon");
+                            farmText.textContent = "🌾";
+                            svg.appendChild(farmText);
+
+                        } else if (hexData.type === 'mill') {
+                            polygon.classList.add('occupied-border');
+                            const millText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                            millText.setAttribute("x", center.x);
+                            millText.setAttribute("y", center.y + 2);
+                            millText.setAttribute("class", "map-icon");
+                            millText.textContent = "🛞🌀";
+                            svg.appendChild(millText);
+
+                        } else {
+                            polygon.classList.add('occupied-border');
+                        }
                     }
                 }
             });
