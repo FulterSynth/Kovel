@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.8</title>
+    <title>HexPolitics v4.9</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.8</h2>
-            <p id="loader-desc">Виправлення розрахунку податків для куплених гексів...</p>
+            <h2 id="loader-status">HexPolitics v4.9</h2>
+            <p id="loader-desc">Встановлення податку -3 золота/хв за гекс...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.8";
+        const CURRENT_VERSION = "4.9";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.8";
-            document.getElementById('loader-desc').innerText = "Виправлення підрахунку податків...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.9";
+            document.getElementById('loader-desc').innerText = "Оновлення податкової системи (-3 золота/хв)...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -475,7 +475,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v4.8)
+        // ЕКОНОМІКА (v4.9 — Податок -3 золота/хв)
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -490,9 +490,9 @@
                         baseLevel = h.level || 1;
                     }
                     
-                    // Податок -5 за БУДЬ-ЯКИЙ гекс, який не є ратушею чи стартовим гексом навколо ратуші
-                    if (h.isPurchased || h.type === 'purchased' || h.type === 'bridge' || (h.type !== 'core' && h.type !== 'starter')) {
-                        purchasedTaxes += 5; 
+                    // Перевірка: Податок -3 нараховується за кожен куплений гекс, міст або побудовану споруду на купленому гексі
+                    if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge' || (h.type !== 'core' && h.type !== 'starter')) {
+                        purchasedTaxes += 3; 
                     }
                     
                     if (h.type === 'farm') {
@@ -1126,7 +1126,7 @@
                 <div class="info-card">
                     <b>Переправа через ущелину:</b><br>
                     💰 <b>Ціна мосту:</b> 30 золота<br>
-                    <span class="bad">⚠️ Податок: -5 золота/хв</span> (як за звичайний гекс).<br><br>
+                    <span class="bad">⚠️ Податок: -3 золота/хв</span> (як за звичайний гекс).<br><br>
                     <span class="warn">💡 Ефект:</span> Дозволяє перекидати переправу довжиною до 2 клітинок!
                 </div>
             `;
@@ -1180,7 +1180,7 @@
                     <div class="info-card">
                         <b>Купівля нової території:</b><br>
                         💰 <b>Ціна:</b> 10 золота<br>
-                        <span class="bad">⚠️ Податок: -5 золота/хв</span> за кожен новий гекс.<br><br>
+                        <span class="bad">⚠️ Податок: -3 золота/хв</span> за кожен новий гекс.<br><br>
                         <span class="warn">💡 Порада:</span> Зводьте ферми та вітряки на своїх землях, щоб перекрити податки!
                     </div>
                 `;
@@ -1269,7 +1269,7 @@
                 if (h.owner === currentUsername && h.color) myColor = h.color;
             });
 
-            const wasPurchased = currentHex ? (currentHex.isPurchased || currentHex.type === 'purchased') : true;
+            const wasPurchased = currentHex ? (currentHex.isPurchased === true || currentHex.type === 'purchased') : true;
 
             const updates = {};
             updates[`world_hexes/${key}`] = {
@@ -1301,7 +1301,7 @@
             const hexInfo = hexWorldData[key];
             if (!hexInfo) return;
 
-            const wasPurchased = hexInfo.isPurchased;
+            const wasPurchased = hexInfo.isPurchased === true;
             const restoredType = wasPurchased ? 'purchased' : 'starter';
             let myColor = hexInfo.color;
 
