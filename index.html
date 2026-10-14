@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v3.4</title>
+    <title>HexPolitics v3.6</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -75,7 +75,7 @@
 
         /* Іконки на гексах */
         .map-icon {
-            font-size: 20px;
+            font-size: 18px;
             text-anchor: middle;
             dominant-baseline: central;
             pointer-events: none;
@@ -184,8 +184,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v3.4</h2>
-            <p id="loader-desc">Оновлення іконок будівель в єдиному стилі...</p>
+            <h2 id="loader-status">HexPolitics v3.6</h2>
+            <p id="loader-desc">Виправлення офлайн-доходу та оновлення іконок...</p>
         </div>
     </div>
 
@@ -291,7 +291,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "3.4";
+        const CURRENT_VERSION = "3.6";
 
         let mode = "login";
         let currentUsername = "";
@@ -327,8 +327,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v3.4";
-            document.getElementById('loader-desc').innerText = "Оновлення іконок та стабілізація...";
+            document.getElementById('loader-status').innerText = "HexPolitics v3.6";
+            document.getElementById('loader-desc').innerText = "Оновлення офлайн-доходу та стабілізація...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -411,7 +411,12 @@
                     currentUsername = user;
                     const userData = snapshot.val();
                     
-                    await processOfflineProgress(user, userData);
+                    // Спочатку завантажуємо карту, щоб правильно порахувати дохід офлайн
+                    const worldSnap = await get(child(dbRef, 'world_hexes'));
+                    hexWorldData = worldSnap.exists() ? worldSnap.val() : {};
+
+                    // Опрацьовуємо офлайн прогрес
+                    await processOfflineProgress(user, userData, hexWorldData);
 
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'block';
@@ -461,7 +466,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v3.4)
+        // ЕКОНОМІКА (v3.6)
         // ==========================================
 
         function calculateTotalIncome(username, worldHexes) {
@@ -510,22 +515,19 @@
             return 1;
         }
 
-        async function processOfflineProgress(username, userData) {
+        async function processOfflineProgress(username, userData, worldHexes) {
             const now = Date.now();
             const lastTime = userData.lastOnline || now;
             const diffMinutes = (now - lastTime) / 60000;
 
             let currentGold = userData.gold || 0;
 
-            if (diffMinutes > 0.5) {
-                const worldSnap = await get(ref(db, 'world_hexes'));
-                if (worldSnap.exists()) {
-                    const world = worldSnap.val();
-                    const hasBase = Object.values(world).some(h => h.owner === username && h.type === 'core');
-                    if (hasBase) {
-                        const incomePerMin = calculateTotalIncome(username, world);
-                        currentGold += diffMinutes * incomePerMin;
-                    }
+            if (diffMinutes > 0.2) { // Якщо пройшло більше 12 секунд офлайн
+                const hasBase = Object.values(worldHexes).some(h => h.owner === username && h.type === 'core');
+                if (hasBase) {
+                    const incomePerMin = calculateTotalIncome(username, worldHexes);
+                    const earnedGold = diffMinutes * incomePerMin;
+                    currentGold += earnedGold;
                 }
             }
 
@@ -960,11 +962,15 @@
             let costText = userTownHallLevel === 1 ? "14 золота" : (userTownHallLevel === 2 ? "42 золота" : "—");
             let canUpgrade = userTownHallLevel < 3;
 
+            let baseInc = getIncomeByLevel(userTownHallLevel);
+            let totalInc = calculateTotalIncome(currentUsername, hexWorldData);
+
             infoContainer.innerHTML = `
                 <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
-                <div><b>Поточний дохід:</b> +${calculateTotalIncome(currentUsername, hexWorldData)} золота/хв</div>
+                <div><b>Базовий дохід ратуші:</b> +${baseInc}/хв</div>
+                <div><b>Чистий підсумковий дохід:</b> <span style="color: #fbbf24; font-weight: bold;">+${totalInc} золота/хв</span></div>
                 ${canUpgrade ? `
-                    <div style="margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px;"><b>Наступний рівень (${userTownHallLevel + 1}):</b> збільшує базовий дохід</div>
+                    <div style="margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px;"><b>Наступний рівень (${userTownHallLevel + 1}):</b> збільшує дохід</div>
                     <div><b>Необхідно золота:</b> <span style="color: #fbbf24; font-weight: bold;">${costText}</span></div>
                 ` : `
                     <div style="margin-top: 6px; color: #10b981; font-weight: bold;">Максимальний рівень досягнуто!</div>
@@ -1021,13 +1027,13 @@
                 desc.innerHTML = "Придбати цей прикордонний гекс?<br><b>Вартість:</b> 10 золота<br><b>Ефект:</b> -1 золото/хв доходу (податок)";
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
             } else if (hexInfo.type === 'starter' || hexInfo.type === 'purchased') {
-                desc.innerHTML = "Оберіть будівлю для зведення:<br><small style='color: #94a3b8;'>🌾 Ферма: 10 💰 | 🏭 Вітряк: 20 💰</small>";
+                desc.innerHTML = "Оберіть будівлю для зведення:<br><small style='color: #94a3b8;'>🌾 Ферма: 10 💰 | ⚙️🌀 Вітряк: 20 💰</small>";
                 htmlContent = `
                     <button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (10 💰)</button>
-                    <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🏭 Побудувати Вітряк (20 💰)</button>
+                    <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">⚙️🌀 Побудувати Вітряк (20 💰)</button>
                 `;
             } else if (hexInfo.type === 'farm' || hexInfo.type === 'mill') {
-                const bName = hexInfo.type === 'farm' ? 'Ферма (🌾)' : 'Вітряк (🏭)';
+                const bName = hexInfo.type === 'farm' ? 'Ферма (🌾)' : 'Вітряк (⚙️🌀)';
                 desc.innerHTML = `На цьому гексі знаходиться <b>${bName}</b>.<br>Бажаєте знести будівлю?<br><b>Вартість знесення:</b> 5 золота.`;
                 htmlContent = `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести будівлю (5 💰)</button>`;
             }
@@ -1194,7 +1200,7 @@
                         millText.setAttribute("x", center.x);
                         millText.setAttribute("y", center.y + 2);
                         millText.setAttribute("class", "map-icon");
-                        millText.textContent = "🏭"; // Класична іконка промислового вітряка/млина в тому ж стилі
+                        millText.textContent = "⚙️🌀"; // Потужна комбінація іконки вітряка
                         svg.appendChild(millText);
 
                     } else {
