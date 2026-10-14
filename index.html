@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>КОВЕЛЬ: Стратегія</title>
+    <title>КОВЕЛЬ: Стратегія v2.1</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; }
@@ -24,6 +24,7 @@
         .loader-content h2 { color: #f8fafc; font-size: 22px; }
         .loader-content p { color: #94a3b8; font-size: 14px; }
 
+        /* Екран авторизації */
         #auth-screen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #1e293b; display: flex; justify-content: center; align-items: center; z-index: 1000;
@@ -32,7 +33,7 @@
             background: #334155; padding: 30px; border-radius: 12px; width: 320px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 15px;
         }
-        .auth-box h2 { text-align: center; margin-bottom: 5px; color: #fff; }
+        .auth-box h2 { text-align: center; color: #fff; }
         .auth-box input {
             padding: 12px; border-radius: 6px; border: 1px solid #475569;
             background: #1e293b; color: #fff; outline: none;
@@ -45,12 +46,57 @@
         .auth-toggle { text-align: center; font-size: 13px; color: #94a3b8; cursor: pointer; margin-top: 5px; }
         .auth-toggle:hover { color: #38bdf8; text-decoration: underline; }
 
-        #game-container {
-            display: none; height: 100vh; width: 100vw; flex-direction: column;
-            justify-content: center; align-items: center; background: #0f172a; text-align: center; padding: 20px;
+        /* Контейнер гри та карта гексів */
+        #game-container { display: none; height: 100vh; width: 100vw; position: relative; overflow: hidden; background: #0b132b; }
+        
+        #hex-grid-viewport {
+            width: 100%; height: 100%; overflow: auto; cursor: grab; position: relative;
+            touch-action: manipulation;
         }
-        #game-container h1 { font-size: 28px; margin-bottom: 10px; color: #38bdf8; }
-        #game-container p { color: #94a3b8; font-size: 16px; }
+        #hex-svg { display: block; background: #0d1b2a; }
+
+        polygon.hex {
+            stroke: #1b263b; stroke-width: 1.5; fill: #1b263b; fill-opacity: 0.3;
+            transition: all 0.2s ease; cursor: pointer;
+        }
+        polygon.hex:hover { stroke: #38bdf8; stroke-width: 2.5; fill-opacity: 0.6; }
+        
+        polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
+        polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.5; }
+
+        /* Верхня панель користувача */
+        #user-bar {
+            position: absolute; top: 15px; left: 15px; background: rgba(30, 41, 59, 0.9);
+            padding: 10px 20px; border-radius: 8px; border: 1px solid #334155;
+            display: flex; gap: 15px; align-items: center; z-index: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        #user-bar button {
+            padding: 6px 12px; border-radius: 4px; border: none; background: #ef4444;
+            color: #fff; font-weight: bold; cursor: pointer; font-size: 12px;
+        }
+
+        /* Меню заснування бази */
+        #base-modal {
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 25px;
+            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 300px;
+        }
+        #base-modal h3 { margin-bottom: 10px; color: #38bdf8; }
+        #base-modal p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
+        .color-picker { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .color-option {
+            width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent; transition: transform 0.2s;
+        }
+        .color-option:hover { transform: scale(1.15); }
+        .color-option.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 10px #fff; }
+        .modal-btns { display: flex; gap: 10px; justify-content: center; }
+        .modal-btns button {
+            padding: 10px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold;
+        }
+        .btn-confirm { background: #10b981; color: #fff; }
+        .btn-cancel { background: #64748b; color: #fff; }
     </style>
 </head>
 <body>
@@ -58,11 +104,12 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Скидання до v1.0...</h2>
-            <p id="loader-desc">Очищення старих механік та налаштування хмари</p>
+            <h2 id="loader-status">Завантаження v2.1...</h2>
+            <p id="loader-desc">Генерація карти світу 60x60 гексів</p>
         </div>
     </div>
 
+    <!-- Авторизація -->
     <div id="auth-screen">
         <div class="auth-box">
             <h2 id="auth-title">Вхід у гру</h2>
@@ -77,15 +124,39 @@
         </div>
     </div>
 
+    <!-- Основне ігрове поле -->
     <div id="game-container">
-        <h1 id="welcome-title">Вітаємо у грі!</h1>
-        <p id="welcome-user"></p>
-        <button onclick="logout()" style="margin-top: 20px; padding: 10px 20px; border-radius: 6px; border: none; background: #ef4444; color: #fff; cursor: pointer; font-weight: bold;">Вийти з акаунта</button>
+        <div id="user-bar">
+            <span>Гравець: <b id="current-user-display" style="color: #38bdf8;">---</b></span>
+            <button onclick="logout()">Вийти</button>
+        </div>
+
+        <div id="hex-grid-viewport">
+            <svg id="hex-svg"></svg>
+        </div>
+    </div>
+
+    <!-- Спливаюче меню заснування бази -->
+    <div id="base-modal">
+        <h3>Заснувати базу</h3>
+        <p>Оберіть геральдичний колір вашої бази:</p>
+        <div class="color-picker">
+            <div class="color-option selected" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #10b981;" data-color="#10b981" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #ef4444;" data-color="#ef4444" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #8b5cf6;" data-color="#8b5cf6" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #f59e0b;" data-color="#f59e0b" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #ec4899;" data-color="#ec4899" onclick="selectColor(this)"></div>
+        </div>
+        <div class="modal-btns">
+            <button class="btn-confirm" onclick="confirmBuildBase()">Заснувати</button>
+            <button class="btn-cancel" onclick="closeBaseModal()">Скасувати</button>
+        </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, child, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
         const firebaseConfig = {
@@ -103,8 +174,17 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "1.0";
-        let mode = "login"; // "login", "register", "change-pass"
+        const CURRENT_VERSION = "2.1";
+        let mode = "login";
+        let currentUsername = "";
+        let selectedHexCoords = null;
+        let selectedColor = "#3b82f6";
+        
+        // Мапа 60 на 60 гексів
+        const GRID_ROWS = 60;
+        const GRID_COLS = 60;
+        const HEX_RADIUS = 26;
+        let hexWorldData = {};
 
         window.addEventListener('load', () => {
             setTimeout(() => { hideLoader(); }, 800);
@@ -119,8 +199,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення системи v1.0!";
-            document.getElementById('loader-desc').innerText = "Перезавантаження конфігурації...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.1!";
+            document.getElementById('loader-desc').innerText = "Розгортання карти світу 60x60...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -175,7 +255,7 @@
             const pass = document.getElementById('password').value.trim();
             
             if(!user || !pass) {
-                alert('Будь ласка, заповніть обовʼязкові поля!');
+                alert('Заповніть усі поля!');
                 return;
             }
 
@@ -199,9 +279,13 @@
                         return;
                     }
                     
+                    currentUsername = user;
                     document.getElementById('auth-screen').style.display = 'none';
-                    document.getElementById('game-container').style.display = 'flex';
-                    document.getElementById('welcome-user').innerText = `Користувач: ${user}`;
+                    document.getElementById('game-container').style.display = 'block';
+                    document.getElementById('current-user-display').innerText = user;
+
+                    initHexGrid();
+                    listenToWorldData();
                 } 
                 else if (mode === 'change-pass') {
                     const newPass = document.getElementById('new-password').value.trim();
@@ -212,18 +296,16 @@
 
                     const snapshot = await get(child(dbRef, `users/${user}`));
                     if (!snapshot.exists() || snapshot.val().password !== pass) {
-                        alert('Невірний поточний логін або старий пароль!');
+                        alert('Невірний старий пароль!');
                         return;
                     }
 
-                    await set(ref(db, 'users/' + user), { password: newPass });
+                    await set(ref(db, `users/${user}/password`), newPass);
                     alert('Пароль успішно змінено!');
-                    document.getElementById('password').value = '';
-                    document.getElementById('new-password').value = '';
                     switchAuthMode('login');
                 }
             } catch (error) {
-                alert('Помилка бази даних: ' + error.message);
+                alert('Помилка авторизації: ' + error.message);
             }
         }
 
@@ -233,6 +315,197 @@
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
             switchAuthMode('login');
+        }
+
+        function initHexGrid() {
+            const svg = document.getElementById('hex-svg');
+            svg.innerHTML = '';
+
+            const width = GRID_COLS * HEX_RADIUS * Math.sqrt(3) + HEX_RADIUS * 2;
+            const height = GRID_ROWS * HEX_RADIUS * 1.5 + HEX_RADIUS * 2;
+
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const center = hexToPixel(r, c);
+                    const points = getHexPoints(center.x, center.y, HEX_RADIUS);
+
+                    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                    polygon.setAttribute("points", points);
+                    polygon.setAttribute("class", "hex");
+                    polygon.setAttribute("id", `hex-${r}-${c}`);
+
+                    polygon.addEventListener('click', () => handleHexClick(r, c));
+                    svg.appendChild(polygon);
+                }
+            }
+        }
+
+        function hexToPixel(r, c) {
+            const x = HEX_RADIUS * Math.sqrt(3) * (c + 0.5 * (r & 1)) + HEX_RADIUS;
+            const y = HEX_RADIUS * 1.5 * r + HEX_RADIUS;
+            return { x, y };
+        }
+
+        function getHexPoints(centerX, centerY, radius) {
+            let points = [];
+            for (let i = 0; i < 6; i++) {
+                const angleDegree = 60 * i - 30;
+                const angleRad = Math.PI / 180 * angleDegree;
+                const x = centerX + radius * Math.cos(angleRad);
+                const y = centerY + radius * Math.sin(angleRad);
+                points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+            }
+            return points.join(" ");
+        }
+
+        function getNeighbors(r, c) {
+            const isOdd = r & 1;
+            const directions = isOdd ? [
+                {r: -1, c: 0}, {r: -1, c: 1}, {r: 0, c: -1},
+                {r: 0, c: 1}, {r: 1, c: 0}, {r: 1, c: 1}
+            ] : [
+                {r: -1, c: -1}, {r: -1, c: 0}, {r: 0, c: -1},
+                {r: 0, c: 1}, {r: 1, c: -1}, {r: 1, c: 0}
+            ];
+
+            let neighbors = [];
+            directions.forEach(d => {
+                const nr = r + d.r;
+                const nc = c + d.c;
+                if (nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS) {
+                    neighbors.push({ r: nr, c: nc, key: `${nr}_${nc}` });
+                }
+            });
+            return neighbors;
+        }
+
+        function checkDistanceValid(targetR, targetC) {
+            const targetKey = `${targetR}_${targetC}`;
+            if (hexWorldData[targetKey]) return false;
+
+            const neighbors1 = getNeighbors(targetR, targetC);
+            for (let n1 of neighbors1) {
+                if (hexWorldData[n1.key]) return false;
+                const neighbors2 = getNeighbors(n1.r, n1.c);
+                for (let n2 of neighbors2) {
+                    if (hexWorldData[n2.key]) return false;
+                }
+            }
+            return true;
+        }
+
+        function handleHexClick(r, c) {
+            const key = `${r}_${c}`;
+
+            if (hexWorldData[key]) {
+                const hexInfo = hexWorldData[key];
+                alert(`Ця територія належить гравцю: ${hexInfo.owner}`);
+                return;
+            }
+
+            const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
+            if (userHasBase) {
+                alert('У вас вже є заснована база на цій карті!');
+                return;
+            }
+
+            if (!checkDistanceValid(r, c)) {
+                alert('Занадто близько до території іншого гравця! Потрібен щонайменше 1 вільний гекс розриву.');
+                return;
+            }
+
+            selectedHexCoords = { r, c };
+            document.getElementById('base-modal').style.display = 'block';
+        }
+
+        window.selectColor = function(el) {
+            document.querySelectorAll('.color-option').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedColor = el.getAttribute('data-color');
+        }
+
+        window.closeBaseModal = function() {
+            document.getElementById('base-modal').style.display = 'none';
+            selectedHexCoords = null;
+        }
+
+        window.confirmBuildBase = async function() {
+            if (!selectedHexCoords) return;
+
+            const { r, c } = selectedHexCoords;
+            const coreKey = `${r}_${c}`;
+            const neighbors = getNeighbors(r, c);
+
+            const newUpdates = {};
+            newUpdates[`world_hexes/${coreKey}`] = {
+                owner: currentUsername,
+                color: selectedColor,
+                type: 'core'
+            };
+
+            neighbors.forEach(n => {
+                newUpdates[`world_hexes/${n.key}`] = {
+                    owner: currentUsername,
+                    color: selectedColor,
+                    type: 'border'
+                };
+            });
+
+            try {
+                await set(ref(db), {
+                    ...await getExistingWorldData(),
+                    ...newUpdates
+                });
+                closeBaseModal();
+            } catch (err) {
+                alert('Помилка при збереженні бази: ' + err.message);
+            }
+        }
+
+        async function getExistingWorldData() {
+            const snapshot = await get(child(ref(db), 'world_hexes'));
+            const data = snapshot.exists() ? snapshot.val() : {};
+            let result = {};
+            Object.keys(data).forEach(k => {
+                result[`world_hexes/${k}`] = data[k];
+            });
+            return result;
+        }
+
+        function listenToWorldData() {
+            const worldRef = ref(db, 'world_hexes');
+            onValue(worldRef, (snapshot) => {
+                hexWorldData = snapshot.exists() ? snapshot.val() : {};
+                renderWorldData();
+            });
+        }
+
+        function renderWorldData() {
+            document.querySelectorAll('polygon.hex').forEach(el => {
+                el.style.fill = '#1b263b';
+                el.style.stroke = '#1b263b';
+                el.classList.remove('occupied-core', 'occupied-border');
+            });
+
+            Object.keys(hexWorldData).forEach(key => {
+                const hexData = hexWorldData[key];
+                const [r, c] = key.split('_');
+                const polygon = document.getElementById(`hex-${r}-${c}`);
+
+                if (polygon) {
+                    polygon.style.fill = hexData.color;
+                    polygon.style.stroke = hexData.color;
+
+                    if (hexData.type === 'core') {
+                        polygon.classList.add('occupied-core');
+                    } else {
+                        polygon.classList.add('occupied-border');
+                    }
+                }
+            });
         }
     </script>
 </body>
