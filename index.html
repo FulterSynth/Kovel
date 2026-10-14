@@ -2,11 +2,11 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>КОВЕЛЬ: Стратегія v2.1</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>КОВЕЛЬ: Стратегія v2.2</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; }
+        body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
 
         #update-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -50,14 +50,23 @@
         #game-container { display: none; height: 100vh; width: 100vw; position: relative; overflow: hidden; background: #0b132b; }
         
         #hex-grid-viewport {
-            width: 100%; height: 100%; overflow: auto; cursor: grab; position: relative;
-            touch-action: manipulation;
+            width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative;
+            touch-action: none;
         }
+        #hex-grid-viewport:active { cursor: grabbing; }
+
+        #hex-map-container {
+            transform-origin: 0 0;
+            position: absolute;
+            top: 0; left: 0;
+            will-change: transform;
+        }
+
         #hex-svg { display: block; background: #0d1b2a; }
 
         polygon.hex {
             stroke: #1b263b; stroke-width: 1.5; fill: #1b263b; fill-opacity: 0.3;
-            transition: all 0.2s ease; cursor: pointer;
+            transition: fill-opacity 0.2s ease; cursor: pointer;
         }
         polygon.hex:hover { stroke: #38bdf8; stroke-width: 2.5; fill-opacity: 0.6; }
         
@@ -75,6 +84,18 @@
             padding: 6px 12px; border-radius: 4px; border: none; background: #ef4444;
             color: #fff; font-weight: bold; cursor: pointer; font-size: 12px;
         }
+
+        /* Кнопки Zoom та Навігації */
+        #zoom-controls {
+            position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
+        }
+        .zoom-btn {
+            width: 42px; height: 42px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155;
+            color: #fff; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer;
+            display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        }
+        .zoom-btn:hover { background: #3b82f6; }
 
         /* Меню заснування бази */
         #base-modal {
@@ -104,8 +125,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.1...</h2>
-            <p id="loader-desc">Генерація карти світу 60x60 гексів</p>
+            <h2 id="loader-status">Завантаження v2.2...</h2>
+            <p id="loader-desc">Налаштування системи масштабування та Zoom</p>
         </div>
     </div>
 
@@ -131,8 +152,16 @@
             <button onclick="logout()">Вийти</button>
         </div>
 
+        <div id="zoom-controls">
+            <button class="zoom-btn" onclick="zoomIn()">+</button>
+            <button class="zoom-btn" onclick="zoomOut()">−</button>
+            <button class="zoom-btn" onclick="resetView()" title="Центр">🎯</button>
+        </div>
+
         <div id="hex-grid-viewport">
-            <svg id="hex-svg"></svg>
+            <div id="hex-map-container">
+                <svg id="hex-svg"></svg>
+            </div>
         </div>
     </div>
 
@@ -174,17 +203,26 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "2.1";
+        const CURRENT_VERSION = "2.2";
         let mode = "login";
         let currentUsername = "";
         let selectedHexCoords = null;
         let selectedColor = "#3b82f6";
         
-        // Мапа 60 на 60 гексів
+        // Карта 60x60
         const GRID_ROWS = 60;
         const GRID_COLS = 60;
         const HEX_RADIUS = 26;
         let hexWorldData = {};
+
+        // Масштабування та перетягування
+        let scale = 0.6;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let isClick = true;
 
         window.addEventListener('load', () => {
             setTimeout(() => { hideLoader(); }, 800);
@@ -199,8 +237,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.1!";
-            document.getElementById('loader-desc').innerText = "Розгортання карти світу 60x60...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.2!";
+            document.getElementById('loader-desc').innerText = "Оновлення Zoom-механіки...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -285,6 +323,7 @@
                     document.getElementById('current-user-display').innerText = user;
 
                     initHexGrid();
+                    setupViewportControls();
                     listenToWorldData();
                 } 
                 else if (mode === 'change-pass') {
@@ -337,10 +376,14 @@
                     polygon.setAttribute("class", "hex");
                     polygon.setAttribute("id", `hex-${r}-${c}`);
 
-                    polygon.addEventListener('click', () => handleHexClick(r, c));
+                    polygon.addEventListener('click', (e) => {
+                        if (isClick) handleHexClick(r, c);
+                    });
                     svg.appendChild(polygon);
                 }
             }
+
+            resetView();
         }
 
         function hexToPixel(r, c) {
@@ -360,6 +403,124 @@
             }
             return points.join(" ");
         }
+
+        // ==========================================
+        // СИСТЕМА МАСШТАБУВАННЯ ТА НАВІГАЦІЇ
+        // ==========================================
+
+        function updateTransform() {
+            const container = document.getElementById('hex-map-container');
+            container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        }
+
+        window.zoomIn = function() {
+            scale = Math.min(2.5, scale + 0.2);
+            updateTransform();
+        }
+
+        window.zoomOut = function() {
+            scale = Math.max(0.15, scale - 0.2);
+            updateTransform();
+        }
+
+        window.resetView = function() {
+            const viewport = document.getElementById('hex-grid-viewport');
+            const svg = document.getElementById('hex-svg');
+            
+            scale = 0.5;
+            panX = (viewport.clientWidth - svg.getAttribute('width') * scale) / 2;
+            panY = (viewport.clientHeight - svg.getAttribute('height') * scale) / 2;
+            updateTransform();
+        }
+
+        function setupViewportControls() {
+            const viewport = document.getElementById('hex-grid-viewport');
+
+            // Колесико мишки для Zoom
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                const newScale = Math.min(Math.max(0.15, scale * zoomFactor), 2.5);
+
+                const rect = viewport.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                panX = mouseX - (mouseX - panX) * (newScale / scale);
+                panY = mouseY - (mouseY - panY) * (newScale / scale);
+                scale = newScale;
+
+                updateTransform();
+            }, { passive: false });
+
+            // Dragging (Перетягування мишкою та тачем)
+            viewport.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                isClick = true;
+                dragStartX = e.clientX - panX;
+                dragStartY = e.clientY - panY;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - panX - dragStartX;
+                const dy = e.clientY - panY - dragStartY;
+                
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                    isClick = false;
+                }
+
+                panX = e.clientX - dragStartX;
+                panY = e.clientY - dragStartY;
+                updateTransform();
+            });
+
+            window.addEventListener('mouseup', () => { isDragging = false; });
+
+            // Сенсорний Zoom і Drag (Мобільні)
+            let initialTouchDistance = 0;
+            let initialScale = scale;
+
+            viewport.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    isClick = true;
+                    dragStartX = e.touches[0].clientX - panX;
+                    dragStartY = e.touches[0].clientY - panY;
+                } else if (e.touches.length === 2) {
+                    isDragging = false;
+                    initialTouchDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    initialScale = scale;
+                }
+            });
+
+            viewport.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1 && isDragging) {
+                    panX = e.touches[0].clientX - dragStartX;
+                    panY = e.touches[0].clientY - dragStartY;
+                    isClick = false;
+                    updateTransform();
+                } else if (e.touches.length === 2) {
+                    const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    if (initialTouchDistance > 0) {
+                        scale = Math.min(Math.max(0.15, initialScale * (dist / initialTouchDistance)), 2.5);
+                        updateTransform();
+                    }
+                }
+            });
+
+            viewport.addEventListener('touchend', () => { isDragging = false; });
+        }
+
+        // ==========================================
+        // ЛОГІКА ТЕРИТОРІЙ ТА БАЗ
+        // ==========================================
 
         function getNeighbors(r, c) {
             const isOdd = r & 1;
