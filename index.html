@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.4</title>
+    <title>КОВЕЛЬ: Стратегія v2.6</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
@@ -131,14 +131,14 @@
         }
         .zoom-btn:hover { background: #3b82f6; }
 
-        /* Меню заснування бази */
-        #base-modal {
+        /* Модальні вікна */
+        .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 25px;
-            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 300px;
+            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 320px;
         }
-        #base-modal h3 { margin-bottom: 10px; color: #38bdf8; }
-        #base-modal p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
+        .modal h3 { margin-bottom: 10px; color: #38bdf8; }
+        .modal p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
         .color-picker { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .color-option {
             width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
@@ -152,6 +152,11 @@
         }
         .btn-confirm { background: #10b981; color: #fff; }
         .btn-cancel { background: #64748b; color: #fff; }
+        
+        .upgrade-info {
+            background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 15px;
+            border: 1px solid #334155; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 6px;
+        }
     </style>
 </head>
 <body>
@@ -159,8 +164,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.4...</h2>
-            <p id="loader-desc">Запуск підписів власності та системи доходів (+3 золота/хв)</p>
+            <h2 id="loader-status">Завантаження v2.6...</h2>
+            <p id="loader-desc">Оновлення рівнів ратуші та економіки (14/42 золота)</p>
         </div>
     </div>
 
@@ -183,7 +188,7 @@
     <div id="game-container">
         <div id="user-bar">
             <span>Гравець: <b id="current-user-display" style="color: #38bdf8;">---</b></span>
-            <div class="gold-display">💰 Золото: <span id="user-gold-display">0</span> <small style="opacity: 0.8; font-size: 10px;">(+3/хв)</small></div>
+            <div class="gold-display">💰 Золото: <span id="user-gold-display">0</span> <small style="opacity: 0.8; font-size: 10px;" id="income-speed-text">(+1/хв)</small></div>
             <button onclick="logout()">Вийти</button>
         </div>
 
@@ -201,7 +206,7 @@
     </div>
 
     <!-- Меню заснування бази -->
-    <div id="base-modal">
+    <div id="base-modal" class="modal">
         <h3>Заснувати базу</h3>
         <p>Оберіть геральдичний колір вашої ратуші:</p>
         <div class="color-picker">
@@ -215,6 +220,16 @@
         <div class="modal-btns">
             <button class="btn-confirm" onclick="confirmBuildBase()">Заснувати</button>
             <button class="btn-cancel" onclick="closeBaseModal()">Скасувати</button>
+        </div>
+    </div>
+
+    <!-- Меню керування та покращення ратуші -->
+    <div id="townhall-modal" class="modal">
+        <h3>🏰 Ратуша</h3>
+        <div class="upgrade-info" id="townhall-info"></div>
+        <div class="modal-btns">
+            <button class="btn-confirm" id="upgrade-btn" onclick="upgradeTownHall()">Прокачати ратушу</button>
+            <button class="btn-cancel" onclick="closeTownHallModal()">Закрити</button>
         </div>
     </div>
 
@@ -238,10 +253,11 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "2.4";
+        const CURRENT_VERSION = "2.6";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
+        let userTownHallLevel = 1;
         let selectedHexCoords = null;
         let selectedColor = "#3b82f6";
         
@@ -272,8 +288,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.4!";
-            document.getElementById('loader-desc').innerText = "Оновлення дохідності та стилів території...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.6!";
+            document.getElementById('loader-desc').innerText = "Завантаження нових характеристик ратуші...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -344,7 +360,7 @@
                     await set(ref(db, 'users/' + user), { 
                         password: pass,
                         gold: 0,
-                        lastIncomeTime: Date.now()
+                        townHallLevel: 1
                     });
                     alert('Акаунт успішно створено!');
                     switchAuthMode('login');
@@ -359,11 +375,13 @@
                     currentUsername = user;
                     const userData = snapshot.val();
                     userGold = userData.gold || 0;
+                    userTownHallLevel = userData.townHallLevel || 1;
 
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'block';
                     document.getElementById('current-user-display').innerText = user;
-                    document.getElementById('user-gold-display').innerText = userGold;
+                    document.getElementById('user-gold-display').innerText = Math.floor(userGold);
+                    updateIncomeDisplay();
 
                     initHexGrid();
                     setupViewportControls();
@@ -403,8 +421,19 @@
         }
 
         // ==========================================
-        // СИСТЕМА ПАСИВНОГО ДОХОДУ (+3 золота / хв)
+        // ЕКОНОМІКА ТА ДОХОДИ РАТУШІ
         // ==========================================
+
+        function getIncomeByLevel(level) {
+            if (level === 2) return 2;
+            if (level === 3) return 3;
+            return 1; // Рівень 1
+        }
+
+        function updateIncomeDisplay() {
+            const income = getIncomeByLevel(userTownHallLevel);
+            document.getElementById('income-speed-text').innerText = `(+${income}/хв)`;
+        }
 
         function listenToUserData() {
             const userRef = ref(db, `users/${currentUsername}`);
@@ -412,7 +441,9 @@
                 if (snapshot.exists()) {
                     const data = snapshot.val();
                     userGold = data.gold || 0;
-                    document.getElementById('user-gold-display').innerText = userGold;
+                    userTownHallLevel = data.townHallLevel || 1;
+                    document.getElementById('user-gold-display').innerText = Math.floor(userGold);
+                    updateIncomeDisplay();
                 }
             });
         }
@@ -420,7 +451,6 @@
         function startIncomeLoop() {
             if (incomeInterval) clearInterval(incomeInterval);
             
-            // Кожні 20 секунд додаємо +1 золото (сумарно +3 за 60 секунд)
             incomeInterval = setInterval(async () => {
                 const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
                 if (userHasBase) {
@@ -428,8 +458,13 @@
                         const userRef = ref(db, `users/${currentUsername}`);
                         const snapshot = await get(userRef);
                         if (snapshot.exists()) {
-                            const currentG = snapshot.val().gold || 0;
-                            await update(userRef, { gold: currentG + 1 });
+                            const currentData = snapshot.val();
+                            const currentG = currentData.gold || 0;
+                            const lvl = currentData.townHallLevel || 1;
+                            const incomePerMin = getIncomeByLevel(lvl);
+                            const addAmount = incomePerMin / 3;
+
+                            await update(userRef, { gold: currentG + addAmount });
                         }
                     } catch (err) {
                         console.error('Помилка нарахування доходів:', err);
@@ -638,7 +673,11 @@
 
             if (hexWorldData[key]) {
                 const hexInfo = hexWorldData[key];
-                alert(`Ця територія належить володарю: ${hexInfo.owner}`);
+                if (hexInfo.type === 'core' && hexInfo.owner === currentUsername) {
+                    openTownHallModal();
+                } else {
+                    alert(`Ця територія належить володарю: ${hexInfo.owner}`);
+                }
                 return;
             }
 
@@ -680,7 +719,8 @@
             updates[coreKey] = {
                 owner: currentUsername,
                 color: selectedColor,
-                type: 'core'
+                type: 'core',
+                level: 1
             };
 
             neighbors.forEach(n => {
@@ -699,6 +739,96 @@
             }
         }
 
+        // ==========================================
+        // МЕНЮ ТА АПГРЕЙД РАТУШІ
+        // ==========================================
+
+        function openTownHallModal() {
+            const modal = document.getElementById('townhall-modal');
+            const infoContainer = document.getElementById('townhall-info');
+            const upgradeBtn = document.getElementById('upgrade-btn');
+
+            let costText = "";
+            let nextIncomeText = "";
+            let canUpgrade = true;
+
+            if (userTownHallLevel === 1) {
+                costText = "14 золота";
+                nextIncomeText = "2 золота/хв";
+            } else if (userTownHallLevel === 2) {
+                costText = "42 золота";
+                nextIncomeText = "3 золота/хв";
+            } else {
+                costText = "—";
+                canUpgrade = false;
+            }
+
+            infoContainer.innerHTML = `
+                <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
+                <div><b>Поточний дохід:</b> ${getIncomeByLevel(userTownHallLevel)} золота/хв</div>
+                ${canUpgrade ? `
+                    <div style="margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px;"><b>Наступний рівень (${userTownHallLevel + 1}):</b> +${getIncomeByLevel(userTownHallLevel + 1)}/хв</div>
+                    <div><b>Необхідно золота:</b> <span style="color: #fbbf24; font-weight: bold;">${costText}</span></div>
+                ` : `
+                    <div style="margin-top: 6px; color: #10b981; font-weight: bold;">Максимальний рівень досягнуто!</div>
+                `}
+            `;
+
+            if (canUpgrade) {
+                upgradeBtn.style.display = 'inline-block';
+            } else {
+                upgradeBtn.style.display = 'none';
+            }
+
+            modal.style.display = 'block';
+        }
+
+        window.closeTownHallModal = function() {
+            document.getElementById('townhall-modal').style.display = 'none';
+        }
+
+        window.upgradeTownHall = async function() {
+            let cost = 0;
+            let nextLvl = userTownHallLevel + 1;
+
+            if (userTownHallLevel === 1) cost = 14;
+            else if (userTownHallLevel === 2) cost = 42;
+            else return;
+
+            if (userGold < cost) {
+                alert(`Недостатньо золота! Потрібно ${cost} золота.`);
+                return;
+            }
+
+            try {
+                // Знаходимо гексагон бази у базі даних та оновлюємо рівень
+                let coreHexKey = null;
+                Object.keys(hexWorldData).forEach(k => {
+                    if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') {
+                        coreHexKey = k;
+                    }
+                });
+
+                const updates = {};
+                updates[`users/${currentUsername}/gold`] = userGold - cost;
+                updates[`users/${currentUsername}/townHallLevel`] = nextLvl;
+                if (coreHexKey) {
+                    updates[`world_hexes/${coreHexKey}/level`] = nextLvl;
+                }
+
+                await update(ref(db), updates);
+
+                userTownHallLevel = nextLvl;
+                userGold -= cost;
+                
+                alert(`Ратушу успішно покращено до Рівня ${nextLvl}!`);
+                closeTownHallModal();
+                updateIncomeDisplay();
+            } catch (err) {
+                alert('Помилка при покращенні: ' + err.message);
+            }
+        }
+
         function listenToWorldData() {
             const worldRef = ref(db, 'world_hexes');
             onValue(worldRef, (snapshot) => {
@@ -710,7 +840,6 @@
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             
-            // Очищення елементів поверх гексів
             document.querySelectorAll('.castle-icon, .owner-label-bg, .owner-label-text').forEach(el => el.remove());
 
             document.querySelectorAll('polygon.hex').forEach(el => {
@@ -741,10 +870,11 @@
                         castleText.textContent = "🏰";
                         svg.appendChild(castleText);
 
-                        // 2. Підпис імені гравця над Замком (Корона + Нік)
-                        const labelContent = `👑 ${hexData.owner}`;
+                        // 2. Підпис імені та РІВНЯ ратуші над Замком (👑 Нік [Lvl X])
+                        const lvl = hexData.level || 1;
+                        const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
                         const labelY = center.y - 28;
-                        const approxWidth = Math.max(60, labelContent.length * 7.5 + 14);
+                        const approxWidth = Math.max(70, labelContent.length * 7.2 + 14);
 
                         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
                         rect.setAttribute("x", center.x - approxWidth / 2);
