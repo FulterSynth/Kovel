@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v3.9</title>
+    <title>HexPolitics v4.1</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -143,10 +143,9 @@
         .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px;
-            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 90%; max-width: 320px;
+            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 92%; max-width: 340px;
         }
-        .modal h3 { margin-bottom: 8px; color: #38bdf8; font-size: 18px; }
-        .modal p { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
+        .modal h3 { margin-bottom: 10px; color: #38bdf8; font-size: 18px; }
         
         .color-picker { display: flex; justify-content: center; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
         .color-option {
@@ -163,9 +162,9 @@
             color: #ef4444; font-size: 14px; font-weight: bold;
         }
 
-        .modal-btns { display: flex; gap: 8px; justify-content: center; flex-direction: column; }
+        .modal-btns { display: flex; gap: 8px; justify-content: center; flex-direction: column; margin-top: 10px; }
         .modal-btns button {
-            padding: 9px 15px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; width: 100%;
+            padding: 10px 15px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; width: 100%;
         }
         .btn-confirm { background: #10b981; color: #fff; }
         .btn-cancel { background: #64748b; color: #fff; }
@@ -175,8 +174,17 @@
         
         .upgrade-info {
             background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px;
-            border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 5px;
+            border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 6px;
         }
+        
+        .info-card {
+            background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+            padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; line-height: 1.4;
+        }
+        .info-card b { color: #38bdf8; }
+        .info-card .bad { color: #f87171; font-weight: bold; }
+        .info-card .good { color: #34d399; font-weight: bold; }
+        .info-card .warn { color: #fbbf24; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -184,8 +192,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v3.9</h2>
-            <p id="loader-desc">Оновлення податку до -3/хв та індикатора мінусу...</p>
+            <h2 id="loader-status">HexPolitics v4.1</h2>
+            <p id="loader-desc">Виправлення та покращення підказок...</p>
         </div>
     </div>
 
@@ -232,8 +240,8 @@
 
     <!-- Меню заснування бази -->
     <div id="base-modal" class="modal">
-        <h3>Заснувати базу</h3>
-        <p>Оберіть унікальний колір прапора:</p>
+        <h3>🏰 Заснувати базу</h3>
+        <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">Оберіть колір вашого прапора:</p>
         <div class="color-picker" id="color-picker-container">
             <div class="color-option" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #10b981;" data-color="#10b981" onclick="selectColor(this)"></div>
@@ -252,7 +260,7 @@
 
     <!-- Меню керування ратушею -->
     <div id="townhall-modal" class="modal">
-        <h3>🏰 Ратуша</h3>
+        <h3>🏰 Ваша Ратуша</h3>
         <div class="upgrade-info" id="townhall-info"></div>
         <div class="modal-btns">
             <button class="btn-confirm" id="upgrade-btn" onclick="upgradeTownHall()">Прокачати ратушу</button>
@@ -262,10 +270,10 @@
 
     <!-- Меню території / будівництва -->
     <div id="territory-modal" class="modal">
-        <h3>🌍 Територія</h3>
-        <p id="territory-desc"></p>
+        <h3 id="territory-title">🌍 Управління гексом</h3>
+        <div id="territory-card-container"></div>
         <div class="modal-btns" id="territory-buttons"></div>
-        <div style="margin-top: 10px;">
+        <div style="margin-top: 8px;">
             <button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>
         </div>
     </div>
@@ -291,7 +299,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "3.9";
+        const CURRENT_VERSION = "4.1";
 
         let mode = "login";
         let currentUsername = "";
@@ -327,8 +335,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v3.9";
-            document.getElementById('loader-desc').innerText = "Оновлення податку до -3/хв та індикатора мінусу...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.1";
+            document.getElementById('loader-desc').innerText = "Виправлення та покращення підказок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -464,7 +472,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v3.9)
+        // ЕКОНОМІКА (v4.1)
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -479,7 +487,7 @@
                         baseLevel = h.level || 1;
                     }
                     if (h.type === 'purchased') {
-                        purchasedTaxes += 3; // Податок -3 золота за хвилину за кожен куплений гекс!
+                        purchasedTaxes += 3;
                     }
                     if (h.type === 'farm') {
                         farmsCount += 1;
@@ -508,7 +516,7 @@
 
         function calculateEffectiveIncome(username, worldHexes) {
             let raw = calculateRawIncome(username, worldHexes);
-            return Math.max(1, raw); // Мінімальний приріст завжди 1
+            return Math.max(1, raw);
         }
 
         function getIncomeByLevel(level) {
@@ -1026,26 +1034,53 @@
 
         function openTerritoryModal(r, c, hexInfo) {
             const modal = document.getElementById('territory-modal');
-            const desc = document.getElementById('territory-desc');
+            const title = document.getElementById('territory-title');
+            const cardContainer = document.getElementById('territory-card-container');
             const buttonsContainer = document.getElementById('territory-buttons');
 
             let htmlContent = '';
+            let cardHtml = '';
 
             if (!hexInfo) {
-                desc.innerHTML = "Придбати цей прикордонний гекс?<br><b>Вартість:</b> 10 золота<br><b>Ефект:</b> -3 золота/хв доходу (податок)";
+                title.innerText = "🌍 Придбати гекс";
+                cardHtml = `
+                    <div class="info-card">
+                        <b>Купівля нової території:</b><br>
+                        💰 <b>Ціна:</b> 10 золота<br>
+                        <span class="bad">⚠️ Податок: -3 золота/хв</span> за кожен придбаний гекс.<br><br>
+                        <span class="warn">💡 Порада:</span> Зводьте ферми та вітряки на своїх землях, щоб перекрити податки!
+                    </div>
+                `;
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
             } else if (hexInfo.type === 'starter' || hexInfo.type === 'purchased') {
-                desc.innerHTML = "Оберіть будівлю для зведення:<br><small style='color: #94a3b8;'>🌾 Ферма: 10 💰 | 🛞🌀 Вітряк: 20 💰</small>";
+                title.innerText = "🏗️ Будівництво";
+                cardHtml = `
+                    <div class="info-card">
+                        <b>Доступні будівлі:</b><br><br>
+                        🌾 <span class="good">Ферма (10 💰):</span><br>
+                        • Приносить <span class="good">+1 золото/хв</span> до доходу.<br><br>
+                        🛞🌀 <span class="warn">Вітряк (20 💰):</span><br>
+                        • Не дає доходу сам, але додає <span class="good">+1 золото/хв</span> кожній <b>сусідній фермі</b>!
+                    </div>
+                `;
                 htmlContent = `
                     <button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (10 💰)</button>
                     <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🛞🌀 Побудувати Вітряк (20 💰)</button>
                 `;
             } else if (hexInfo.type === 'farm' || hexInfo.type === 'mill') {
-                const bName = hexInfo.type === 'farm' ? 'Ферма (🌾)' : 'Вітряк (🛞🌀)';
-                desc.innerHTML = `На цьому гексі знаходиться <b>${bName}</b>.<br>Бажаєте знести будівлю?<br><b>Вартість знесення:</b> 5 золота.`;
+                const bName = hexInfo.type === 'farm' ? 'Ферма 🌾' : 'Вітряк 🛞🌀';
+                title.innerText = `🌾 Будівля: ${bName}`;
+                cardHtml = `
+                    <div class="info-card">
+                        На цьому гексі вже зведено <b>${bName}</b>.<br><br>
+                        Якщо будівля більше не потрібна, ви можете її знести.<br>
+                        💰 <b>Вартість знесення:</b> 5 золота.
+                    </div>
+                `;
                 htmlContent = `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести будівлю (5 💰)</button>`;
             }
 
+            cardContainer.innerHTML = cardHtml;
             buttonsContainer.innerHTML = htmlContent;
             modal.style.display = 'block';
         }
