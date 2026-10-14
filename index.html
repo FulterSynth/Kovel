@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.6</title>
+    <title>HexPolitics v4.7</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.6</h2>
-            <p id="loader-desc">Оновлення ціни мосту (30 💰) та векторної графіки...</p>
+            <h2 id="loader-status">HexPolitics v4.7</h2>
+            <p id="loader-desc">Оновлення дальності мостів до 2 клітинок...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.6";
+        const CURRENT_VERSION = "4.7";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.6";
-            document.getElementById('loader-desc').innerText = "Оновлення графіки мостів та економіки...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.7";
+            document.getElementById('loader-desc').innerText = "Оновлення механіки мостів до 2 клітинок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -490,7 +490,7 @@
                         baseLevel = h.level || 1;
                     }
                     if (h.type === 'purchased' || h.type === 'bridge') {
-                        purchasedTaxes += 5; // Міст забирає -5/хв, як і звичайна клітинка
+                        purchasedTaxes += 5; 
                     }
                     if (h.type === 'farm') {
                         farmsCount += 1;
@@ -868,6 +868,37 @@
             return neighbors;
         }
 
+        // Перевірка, чи клітинка прірви досяжна для мосту (межує з нашою землею напряму АБО через одну вільну прірву)
+        function isBridgeAccessible(targetR, targetC) {
+            const neighbors = getNeighbors(targetR, targetC);
+            
+            // Варіант 1: Прямий сусід з нашою сухопутною територією (міст довжиною 1)
+            for (let n of neighbors) {
+                const h = hexWorldData[n.key];
+                if (h && h.owner === currentUsername && h.type !== 'chasm') {
+                    return true;
+                }
+            }
+
+            // Варіант 2: Сусід через одну клітинку прірви (міст довжиною 2)
+            // Тобто проміжна клітинка теж має бути прірвою (або мостом гравця), а наступна — наша земля
+            for (let n1 of neighbors) {
+                const h1 = hexWorldData[n1.key];
+                // Якщо проміжна клітинка - це прірва або вже наш міст
+                if (!h1 || h1.type === 'chasm' || (h1.owner === currentUsername && h1.type === 'bridge')) {
+                    const subNeighbors = getNeighbors(n1.r, n1.c);
+                    for (let n2 of subNeighbors) {
+                        const h2 = hexWorldData[n2.key];
+                        if (h2 && h2.owner === currentUsername && h2.type !== 'chasm') {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
         function checkDistanceValid(targetR, targetC) {
             const targetKey = `${targetR}_${targetC}`;
             const hex = hexWorldData[targetKey];
@@ -917,17 +948,23 @@
                 return;
             }
 
+            // Якщо клікнули на прірву — перевіряємо можливість побудувати міст (до 2 клітинок)
+            if (hexInfo && hexInfo.type === 'chasm') {
+                if (!isBridgeAccessible(r, c)) {
+                    alert('Занадто далеко від вашої території! Максимальна довжина мосту — 2 клітинки.');
+                    return;
+                }
+                selectedHexCoords = { r, c };
+                openBridgeModal(r, c);
+                return;
+            }
+
+            // Перевірка сусідості для купівлі звичайного гекса
             const neighbors = getNeighbors(r, c);
             const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
 
             if (!isAdjacentToMyTerritory) {
                 alert('Ви можете взаємодіяти лише з територіями, що межують з вашими землями!');
-                return;
-            }
-
-            if (hexInfo && hexInfo.type === 'chasm') {
-                selectedHexCoords = { r, c };
-                openBridgeModal(r, c);
                 return;
             }
 
@@ -1089,10 +1126,10 @@
             title.innerText = "🌉 Побудувати міст";
             cardContainer.innerHTML = `
                 <div class="info-card">
-                    <b>Переправа через прірву:</b><br>
+                    <b>Переправа через ущелину:</b><br>
                     💰 <b>Ціна мосту:</b> 30 золота<br>
                     <span class="bad">⚠️ Податок: -5 золота/хв</span> (як за звичайний гекс).<br><br>
-                    <span class="warn">💡 Ефект:</span> З'єднує ваші землі з ізольованими островами!
+                    <span class="warn">💡 Ефект:</span> Дозволяє перекидати переправу довжиною до 2 клітинок!
                 </div>
             `;
             buttonsContainer.innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати міст (30 💰)</button>`;
@@ -1123,7 +1160,7 @@
             try {
                 await update(ref(db), updates);
                 closeTerritoryModal();
-                alert("Міст успішно зведено! Тепер у вас є вихід до нових земель.");
+                alert("Міст успішно зведено! Шлях через ущелину прокладено.");
             } catch (err) {
                 alert("Помилка будівництва мосту: " + err.message);
             }
@@ -1290,12 +1327,10 @@
             });
         }
 
-        // Малювання чистого векторного мосту (SVG)
         function renderBridgeVector(svg, center) {
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "map-icon");
 
-            // Головні паралельні опори мосту
             const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line1.setAttribute("x1", center.x - 12); line1.setAttribute("y1", center.y - 6);
             line1.setAttribute("x2", center.x + 12); line1.setAttribute("y2", center.y - 6);
@@ -1311,7 +1346,6 @@
             g.appendChild(line1);
             g.appendChild(line2);
 
-            // Поперечні дошки мосту
             for (let dx = -9; dx <= 9; dx += 4.5) {
                 const plank = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 plank.setAttribute("x1", center.x + dx); plank.setAttribute("y1", center.y - 7);
