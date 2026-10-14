@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>КОВЕЛЬ: Стратегія</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; }
@@ -46,50 +45,12 @@
         .auth-toggle { text-align: center; font-size: 13px; color: #94a3b8; cursor: pointer; margin-top: 5px; }
         .auth-toggle:hover { color: #38bdf8; text-decoration: underline; }
 
-        #game-container { display: none; height: 100vh; width: 100vw; flex-direction: column; }
-        .pages-container { flex: 1; position: relative; width: 100%; overflow: hidden; }
-
-        .page { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        .page.active { display: flex; flex-direction: column; }
-
-        #map { width: 100%; height: 100%; background: #e5e3df; }
-
-        #district-info {
-            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.85); padding: 8px 18px; border-radius: 20px;
-            border: 1px solid #38bdf8; z-index: 1000; font-size: 13px; pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3); color: #38bdf8; font-weight: 600;
+        #game-container {
+            display: none; height: 100vh; width: 100vw; flex-direction: column;
+            justify-content: center; align-items: center; background: #0f172a; text-align: center; padding: 20px;
         }
-
-        #page-chat { background: #0f172a; padding: 15px; box-sizing: border-box; }
-        .chat-messages {
-            flex: 1; background: #1e293b; border-radius: 8px; padding: 15px;
-            overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid #334155;
-        }
-        .chat-msg { background: #334155; padding: 10px 14px; border-radius: 8px; max-width: 85%; word-break: break-word; }
-        .chat-msg .author { font-size: 11px; color: #38bdf8; margin-bottom: 3px; font-weight: bold; }
-        .chat-msg .text { font-size: 14px; color: #f8fafc; }
-        .chat-input-area { display: flex; gap: 10px; margin-top: 15px; }
-        .chat-input-area input {
-            flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #475569;
-            background: #1e293b; color: #fff; outline: none; font-size: 14px;
-        }
-        .chat-input-area button {
-            padding: 0 20px; border-radius: 8px; border: none; background: #3b82f6;
-            color: #fff; font-weight: bold; cursor: pointer;
-        }
-
-        .nav-bar {
-            height: 65px; background: #1e293b; display: flex;
-            justify-content: space-around; align-items: center;
-            border-top: 2px solid #334155; z-index: 999; flex-shrink: 0;
-        }
-        .nav-btn {
-            background: none; border: none; color: #94a3b8; font-size: 13px;
-            cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
-            width: 25%;
-        }
-        .nav-btn.active { color: #38bdf8; font-weight: bold; }
+        #game-container h1 { font-size: 28px; margin-bottom: 10px; color: #38bdf8; }
+        #game-container p { color: #94a3b8; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -97,8 +58,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження гри v1.6...</h2>
-            <p id="loader-desc">Підключення хмарної бази даних Firebase</p>
+            <h2 id="loader-status">Скидання до v1.0...</h2>
+            <p id="loader-desc">Очищення старих механік та налаштування хмари</p>
         </div>
     </div>
 
@@ -107,50 +68,24 @@
             <h2 id="auth-title">Вхід у гру</h2>
             <input type="text" id="username" placeholder="Логін">
             <input type="password" id="password" placeholder="Пароль">
+            <div id="new-password-container" style="display: none;">
+                <input type="password" id="new-password" placeholder="Новий пароль" style="width: 100%; margin-top: 5px;">
+            </div>
             <button id="auth-btn" onclick="handleAuth()">Увійти</button>
-            <div class="auth-toggle" onclick="toggleAuthMode()">Ще немає акаунта? Зареєструватись</div>
+            <div class="auth-toggle" id="auth-toggle-mode" onclick="switchAuthMode('register')">Ще немає акаунта? Зареєструватись</div>
+            <div class="auth-toggle" id="auth-toggle-pass" onclick="switchAuthMode('change-pass')" style="color: #64748b;">Змінити пароль</div>
         </div>
     </div>
 
     <div id="game-container">
-        <div class="pages-container">
-            <div id="page-map" class="page active">
-                <div id="district-info">📍 Наведіть на квартал Ковеля</div>
-                <div id="map"></div>
-            </div>
-
-            <div id="page-base" class="page" style="justify-content: center; align-items: center; background: #1e293b;">
-                <h1 id="player-greeting">Головна база гравця</h1>
-                <p style="margin-top: 10px; color: #94a3b8;">Тут будуть покращення будівель, ресурси та території.</p>
-            </div>
-
-            <div id="page-chat" class="page">
-                <h2 style="margin-bottom: 10px; font-size: 18px; color: #38bdf8;">💬 Загальний чат Ковеля</h2>
-                <div class="chat-messages" id="chat-messages"></div>
-                <div class="chat-input-area">
-                    <input type="text" id="chat-input" placeholder="Напишіть повідомлення..." onkeypress="handleChatKeyPress(event)">
-                    <button onclick="sendChatMessage()">Надіслати</button>
-                </div>
-            </div>
-
-            <div id="page-battles" class="page" style="justify-content: center; align-items: center; background: #1e293b;">
-                <h1>Арена Ковеля</h1>
-                <p style="margin-top: 10px; color: #94a3b8;">Захоплюйте вулиці та змагайтесь з іншими гравцями.</p>
-            </div>
-        </div>
-
-        <div class="nav-bar">
-            <button class="nav-btn active" onclick="switchPage('map', this)">🗺️ Мапа</button>
-            <button class="nav-btn" onclick="switchPage('base', this)">🏰 База</button>
-            <button class="nav-btn" onclick="switchPage('chat', this)">💬 Чат</button>
-            <button class="nav-btn" onclick="switchPage('battles', this)">⚔️ Арена</button>
-        </div>
+        <h1 id="welcome-title">Вітаємо у грі!</h1>
+        <p id="welcome-user"></p>
+        <button onclick="logout()" style="margin-top: 20px; padding: 10px 20px; border-radius: 6px; border: none; background: #ef4444; color: #fff; cursor: pointer; font-weight: bold;">Вийти з акаунта</button>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, child, push, onChildAdded } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
         const firebaseConfig = {
@@ -168,15 +103,12 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "1.6";
-        let map;
-        let isRegisterMode = false;
-        let currentUsername = "";
+        const CURRENT_VERSION = "1.0";
+        let mode = "login"; // "login", "register", "change-pass"
 
         window.addEventListener('load', () => {
             setTimeout(() => { hideLoader(); }, 800);
             setInterval(checkAutoUpdate, 15000);
-            listenToChat();
         });
 
         function hideLoader() {
@@ -187,8 +119,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v1.6!";
-            document.getElementById('loader-desc').innerText = "Оновлюємо хмарні сервери Ковеля...";
+            document.getElementById('loader-status').innerText = "Оновлення системи v1.0!";
+            document.getElementById('loader-desc').innerText = "Перезавантаження конфігурації...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -206,11 +138,36 @@
             .catch(err => {});
         }
 
-        window.toggleAuthMode = function() {
-            isRegisterMode = !isRegisterMode;
-            document.getElementById('auth-title').innerText = isRegisterMode ? 'Реєстрація' : 'Вхід у гру';
-            document.getElementById('auth-btn').innerText = isRegisterMode ? 'Створити акаунт' : 'Увійти';
-            document.querySelector('.auth-toggle').innerText = isRegisterMode ? 'Вже є акаунт? Увійти' : 'Ще немає акаунта? Зареєструватись';
+        window.switchAuthMode = function(targetMode) {
+            mode = targetMode;
+            const title = document.getElementById('auth-title');
+            const btn = document.getElementById('auth-btn');
+            const toggleMode = document.getElementById('auth-toggle-mode');
+            const togglePass = document.getElementById('auth-toggle-pass');
+            const newPassContainer = document.getElementById('new-password-container');
+
+            if (mode === 'login') {
+                title.innerText = 'Вхід у гру';
+                btn.innerText = 'Увійти';
+                toggleMode.innerText = 'Ще немає акаунта? Зареєструватись';
+                toggleMode.setAttribute('onclick', "switchAuthMode('register')");
+                togglePass.style.display = 'block';
+                newPassContainer.style.display = 'none';
+            } else if (mode === 'register') {
+                title.innerText = 'Реєстрація';
+                btn.innerText = 'Створити акаунт';
+                toggleMode.innerText = 'Вже є акаунт? Увійти';
+                toggleMode.setAttribute('onclick', "switchAuthMode('login')");
+                togglePass.style.display = 'none';
+                newPassContainer.style.display = 'none';
+            } else if (mode === 'change-pass') {
+                title.innerText = 'Зміна пароля';
+                btn.innerText = 'Змінити пароль';
+                toggleMode.innerText = 'Повернутися до входу';
+                toggleMode.setAttribute('onclick', "switchAuthMode('login')");
+                togglePass.style.display = 'none';
+                newPassContainer.style.display = 'block';
+            }
         }
 
         window.handleAuth = async function() {
@@ -218,145 +175,64 @@
             const pass = document.getElementById('password').value.trim();
             
             if(!user || !pass) {
-                alert('Будь ласка, заповніть усі поля!');
+                alert('Будь ласка, заповніть обовʼязкові поля!');
                 return;
             }
 
             const dbRef = ref(db);
 
             try {
-                if(isRegisterMode) {
+                if (mode === 'register') {
                     const snapshot = await get(child(dbRef, `users/${user}`));
                     if (snapshot.exists()) {
-                        alert('Такий користувач вже існує у хмарі!');
+                        alert('Такий користувач вже існує!');
                         return;
                     }
                     await set(ref(db, 'users/' + user), { password: pass });
-                    alert('Акаунт успішно створено у хмарі! Тепер увійдіть.');
-                    toggleAuthMode();
-                } else {
+                    alert('Акаунт успішно створено!');
+                    switchAuthMode('login');
+                } 
+                else if (mode === 'login') {
                     const snapshot = await get(child(dbRef, `users/${user}`));
                     if (!snapshot.exists() || snapshot.val().password !== pass) {
                         alert('Невірний логін або пароль!');
                         return;
                     }
                     
-                    currentUsername = user;
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'flex';
-                    document.getElementById('player-greeting').innerText = `База гравця: ${user}`;
-                    
-                    initMap();
+                    document.getElementById('welcome-user').innerText = `Користувач: ${user}`;
+                } 
+                else if (mode === 'change-pass') {
+                    const newPass = document.getElementById('new-password').value.trim();
+                    if (!newPass) {
+                        alert('Введіть новий пароль!');
+                        return;
+                    }
+
+                    const snapshot = await get(child(dbRef, `users/${user}`));
+                    if (!snapshot.exists() || snapshot.val().password !== pass) {
+                        alert('Невірний поточний логін або старий пароль!');
+                        return;
+                    }
+
+                    await set(ref(db, 'users/' + user), { password: newPass });
+                    alert('Пароль успішно змінено!');
+                    document.getElementById('password').value = '';
+                    document.getElementById('new-password').value = '';
+                    switchAuthMode('login');
                 }
             } catch (error) {
-                alert('Помилка підключення до Firebase: ' + error.message);
+                alert('Помилка бази даних: ' + error.message);
             }
         }
 
-        function initMap() {
-            if (map) return;
-            
-            const kovelCenter = [51.2176, 24.7042];
-            const kovelBounds = L.latLngBounds([51.1850, 24.6450], [51.2550, 24.7600]);
-
-            map = L.map('map', {
-                zoomControl: false,
-                minZoom: 14,
-                maxZoom: 18,
-                maxBounds: kovelBounds,
-                maxBoundsViscosity: 1.0
-            }).setView(kovelCenter, 15);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
-
-            loadKovelBuildingBlocks();
-            setTimeout(() => map.invalidateSize(), 200);
-        }
-
-        function loadKovelBuildingBlocks() {
-            const blocks = [
-                { name: "Квартал біля РАЦСу / Центр", color: "#3b82f6", coords: [[51.2195, 24.7020], [51.2215, 24.7075], [51.2175, 24.7115], [51.2155, 24.7060]] },
-                { name: "Театральна / Центр-Північ", color: "#2563eb", coords: [[51.2215, 24.7075], [51.2240, 24.7130], [51.2200, 24.7175], [51.2175, 24.7115]] },
-                { name: "Привокзальний квартал", color: "#eab308", coords: [[51.2240, 24.7130], [51.2285, 24.7210], [51.2235, 24.7270], [51.2200, 24.7175]] },
-                { name: "Мікрорайон Сільмаш (Захід)", color: "#ef4444", coords: [[51.2110, 24.7010], [51.2155, 24.7060], [51.2115, 24.7150], [51.2065, 24.7100]] },
-                { name: "Мікрорайон Сільмаш (Схід)", color: "#dc2626", coords: [[51.2155, 24.7060], [51.2175, 24.7115], [51.2130, 24.7200], [51.2115, 24.7150]] },
-                { name: "Старий Ковель (Берег Турії)", color: "#10b981", coords: [[51.2195, 24.6900], [51.2225, 24.6970], [51.2195, 24.7020], [51.2150, 24.6930]] },
-                { name: "Залізничний масив", color: "#8b5cf6", coords: [[51.2285, 24.7210], [51.2330, 24.7300], [51.2270, 24.7360], [51.2235, 24.7270]] }
-            ];
-
-            blocks.forEach(b => {
-                const polygon = L.polygon(b.coords, {
-                    color: b.color, weight: 1.5, fillColor: b.color, fillOpacity: 0.4
-                }).addTo(map);
-
-                polygon.on('mouseover', function () {
-                    this.setStyle({ fillOpacity: 0.7, weight: 3 });
-                    document.getElementById('district-info').innerText = `📍 Квартал: ${b.name}`;
-                });
-
-                polygon.on('mouseout', function () {
-                    this.setStyle({ fillOpacity: 0.4, weight: 1.5 });
-                    document.getElementById('district-info').innerText = `📍 Наведіть на квартал Ковеля`;
-                });
-
-                polygon.on('click', function () {
-                    alert(`Квартал: ${b.name}\nТут розташовані будівлі. Готується система захоплення території!`);
-                });
-            });
-        }
-
-        window.switchPage = function(pageId, btn) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('page-' + pageId).classList.add('active');
-
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            if(pageId === 'map' && map) {
-                setTimeout(() => map.invalidateSize(), 150);
-            }
-        }
-
-        window.sendChatMessage = function() {
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if(!text || !currentUsername) return;
-
-            const chatRef = ref(db, 'chat');
-            push(chatRef, {
-                author: currentUsername,
-                text: text,
-                timestamp: Date.now()
-            });
-
-            input.value = '';
-        }
-
-        window.handleChatKeyPress = function(e) {
-            if(e.key === 'Enter') window.sendChatMessage();
-        }
-
-        function listenToChat() {
-            const chatRef = ref(db, 'chat');
-            onChildAdded(chatRef, (snapshot) => {
-                const msg = snapshot.val();
-                appendMessage(msg.author, msg.text);
-            });
-        }
-
-        function appendMessage(author, text) {
-            const chatMessages = document.getElementById('chat-messages');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'chat-msg';
-            msgDiv.innerHTML = `<div class="author">${author}</div><div class="text">${escapeHtml(text)}</div>`;
-            chatMessages.appendChild(msgDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        window.logout = function() {
+            document.getElementById('game-container').style.display = 'none';
+            document.getElementById('auth-screen').style.display = 'flex';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            switchAuthMode('login');
         }
     </script>
 </body>
