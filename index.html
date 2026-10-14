@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.9</title>
+    <title>HexPolitics v5.0</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.9</h2>
-            <p id="loader-desc">Встановлення податку -3 золота/хв за гекс...</p>
+            <h2 id="loader-status">HexPolitics v5.0</h2>
+            <p id="loader-desc">Плавне зумування колесиком мишки...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.9";
+        const CURRENT_VERSION = "5.0";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.9";
-            document.getElementById('loader-desc').innerText = "Оновлення податкової системи (-3 золота/хв)...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.0";
+            document.getElementById('loader-desc').innerText = "Налаштування плавного зуму...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -475,7 +475,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v4.9 — Податок -3 золота/хв)
+        // ЕКОНОМІКА
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -490,7 +490,6 @@
                         baseLevel = h.level || 1;
                     }
                     
-                    // Перевірка: Податок -3 нараховується за кожен куплений гекс, міст або побудовану споруду на купленому гексі
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge' || (h.type !== 'core' && h.type !== 'starter')) {
                         purchasedTaxes += 3; 
                     }
@@ -754,9 +753,12 @@
         function setupViewportControls() {
             const viewport = document.getElementById('hex-grid-viewport');
 
+            // Плавний зум колесиком мишки
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                
+                // Зменшено чутливість з 15% до 4%
+                const zoomFactor = e.deltaY < 0 ? 1.04 : 0.96;
                 const newScale = Math.min(Math.max(0.15, scale * zoomFactor), 2.5);
 
                 const rect = viewport.getBoundingClientRect();
