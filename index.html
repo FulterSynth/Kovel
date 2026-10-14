@@ -2,11 +2,11 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.8</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>КОВЕЛЬ: Стратегія v2.9</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
+        body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
 
         #update-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -30,20 +30,20 @@
             background: #1e293b; display: flex; justify-content: center; align-items: center; z-index: 1000;
         }
         .auth-box {
-            background: #334155; padding: 30px; border-radius: 12px; width: 320px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 15px;
+            background: #334155; padding: 25px; border-radius: 12px; width: 300px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 12px;
         }
-        .auth-box h2 { text-align: center; color: #fff; }
+        .auth-box h2 { text-align: center; color: #fff; font-size: 20px; }
         .auth-box input {
-            padding: 12px; border-radius: 6px; border: 1px solid #475569;
-            background: #1e293b; color: #fff; outline: none;
+            padding: 10px; border-radius: 6px; border: 1px solid #475569;
+            background: #1e293b; color: #fff; outline: none; font-size: 14px;
         }
         .auth-box button {
-            padding: 12px; border-radius: 6px; border: none; background: #3b82f6;
+            padding: 10px; border-radius: 6px; border: none; background: #3b82f6;
             color: #fff; font-weight: bold; cursor: pointer; transition: background 0.2s;
         }
         .auth-box button:hover { background: #2563eb; }
-        .auth-toggle { text-align: center; font-size: 13px; color: #94a3b8; cursor: pointer; margin-top: 5px; }
+        .auth-toggle { text-align: center; font-size: 12px; color: #94a3b8; cursor: pointer; margin-top: 3px; }
         .auth-toggle:hover { color: #38bdf8; text-decoration: underline; }
 
         /* Контейнер гри та карта гексів */
@@ -100,21 +100,24 @@
             letter-spacing: 0.5px;
         }
 
-        /* Верхня панель користувача */
+        /* Адаптивна верхня панель користувача */
         #user-bar {
-            position: absolute; top: 15px; left: 15px; background: rgba(30, 41, 59, 0.95);
-            padding: 10px 18px; border-radius: 10px; border: 1px solid #334155;
-            display: flex; gap: 12px; align-items: center; z-index: 500;
+            position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(30, 41, 59, 0.95);
+            padding: 8px 12px; border-radius: 10px; border: 1px solid #334155;
+            display: flex; justify-content: space-between; align-items: center; z-index: 500;
             box-shadow: 0 4px 15px rgba(0,0,0,0.4); backdrop-filter: blur(5px);
+            font-size: 13px;
         }
+        .user-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .gold-display {
             background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b;
-            padding: 4px 10px; border-radius: 6px; font-weight: bold; color: #fbbf24;
-            display: flex; align-items: center; gap: 6px; font-size: 13px;
+            padding: 3px 8px; border-radius: 6px; font-weight: bold; color: #fbbf24;
+            display: flex; align-items: center; gap: 4px; font-size: 12px;
         }
+        .user-actions { display: flex; gap: 6px; align-items: center; }
         #user-bar button {
-            padding: 6px 12px; border-radius: 6px; border: none; background: #ef4444;
-            color: #fff; font-weight: bold; cursor: pointer; font-size: 12px;
+            padding: 5px 10px; border-radius: 6px; border: none; background: #ef4444;
+            color: #fff; font-weight: bold; cursor: pointer; font-size: 11px;
             transition: background 0.2s;
         }
         #user-bar button:hover { background: #dc2626; }
@@ -122,18 +125,16 @@
         .btn-wipe {
             background: #b91c1c !important;
             border: 1px solid #f87171 !important;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
         }
-        .btn-wipe:hover { background: #991b1b !important; }
 
-        /* Кнопки Zoom */
+        /* Кнопки Zoom (зручно розташовані знизу справа для мобільних) */
         #zoom-controls {
-            position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
+            position: absolute; right: 15px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
         }
         .zoom-btn {
-            width: 42px; height: 42px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155;
-            color: #fff; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer;
-            display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            width: 44px; height: 44px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155;
+            color: #fff; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer;
+            display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             transition: background 0.2s;
         }
         .zoom-btn:hover { background: #3b82f6; }
@@ -141,38 +142,37 @@
         /* Модальні вікна */
         .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 25px;
-            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px;
+            background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px;
+            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 90%; max-width: 320px;
         }
-        .modal h3 { margin-bottom: 10px; color: #38bdf8; }
-        .modal p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
+        .modal h3 { margin-bottom: 8px; color: #38bdf8; font-size: 18px; }
+        .modal p { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
         
-        .color-picker { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .color-picker { display: flex; justify-content: center; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
         .color-option {
-            width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+            width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
             border: 2px solid transparent; transition: transform 0.2s, opacity 0.2s;
             position: relative;
         }
-        .color-option:hover:not(.disabled) { transform: scale(1.15); }
-        .color-option.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 10px #fff; }
+        .color-option.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 8px #fff; }
         .color-option.disabled {
             opacity: 0.25; cursor: not-allowed; filter: grayscale(80%);
         }
         .color-option.disabled::after {
             content: "✖"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #ef4444; font-size: 16px; font-weight: bold; text-shadow: 0 0 3px #000;
+            color: #ef4444; font-size: 14px; font-weight: bold;
         }
 
-        .modal-btns { display: flex; gap: 10px; justify-content: center; }
+        .modal-btns { display: flex; gap: 8px; justify-content: center; }
         .modal-btns button {
-            padding: 10px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold;
+            padding: 9px 15px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px;
         }
         .btn-confirm { background: #10b981; color: #fff; }
         .btn-cancel { background: #64748b; color: #fff; }
         
         .upgrade-info {
-            background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 15px;
-            border: 1px solid #334155; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 6px;
+            background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px;
+            border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 5px;
         }
     </style>
 </head>
@@ -181,8 +181,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.8...</h2>
-            <p id="loader-desc">Активація унікальних кольорів баз</p>
+            <h2 id="loader-status">Завантаження v2.9...</h2>
+            <p id="loader-desc">Оптимізація інтерфейсу для мобільних пристроїв</p>
         </div>
     </div>
 
@@ -204,10 +204,14 @@
     <!-- Основне ігрове поле -->
     <div id="game-container">
         <div id="user-bar">
-            <span>Гравець: <b id="current-user-display" style="color: #38bdf8;">---</b></span>
-            <div class="gold-display">💰 Золото: <span id="user-gold-display">0</span> <small style="opacity: 0.8; font-size: 10px;" id="income-speed-text">(+1/хв)</small></div>
-            <button id="admin-wipe-btn" class="btn-wipe" style="display: none;" onclick="triggerAdminWipe()">💥 Вайп Сезону</button>
-            <button onclick="logout()">Вийти</button>
+            <div class="user-left">
+                <span><b id="current-user-display" style="color: #38bdf8;">---</b></span>
+                <div class="gold-display">💰 <span id="user-gold-display">0</span> <small style="opacity: 0.8;" id="income-speed-text">(+1/хв)</small></div>
+            </div>
+            <div class="user-actions">
+                <button id="admin-wipe-btn" class="btn-wipe" style="display: none;" onclick="triggerAdminWipe()">💥 Вайп</button>
+                <button onclick="logout()">Вийти</button>
+            </div>
         </div>
 
         <div id="zoom-controls">
@@ -223,10 +227,10 @@
         </div>
     </div>
 
-    <!-- Меню заснування бази з вибором унікальних кольорів -->
+    <!-- Меню заснування бази -->
     <div id="base-modal" class="modal">
         <h3>Заснувати базу</h3>
-        <p>Оберіть геральдичний колір (зайняті недоступні):</p>
+        <p>Оберіть унікальний колір прапора:</p>
         <div class="color-picker" id="color-picker-container">
             <div class="color-option" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #10b981;" data-color="#10b981" onclick="selectColor(this)"></div>
@@ -248,7 +252,7 @@
         <h3>🏰 Ратуша</h3>
         <div class="upgrade-info" id="townhall-info"></div>
         <div class="modal-btns">
-            <button class="btn-confirm" id="upgrade-btn" onclick="upgradeTownHall()">Прокачати ратушу</button>
+            <button class="btn-confirm" id="upgrade-btn" onclick="upgradeTownHall()">Прокачати</button>
             <button class="btn-cancel" onclick="closeTownHallModal()">Закрити</button>
         </div>
     </div>
@@ -275,7 +279,7 @@
 
         const ADMIN_USERNAME = "admin"; 
 
-        const CURRENT_VERSION = "2.8";
+        const CURRENT_VERSION = "2.9";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
@@ -289,7 +293,7 @@
         let hexWorldData = {};
         let incomeInterval = null;
 
-        let scale = 0.6;
+        let scale = 0.5;
         let panX = 0;
         let panY = 0;
         let isDragging = false;
@@ -310,8 +314,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.8!";
-            document.getElementById('loader-desc').innerText = "Оновлення унікальності кольорів...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.9!";
+            document.getElementById('loader-desc').innerText = "Оптимізація тач-управління та UI...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -588,15 +592,20 @@
             const viewport = document.getElementById('hex-grid-viewport');
             const svg = document.getElementById('hex-svg');
             
-            scale = 0.5;
+            scale = 0.45;
             panX = (viewport.clientWidth - svg.getAttribute('width') * scale) / 2;
             panY = (viewport.clientHeight - svg.getAttribute('height') * scale) / 2;
             updateTransform();
         }
 
+        // ==========================================
+        // ІДЕАЛЬНЕ УПРАВЛІННЯ (ПК та Мобільні)
+        // ==========================================
+
         function setupViewportControls() {
             const viewport = document.getElementById('hex-grid-viewport');
 
+            // Wheel zoom (ПК)
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
@@ -613,6 +622,7 @@
                 updateTransform();
             }, { passive: false });
 
+            // Мишка (Drag)
             viewport.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 isClick = true;
@@ -636,8 +646,11 @@
 
             window.addEventListener('mouseup', () => { isDragging = false; });
 
-            let initialTouchDistance = 0;
-            let initialScale = scale;
+            // Тач-управління (Один палець - перетягування, Два пальці - Pinch Zoom)
+            let touchStartDist = 0;
+            let startScale = scale;
+            let startPanX = panX;
+            let startPanY = panY;
 
             viewport.addEventListener('touchstart', (e) => {
                 if (e.touches.length === 1) {
@@ -647,33 +660,42 @@
                     dragStartY = e.touches[0].clientY - panY;
                 } else if (e.touches.length === 2) {
                     isDragging = false;
-                    initialTouchDistance = Math.hypot(
+                    isClick = false;
+                    touchStartDist = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
-                    initialScale = scale;
+                    startScale = scale;
                 }
-            });
+            }, { passive: true });
 
             viewport.addEventListener('touchmove', (e) => {
                 if (e.touches.length === 1 && isDragging) {
                     panX = e.touches[0].clientX - dragStartX;
                     panY = e.touches[0].clientY - dragStartY;
-                    isClick = false;
+                    if (Math.abs(panX - startPanX) > 5 || Math.abs(panY - startPanY) > 5) {
+                        isClick = false;
+                    }
                     updateTransform();
-                } else if (e.touches.length === 2) {
-                    const dist = Math.hypot(
+                } else if (e.touches.length === 2 && touchStartDist > 0) {
+                    const currentDist = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
-                    if (initialTouchDistance > 0) {
-                        scale = Math.min(Math.max(0.15, initialScale * (dist / initialTouchDistance)), 2.5);
-                        updateTransform();
-                    }
+                    const zoomFactor = currentDist / touchStartDist;
+                    scale = Math.min(Math.max(0.15, startScale * zoomFactor), 2.5);
+                    updateTransform();
+                }
+            }, { passive: true });
+
+            viewport.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) {
+                    touchStartDist = 0;
+                }
+                if (e.touches.length === 0) {
+                    isDragging = false;
                 }
             });
-
-            viewport.addEventListener('touchend', () => { isDragging = false; });
         }
 
         function getNeighbors(r, c) {
@@ -741,7 +763,6 @@
         }
 
         function openBaseModal() {
-            // Отримуємо списки вже використовуваних кольорів іншими гравцями
             const takenColors = new Set();
             Object.values(hexWorldData).forEach(h => {
                 if (h.color) takenColors.add(h.color.toLowerCase());
@@ -766,7 +787,7 @@
             });
 
             if (!firstAvailableSelected) {
-                alert("Усі унікальні кольори прапорів вже зайняті іншими гравцями на цій карті!");
+                alert("Усі унікальні кольори прапорів вже зайняті іншими гравцями!");
                 return;
             }
 
@@ -789,21 +810,15 @@
         }
 
         window.confirmBuildBase = async function() {
-            if (!selectedHexCoords) return;
+            if (!selectedHexCoords || !selectedColor) return;
 
-            if (!selectedColor) {
-                alert("Будь ласка, виберіть доступний колір!");
-                return;
-            }
-
-            // Перевірка на випадок, якщо хтось забіг наперед
             const takenColors = new Set();
             Object.values(hexWorldData).forEach(h => {
                 if (h.color) takenColors.add(h.color.toLowerCase());
             });
 
             if (takenColors.has(selectedColor.toLowerCase())) {
-                alert("Цей колір щойно забрав інший гравець! Оберіть інший колір.");
+                alert("Цей колір щойно забрав інший гравець!");
                 openBaseModal();
                 return;
             }
@@ -813,7 +828,6 @@
             const neighbors = getNeighbors(r, c);
 
             const updates = {};
-            
             updates[coreKey] = {
                 owner: currentUsername,
                 color: selectedColor,
