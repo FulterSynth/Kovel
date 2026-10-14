@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.9.1</title>
+    <title>HexPolitics v2.9.2</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -33,7 +33,7 @@
             background: #334155; padding: 25px; border-radius: 12px; width: 300px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 12px;
         }
-        .auth-box h2 { text-align: center; color: #fff; font-size: 20px; }
+        .auth-box h2 { text-align: center; color: #38bdf8; font-size: 22px; letter-spacing: 1px; }
         .auth-box input {
             padding: 10px; border-radius: 6px; border: 1px solid #475569;
             background: #1e293b; color: #fff; outline: none; font-size: 14px;
@@ -181,15 +181,15 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.9.1...</h2>
-            <p id="loader-desc">Виправлення центру масштабування на телефонах</p>
+            <h2 id="loader-status">HexPolitics v2.9.2</h2>
+            <p id="loader-desc">Виправлення тач-масштабування та АФК-доходів...</p>
         </div>
     </div>
 
     <!-- Авторизація -->
     <div id="auth-screen">
         <div class="auth-box">
-            <h2 id="auth-title">Вхід у гру</h2>
+            <h2>HexPolitics</h2>
             <input type="text" id="username" placeholder="Логін">
             <input type="password" id="password" placeholder="Пароль">
             <div id="new-password-container" style="display: none;">
@@ -278,8 +278,8 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
+        const CURRENT_VERSION = "2.9.2";
 
-        const CURRENT_VERSION = "2.9.1";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
@@ -293,7 +293,7 @@
         let hexWorldData = {};
         let incomeInterval = null;
 
-        let scale = 0.5;
+        let scale = 0.45;
         let panX = 0;
         let panY = 0;
         let isDragging = false;
@@ -314,8 +314,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.9.1!";
-            document.getElementById('loader-desc').innerText = "Виправлення центру масштабування...";
+            document.getElementById('loader-status').innerText = "HexPolitics v2.9.2";
+            document.getElementById('loader-desc').innerText = "Оновлення коду та стабілізація...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -335,28 +335,24 @@
 
         window.switchAuthMode = function(targetMode) {
             mode = targetMode;
-            const title = document.getElementById('auth-title');
             const btn = document.getElementById('auth-btn');
             const toggleMode = document.getElementById('auth-toggle-mode');
             const togglePass = document.getElementById('auth-toggle-pass');
             const newPassContainer = document.getElementById('new-password-container');
 
             if (mode === 'login') {
-                title.innerText = 'Вхід у гру';
                 btn.innerText = 'Увійти';
                 toggleMode.innerText = 'Ще немає акаунта? Зареєструватись';
                 toggleMode.setAttribute('onclick', "switchAuthMode('register')");
                 togglePass.style.display = 'block';
                 newPassContainer.style.display = 'none';
             } else if (mode === 'register') {
-                title.innerText = 'Реєстрація';
                 btn.innerText = 'Створити акаунт';
                 toggleMode.innerText = 'Вже є акаунт? Увійти';
                 toggleMode.setAttribute('onclick', "switchAuthMode('login')");
                 togglePass.style.display = 'none';
                 newPassContainer.style.display = 'none';
             } else if (mode === 'change-pass') {
-                title.innerText = 'Зміна пароля';
                 btn.innerText = 'Змінити пароль';
                 toggleMode.innerText = 'Повернутися до входу';
                 toggleMode.setAttribute('onclick', "switchAuthMode('login')");
@@ -386,7 +382,8 @@
                     await set(ref(db, 'users/' + user), { 
                         password: pass,
                         gold: 0,
-                        townHallLevel: 1
+                        townHallLevel: 1,
+                        lastOnline: Date.now()
                     });
                     alert('Акаунт успішно створено!');
                     switchAuthMode('login');
@@ -400,13 +397,13 @@
                     
                     currentUsername = user;
                     const userData = snapshot.val();
-                    userGold = userData.gold || 0;
-                    userTownHallLevel = userData.townHallLevel || 1;
+                    
+                    // Перерахунок АФК золота за час відсутності
+                    await processOfflineProgress(user, userData);
 
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'block';
                     document.getElementById('current-user-display').innerText = user;
-                    document.getElementById('user-gold-display').innerText = Math.floor(userGold);
                     
                     if (currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
                         document.getElementById('admin-wipe-btn').style.display = 'inline-block';
@@ -414,7 +411,6 @@
                         document.getElementById('admin-wipe-btn').style.display = 'none';
                     }
 
-                    updateIncomeDisplay();
                     initHexGrid();
                     setupViewportControls();
                     listenToWorldData();
@@ -452,8 +448,37 @@
             switchAuthMode('login');
         }
 
+        async function processOfflineProgress(username, userData) {
+            const now = Date.now();
+            const lastTime = userData.lastOnline || now;
+            const diffMinutes = (now - lastTime) / 60000;
+
+            let currentGold = userData.gold || 0;
+            const lvl = userData.townHallLevel || 1;
+            const incomePerMin = getIncomeByLevel(lvl);
+
+            // Якщо пройшло більше 0.5 хвилини і є база
+            if (diffMinutes > 0.5) {
+                // Перевіряємо чи у гравця є заснована база на карті
+                const worldSnap = await get(ref(db, 'world_hexes'));
+                if (worldSnap.exists()) {
+                    const world = worldSnap.val();
+                    const hasBase = Object.values(world).some(h => h.owner === username && h.type === 'core');
+                    if (hasBase) {
+                        const earnedGold = diffMinutes * incomePerMin;
+                        currentGold += earnedGold;
+                    }
+                }
+            }
+
+            await update(ref(db, `users/${username}`), {
+                gold: currentGold,
+                lastOnline: now
+            });
+        }
+
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВИ ВПЕВНЕНІ, ЩО ХОЧЕТЕ ВАЙПНУТИ СЕЗОН?\n\nЦе повністю очистить карту і скине золото й рівні всіх гравців до початкових, але збереже всі акаунти!");
+            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту і скине золото та рівні всіх гравців до базових, зберігаючи акаунти.");
             if (!confirmWipe) return;
 
             try {
@@ -470,9 +495,9 @@
                     await update(ref(db), updates);
                 }
 
-                alert("💥 Вайп сезону успішно проведено! Карта і всі ресурси обнулені.");
+                alert("💥 Сезон успішно перезапущено!");
             } catch (err) {
-                alert("Помилка під час проведення вайпу: " + err.message);
+                alert("Помилка вайпу: " + err.message);
             }
         }
 
@@ -516,10 +541,13 @@
                             const incomePerMin = getIncomeByLevel(lvl);
                             const addAmount = incomePerMin / 3;
 
-                            await update(userRef, { gold: currentG + addAmount });
+                            await update(userRef, { 
+                                gold: currentG + addAmount,
+                                lastOnline: Date.now()
+                            });
                         }
                     } catch (err) {
-                        console.error('Помилка нарахування доходів:', err);
+                        console.error('Помилка доходу:', err);
                     }
                 }
             }, 20000); 
@@ -613,13 +641,12 @@
         }
 
         // ==========================================
-        // ІДЕАЛЬНЕ ЗУМ-МАСШТАБУВАННЯ ДЛЯ ТЕЛЕФОНІВ (PINCH ZOOM)
+        // ВИПРАВЛЕНЕ ТАЧ-МАСШТАБУВАННЯ БЕЗ ЗСУВУ КАРТИ
         // ==========================================
 
         function setupViewportControls() {
             const viewport = document.getElementById('hex-grid-viewport');
 
-            // Wheel zoom (ПК)
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
@@ -636,7 +663,6 @@
                 updateTransform();
             }, { passive: false });
 
-            // Мишка (Drag)
             viewport.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 isClick = true;
@@ -660,7 +686,6 @@
 
             window.addEventListener('mouseup', () => { isDragging = false; });
 
-            // Тач-управління (Фікс центру масштабування та зсуву)
             let touchStartDist = 0;
             let startScale = scale;
             let startPanX = panX;
@@ -679,7 +704,6 @@
                     isClick = false;
                     
                     const rect = viewport.getBoundingClientRect();
-                    // Центр між двома пальцями для коректного масштабування на телефоні
                     pinchCenterX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
                     pinchCenterY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
 
@@ -709,7 +733,6 @@
                     const zoomFactor = currentDist / touchStartDist;
                     const newScale = Math.min(Math.max(0.15, startScale * zoomFactor), 2.5);
 
-                    // Масштабування відносно точки торкання пальців (запобігає зсуву в правий верх)
                     panX = pinchCenterX - (pinchCenterX - startPanX) * (newScale / startScale);
                     panY = pinchCenterY - (pinchCenterY - startPanY) * (newScale / startScale);
                     
@@ -719,12 +742,8 @@
             }, { passive: true });
 
             viewport.addEventListener('touchend', (e) => {
-                if (e.touches.length < 2) {
-                    touchStartDist = 0;
-                }
-                if (e.touches.length === 0) {
-                    isDragging = false;
-                }
+                if (e.touches.length < 2) touchStartDist = 0;
+                if (e.touches.length === 0) isDragging = false;
             });
         }
 
@@ -874,7 +893,8 @@
             });
 
             try {
-                await update(ref(db, 'world_hexes'), updates);
+                updates[`users/${currentUsername}/lastOnline`] = Date.now();
+                await update(ref(db), updates);
                 closeBaseModal();
             } catch (err) {
                 alert('Помилка при збереженні бази: ' + err.message);
@@ -941,6 +961,7 @@
                 const updates = {};
                 updates[`users/${currentUsername}/gold`] = userGold - cost;
                 updates[`users/${currentUsername}/townHallLevel`] = nextLvl;
+                updates[`users/${currentUsername}/lastOnline`] = Date.now();
                 if (coreHexKey) {
                     updates[`world_hexes/${coreHexKey}/level`] = nextLvl;
                 }
