@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.6</title>
+    <title>КОВЕЛЬ: Стратегія v2.7</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
@@ -104,7 +104,7 @@
         #user-bar {
             position: absolute; top: 15px; left: 15px; background: rgba(30, 41, 59, 0.95);
             padding: 10px 18px; border-radius: 10px; border: 1px solid #334155;
-            display: flex; gap: 15px; align-items: center; z-index: 500;
+            display: flex; gap: 12px; align-items: center; z-index: 500;
             box-shadow: 0 4px 15px rgba(0,0,0,0.4); backdrop-filter: blur(5px);
         }
         .gold-display {
@@ -118,6 +118,13 @@
             transition: background 0.2s;
         }
         #user-bar button:hover { background: #dc2626; }
+
+        .btn-wipe {
+            background: #b91c1c !important;
+            border: 1px solid #f87171 !important;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+        .btn-wipe:hover { background: #991b1b !important; }
 
         /* Кнопки Zoom */
         #zoom-controls {
@@ -164,8 +171,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.6...</h2>
-            <p id="loader-desc">Оновлення рівнів ратуші та економіки (14/42 золота)</p>
+            <h2 id="loader-status">Завантаження v2.7...</h2>
+            <p id="loader-desc">Активація адмін-панелі та системи Вайпу Сезону</p>
         </div>
     </div>
 
@@ -189,6 +196,7 @@
         <div id="user-bar">
             <span>Гравець: <b id="current-user-display" style="color: #38bdf8;">---</b></span>
             <div class="gold-display">💰 Золото: <span id="user-gold-display">0</span> <small style="opacity: 0.8; font-size: 10px;" id="income-speed-text">(+1/хв)</small></div>
+            <button id="admin-wipe-btn" class="btn-wipe" style="display: none;" onclick="triggerAdminWipe()">💥 Вайп Сезону</button>
             <button onclick="logout()">Вийти</button>
         </div>
 
@@ -235,7 +243,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, child, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, child, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
         const firebaseConfig = {
@@ -253,7 +261,10 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "2.6";
+        // Вкажіть тут свій адмінський логін в грі!
+        const ADMIN_USERNAME = "admin"; 
+
+        const CURRENT_VERSION = "2.7";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
@@ -288,8 +299,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.6!";
-            document.getElementById('loader-desc').innerText = "Завантаження нових характеристик ратуші...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.7!";
+            document.getElementById('loader-desc').innerText = "Оновлення гри та адмін-інструментів...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -381,8 +392,15 @@
                     document.getElementById('game-container').style.display = 'block';
                     document.getElementById('current-user-display').innerText = user;
                     document.getElementById('user-gold-display').innerText = Math.floor(userGold);
-                    updateIncomeDisplay();
+                    
+                    // Показ адмінської кнопки вайпу тільки для розробника
+                    if (currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+                        document.getElementById('admin-wipe-btn').style.display = 'inline-block';
+                    } else {
+                        document.getElementById('admin-wipe-btn').style.display = 'none';
+                    }
 
+                    updateIncomeDisplay();
                     initHexGrid();
                     setupViewportControls();
                     listenToWorldData();
@@ -421,13 +439,43 @@
         }
 
         // ==========================================
+        // АДМІН-ФУНКЦІЯ: ВАЙП СЕЗОНУ
+        // ==========================================
+
+        window.triggerAdminWipe = async function() {
+            const confirmWipe = confirm("⚠️ ВИ ВПЕВНЕНІ, ЩО ХОЧЕТЕ ВАЙПНУТИ СЕЗОН?\n\nЦе повністю очистить всю карту і скине золото й рівні всіх гравців до початкових, але збереже всі акаунти!");
+            if (!confirmWipe) return;
+
+            try {
+                // 1. Очищення карти гексів
+                await remove(ref(db, 'world_hexes'));
+
+                // 2. Скидання золота та рівнів у всіх гравців
+                const usersSnapshot = await get(ref(db, 'users'));
+                if (usersSnapshot.exists()) {
+                    const usersData = usersSnapshot.val();
+                    const updates = {};
+                    Object.keys(usersData).forEach(u => {
+                        updates[`users/${u}/gold`] = 0;
+                        updates[`users/${u}/townHallLevel`] = 1;
+                    });
+                    await update(ref(db), updates);
+                }
+
+                alert("💥 Вайп сезону успішно проведено! Карта і всі ресурси обнулені.");
+            } catch (err) {
+                alert("Помилка під час проведення вайпу: " + err.message);
+            }
+        }
+
+        // ==========================================
         // ЕКОНОМІКА ТА ДОХОДИ РАТУШІ
         // ==========================================
 
         function getIncomeByLevel(level) {
             if (level === 2) return 2;
             if (level === 3) return 3;
-            return 1; // Рівень 1
+            return 1;
         }
 
         function updateIncomeDisplay() {
@@ -739,10 +787,6 @@
             }
         }
 
-        // ==========================================
-        // МЕНЮ ТА АПГРЕЙД РАТУШІ
-        // ==========================================
-
         function openTownHallModal() {
             const modal = document.getElementById('townhall-modal');
             const infoContainer = document.getElementById('townhall-info');
@@ -801,7 +845,6 @@
             }
 
             try {
-                // Знаходимо гексагон бази у базі даних та оновлюємо рівень
                 let coreHexKey = null;
                 Object.keys(hexWorldData).forEach(k => {
                     if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') {
@@ -862,7 +905,6 @@
 
                         const center = hexToPixel(parseInt(r), parseInt(c));
                         
-                        // 1. Іконка Замку
                         const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         castleText.setAttribute("x", center.x);
                         castleText.setAttribute("y", center.y + 2);
@@ -870,7 +912,6 @@
                         castleText.textContent = "🏰";
                         svg.appendChild(castleText);
 
-                        // 2. Підпис імені та РІВНЯ ратуші над Замком (👑 Нік [Lvl X])
                         const lvl = hexData.level || 1;
                         const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
                         const labelY = center.y - 28;
