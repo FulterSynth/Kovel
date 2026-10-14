@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.2</title>
+    <title>HexPolitics v5.3</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.2</h2>
-            <p id="loader-desc">Налаштування ферм (+1) та бонусів вітряка (+2 біля вітряка)...</p>
+            <h2 id="loader-status">HexPolitics v5.3</h2>
+            <p id="loader-desc">Виправлення податків для стартових клітинок...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "5.2";
+        const CURRENT_VERSION = "5.3";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.2";
-            document.getElementById('loader-desc').innerText = "Оновлення балансу: ферма (+1), вітряк (+2 біля нього)...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.3";
+            document.getElementById('loader-desc').innerText = "Звільнення стартових клітинок від податків...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -475,7 +475,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v5.2 — Ферма дає +1, вітряк додає +1 до сусідніх)
+        // ЕКОНОМІКА (v5.3 — Податок виключно за реально куплені гекси та мости)
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -490,7 +490,9 @@
                         baseLevel = h.level || 1;
                     }
                     
-                    if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge' || (h.type !== 'core' && h.type !== 'starter')) {
+                    // ЗАЛІЗНЕ ПРАВИЛО: податок -3 йде ТІЛЬКИ за придбані території (isPurchased = true) або мости. 
+                    // Стартові гекси навколо бази завжди безкоштовні!
+                    if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') {
                         purchasedTaxes += 3; 
                     }
                     
@@ -1127,7 +1129,7 @@
                 <div class="info-card">
                     <b>Переправа через ущелину:</b><br>
                     💰 <b>Ціна мосту:</b> 30 золота<br>
-                    <span class="bad">⚠️ Податок: -3 золота/хв</span> (як за звичайний гекс).<br><br>
+                    <span class="bad">⚠️ Податок: -3 золота/хв</span> (як за куплений гекс).<br><br>
                     <span class="warn">💡 Ефект:</span> Дозволяє перекидати переправу довжиною до 2 клітинок!
                 </div>
             `;
@@ -1182,7 +1184,7 @@
                         <b>Купівля нової території:</b><br>
                         💰 <b>Ціна:</b> 10 золота<br>
                         <span class="bad">⚠️ Податок: -3 золота/хв</span> за кожен новий гекс.<br><br>
-                        <span class="warn">💡 Порада:</span> Зводьте ферми та вітряки групами, щоб перекривати податки!
+                        <span class="warn">💡 Порада:</span> Стартові клітинки безкоштовні, а за куплені землі доведеться сплачувати податок!
                     </div>
                 `;
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
@@ -1270,7 +1272,8 @@
                 if (h.owner === currentUsername && h.color) myColor = h.color;
             });
 
-            const wasPurchased = currentHex ? (currentHex.isPurchased === true || currentHex.type === 'purchased') : true;
+            // Зберігаємо оригінальний статус купівлі (якщо гекс був куплений — залишається купшеним, якщо стартовий — залишається стартовим)
+            const wasPurchased = currentHex ? (currentHex.isPurchased === true || currentHex.type === 'purchased') : false;
 
             const updates = {};
             updates[`world_hexes/${key}`] = {
