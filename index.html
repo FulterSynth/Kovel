@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.4</title>
+    <title>HexPolitics v4.6</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -72,8 +72,8 @@
         
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
-        polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; cursor: not-allowed; }
-        polygon.hex.chasm-hex:hover { stroke: #030712 !important; fill-opacity: 0.95 !important; }
+        polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
+        polygon.hex.bridge-hex { stroke: #fbbf24; stroke-width: 2; fill-opacity: 0.75; }
 
         /* Іконки на гексах */
         .map-icon {
@@ -172,6 +172,7 @@
         .btn-cancel { background: #64748b; color: #fff; }
         .btn-farm { background: #f59e0b; color: #fff; }
         .btn-mill { background: #06b6d4; color: #fff; }
+        .btn-bridge { background: #d97706; color: #fff; }
         .btn-demolish { background: #dc2626; color: #fff; }
         
         .upgrade-info {
@@ -194,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.4</h2>
-            <p id="loader-desc">Генерація процедурного ландшафту та прірв...</p>
+            <h2 id="loader-status">HexPolitics v4.6</h2>
+            <p id="loader-desc">Оновлення ціни мосту (30 💰) та векторної графіки...</p>
         </div>
     </div>
 
@@ -301,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.4";
+        const CURRENT_VERSION = "4.6";
 
         let mode = "login";
         let currentUsername = "";
@@ -337,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.4";
-            document.getElementById('loader-desc').innerText = "Генерація ландшафту та прірв...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.6";
+            document.getElementById('loader-desc').innerText = "Оновлення графіки мостів та економіки...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -488,8 +489,8 @@
                     if (h.type === 'core') {
                         baseLevel = h.level || 1;
                     }
-                    if (h.type === 'purchased') {
-                        purchasedTaxes += 5;
+                    if (h.type === 'purchased' || h.type === 'bridge') {
+                        purchasedTaxes += 5; // Міст забирає -5/хв, як і звичайна клітинка
                     }
                     if (h.type === 'farm') {
                         farmsCount += 1;
@@ -549,10 +550,8 @@
             });
         }
 
-        // Процедурна генерація прірв (~30% карти)
         function generateChasms() {
             let chasms = {};
-            // Крок 1: Початкове заповнення білим шумом (~32%)
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
                     if (Math.random() < 0.32) {
@@ -560,7 +559,6 @@
                     }
                 }
             }
-            // Крок 2: Згладжування клітинними автоматами (створює кластери/масиви)
             for (let step = 0; step < 2; step++) {
                 let newChasms = { ...chasms };
                 for (let r = 0; r < GRID_ROWS; r++) {
@@ -584,11 +582,10 @@
         }
 
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий процедурний ландшафт і скине золото гравців.");
+            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий ландшафт з прірвами та скине золото гравців.");
             if (!confirmWipe) return;
 
             try {
-                // Генеруємо новий ландшафт з прірвами
                 const newChasms = generateChasms();
                 await set(ref(db, 'world_hexes'), newChasms);
 
@@ -873,14 +870,15 @@
 
         function checkDistanceValid(targetR, targetC) {
             const targetKey = `${targetR}_${targetC}`;
-            if (hexWorldData[targetKey]) return false;
+            const hex = hexWorldData[targetKey];
+            if (hex && hex.type !== 'starter') return false;
 
             const neighbors1 = getNeighbors(targetR, targetC);
             for (let n1 of neighbors1) {
-                if (hexWorldData[n1.key]) return false;
+                if (hexWorldData[n1.key] && hexWorldData[n1.key].type !== 'chasm' && hexWorldData[n1.key].type !== 'starter') return false;
                 const neighbors2 = getNeighbors(n1.r, n1.c);
                 for (let n2 of neighbors2) {
-                    if (hexWorldData[n2.key]) return false;
+                    if (hexWorldData[n2.key] && hexWorldData[n2.key].type !== 'chasm' && hexWorldData[n2.key].type !== 'starter') return false;
                 }
             }
             return true;
@@ -889,30 +887,29 @@
         function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
-
-            // Якщо це непрохідна прірва — нічого не робимо
-            if (hexInfo && hexInfo.type === 'chasm') {
-                return;
-            }
-
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
 
-            if (hexInfo) {
-                if (hexInfo.owner === currentUsername) {
-                    if (hexInfo.type === 'core') {
-                        openTownHallModal();
-                    } else {
-                        openTerritoryModal(r, c, hexInfo);
-                    }
+            if (hexInfo && hexInfo.owner === currentUsername) {
+                if (hexInfo.type === 'core') {
+                    openTownHallModal();
                 } else {
-                    alert(`Ця територія належить володарю: ${hexInfo.owner}`);
+                    openTerritoryModal(r, c, hexInfo);
                 }
                 return;
             }
 
+            if (hexInfo && hexInfo.owner && hexInfo.owner !== currentUsername && hexInfo.type !== 'chasm') {
+                alert(`Ця територія належить володарю: ${hexInfo.owner}`);
+                return;
+            }
+
             if (!userHasBaseOnMap) {
+                if (hexInfo && hexInfo.type === 'chasm') {
+                    alert('Не можна засновувати базу всередині прірви!');
+                    return;
+                }
                 if (!checkDistanceValid(r, c)) {
-                    alert('Занадто близько до території іншого гравця або в прірві! Потрібен вільний сухий простір.');
+                    alert('Занадто близько до території іншого гравця!');
                     return;
                 }
                 selectedHexCoords = { r, c };
@@ -921,15 +918,23 @@
             }
 
             const neighbors = getNeighbors(r, c);
-            const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername);
+            const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
 
             if (!isAdjacentToMyTerritory) {
-                alert('Ви можете купувати лише гекси, які межують з вашою територією!');
+                alert('Ви можете взаємодіяти лише з територіями, що межують з вашими землями!');
                 return;
             }
 
-            selectedHexCoords = { r, c };
-            openTerritoryModal(r, c, null);
+            if (hexInfo && hexInfo.type === 'chasm') {
+                selectedHexCoords = { r, c };
+                openBridgeModal(r, c);
+                return;
+            }
+
+            if (!hexInfo || hexInfo.type === 'starter') {
+                selectedHexCoords = { r, c };
+                openTerritoryModal(r, c, null);
+            }
         }
 
         // ==========================================
@@ -995,8 +1000,7 @@
             };
 
             neighbors.forEach(n => {
-                // Не затираємо прірви навколо бази
-                if (!hexWorldData[n.key]) {
+                if (!hexWorldData[n.key] || hexWorldData[n.key].type === 'starter') {
                     updates[`world_hexes/${n.key}`] = {
                         owner: currentUsername,
                         color: selectedColor,
@@ -1076,6 +1080,55 @@
             }
         }
 
+        function openBridgeModal(r, c) {
+            const modal = document.getElementById('territory-modal');
+            const title = document.getElementById('territory-title');
+            const cardContainer = document.getElementById('territory-card-container');
+            const buttonsContainer = document.getElementById('territory-buttons');
+
+            title.innerText = "🌉 Побудувати міст";
+            cardContainer.innerHTML = `
+                <div class="info-card">
+                    <b>Переправа через прірву:</b><br>
+                    💰 <b>Ціна мосту:</b> 30 золота<br>
+                    <span class="bad">⚠️ Податок: -5 золота/хв</span> (як за звичайний гекс).<br><br>
+                    <span class="warn">💡 Ефект:</span> З'єднує ваші землі з ізольованими островами!
+                </div>
+            `;
+            buttonsContainer.innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати міст (30 💰)</button>`;
+            modal.style.display = 'block';
+        }
+
+        window.buildBridge = async function(r, c) {
+            if (userGold < 30) {
+                alert("Недостатньо золота! Потрібно 30 золота.");
+                return;
+            }
+
+            const key = `${r}_${c}`;
+            let myColor = "#3b82f6";
+            Object.values(hexWorldData).forEach(h => {
+                if (h.owner === currentUsername && h.color) myColor = h.color;
+            });
+
+            const updates = {};
+            updates[`world_hexes/${key}`] = {
+                owner: currentUsername,
+                color: myColor,
+                type: 'bridge'
+            };
+            updates[`users/${currentUsername}/gold`] = userGold - 30;
+            updates[`users/${currentUsername}/lastOnline`] = Date.now();
+
+            try {
+                await update(ref(db), updates);
+                closeTerritoryModal();
+                alert("Міст успішно зведено! Тепер у вас є вихід до нових земель.");
+            } catch (err) {
+                alert("Помилка будівництва мосту: " + err.message);
+            }
+        }
+
         function openTerritoryModal(r, c, hexInfo) {
             const modal = document.getElementById('territory-modal');
             const title = document.getElementById('territory-title');
@@ -1096,10 +1149,11 @@
                     </div>
                 `;
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
-            } else if (hexInfo.type === 'starter' || hexInfo.type === 'purchased') {
-                title.innerText = "🏗️ Будівництво";
+            } else if (hexInfo.type === 'starter' || hexInfo.type === 'purchased' || hexInfo.type === 'bridge') {
+                title.innerText = hexInfo.type === 'bridge' ? "🌉 Дерев'яний міст" : "🏗️ Будівництво";
                 cardHtml = `
                     <div class="info-card">
+                        ${hexInfo.type === 'bridge' ? '<b>Це інженерний міст.</b> На ньому не можна зводити будівлі, він слугує переправою.<br><br>' : ''}
                         <b>Доступні будівлі:</b><br><br>
                         🌾 <span class="good">Ферма (10 💰):</span><br>
                         • Приносить <span class="good">+1 золото/хв</span> до доходу.<br><br>
@@ -1143,7 +1197,7 @@
             const key = `${r}_${c}`;
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
-                if (h.owner === currentUsername) myColor = h.color;
+                if (h.owner === currentUsername && h.color) myColor = h.color;
             });
 
             const updates = {};
@@ -1174,7 +1228,7 @@
             const key = `${r}_${c}`;
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
-                if (h.owner === currentUsername) myColor = h.color;
+                if (h.owner === currentUsername && h.color) myColor = h.color;
             });
 
             const updates = {};
@@ -1198,7 +1252,7 @@
         window.demolishBuilding = async function(r, c) {
             const cost = 5; 
             if (userGold < cost) {
-                alert(`Недостатньо золота для знесення! Потрібно ${cost} золота.`);
+                alert(`Недостатньо золота для знесення! Потрібно 5 золота.`);
                 return;
             }
 
@@ -1236,6 +1290,39 @@
             });
         }
 
+        // Малювання чистого векторного мосту (SVG)
+        function renderBridgeVector(svg, center) {
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("class", "map-icon");
+
+            // Головні паралельні опори мосту
+            const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line1.setAttribute("x1", center.x - 12); line1.setAttribute("y1", center.y - 6);
+            line1.setAttribute("x2", center.x + 12); line1.setAttribute("y2", center.y - 6);
+            line1.setAttribute("stroke", "#78350f"); line1.setAttribute("stroke-width", "2.5");
+            line1.setAttribute("stroke-linecap", "round");
+
+            const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line2.setAttribute("x1", center.x - 12); line2.setAttribute("y1", center.y + 6);
+            line2.setAttribute("x2", center.x + 12); line2.setAttribute("y2", center.y + 6);
+            line2.setAttribute("stroke", "#78350f"); line2.setAttribute("stroke-width", "2.5");
+            line2.setAttribute("stroke-linecap", "round");
+
+            g.appendChild(line1);
+            g.appendChild(line2);
+
+            // Поперечні дошки мосту
+            for (let dx = -9; dx <= 9; dx += 4.5) {
+                const plank = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                plank.setAttribute("x1", center.x + dx); plank.setAttribute("y1", center.y - 7);
+                plank.setAttribute("x2", center.x + dx); plank.setAttribute("y2", center.y + 7);
+                plank.setAttribute("stroke", "#fef3c7"); plank.setAttribute("stroke-width", "1.8");
+                g.appendChild(plank);
+            }
+
+            svg.appendChild(g);
+        }
+
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             
@@ -1244,7 +1331,7 @@
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
-                el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex');
+                el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
             });
 
             Object.keys(hexWorldData).forEach(key => {
@@ -1274,6 +1361,10 @@
                             const lvl = hexData.level || 1;
                             const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
                             renderLabel(svg, center, labelContent);
+
+                        } else if (hexData.type === 'bridge') {
+                            polygon.classList.add('bridge-hex');
+                            renderBridgeVector(svg, center);
 
                         } else if (hexData.type === 'farm') {
                             polygon.classList.add('occupied-border');
