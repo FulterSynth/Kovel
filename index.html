@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v4.7</title>
+    <title>HexPolitics v4.8</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v4.7</h2>
-            <p id="loader-desc">Оновлення дальності мостів до 2 клітинок...</p>
+            <h2 id="loader-status">HexPolitics v4.8</h2>
+            <p id="loader-desc">Виправлення розрахунку податків для куплених гексів...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "4.7";
+        const CURRENT_VERSION = "4.8";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v4.7";
-            document.getElementById('loader-desc').innerText = "Оновлення механіки мостів до 2 клітинок...";
+            document.getElementById('loader-status').innerText = "HexPolitics v4.8";
+            document.getElementById('loader-desc').innerText = "Виправлення підрахунку податків...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -475,7 +475,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА
+        // ЕКОНОМІКА (v4.8)
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -489,9 +489,12 @@
                     if (h.type === 'core') {
                         baseLevel = h.level || 1;
                     }
-                    if (h.type === 'purchased' || h.type === 'bridge') {
+                    
+                    // Податок -5 за БУДЬ-ЯКИЙ гекс, який не є ратушею чи стартовим гексом навколо ратуші
+                    if (h.isPurchased || h.type === 'purchased' || h.type === 'bridge' || (h.type !== 'core' && h.type !== 'starter')) {
                         purchasedTaxes += 5; 
                     }
+                    
                     if (h.type === 'farm') {
                         farmsCount += 1;
                     }
@@ -868,11 +871,9 @@
             return neighbors;
         }
 
-        // Перевірка, чи клітинка прірви досяжна для мосту (межує з нашою землею напряму АБО через одну вільну прірву)
         function isBridgeAccessible(targetR, targetC) {
             const neighbors = getNeighbors(targetR, targetC);
             
-            // Варіант 1: Прямий сусід з нашою сухопутною територією (міст довжиною 1)
             for (let n of neighbors) {
                 const h = hexWorldData[n.key];
                 if (h && h.owner === currentUsername && h.type !== 'chasm') {
@@ -880,11 +881,8 @@
                 }
             }
 
-            // Варіант 2: Сусід через одну клітинку прірви (міст довжиною 2)
-            // Тобто проміжна клітинка теж має бути прірвою (або мостом гравця), а наступна — наша земля
             for (let n1 of neighbors) {
                 const h1 = hexWorldData[n1.key];
-                // Якщо проміжна клітинка - це прірва або вже наш міст
                 if (!h1 || h1.type === 'chasm' || (h1.owner === currentUsername && h1.type === 'bridge')) {
                     const subNeighbors = getNeighbors(n1.r, n1.c);
                     for (let n2 of subNeighbors) {
@@ -948,7 +946,6 @@
                 return;
             }
 
-            // Якщо клікнули на прірву — перевіряємо можливість побудувати міст (до 2 клітинок)
             if (hexInfo && hexInfo.type === 'chasm') {
                 if (!isBridgeAccessible(r, c)) {
                     alert('Занадто далеко від вашої території! Максимальна довжина мосту — 2 клітинки.');
@@ -959,7 +956,6 @@
                 return;
             }
 
-            // Перевірка сусідості для купівлі звичайного гекса
             const neighbors = getNeighbors(r, c);
             const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
 
@@ -1033,7 +1029,8 @@
                 owner: currentUsername,
                 color: selectedColor,
                 type: 'core',
-                level: 1
+                level: 1,
+                isPurchased: false
             };
 
             neighbors.forEach(n => {
@@ -1041,7 +1038,8 @@
                     updates[`world_hexes/${n.key}`] = {
                         owner: currentUsername,
                         color: selectedColor,
-                        type: 'starter'
+                        type: 'starter',
+                        isPurchased: false
                     };
                 }
             });
@@ -1152,7 +1150,8 @@
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: 'bridge'
+                type: 'bridge',
+                isPurchased: true
             };
             updates[`users/${currentUsername}/gold`] = userGold - 30;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1241,7 +1240,8 @@
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: 'purchased' 
+                type: 'purchased',
+                isPurchased: true
             };
             updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1263,16 +1263,20 @@
             }
 
             const key = `${r}_${c}`;
+            const currentHex = hexWorldData[key];
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
                 if (h.owner === currentUsername && h.color) myColor = h.color;
             });
 
+            const wasPurchased = currentHex ? (currentHex.isPurchased || currentHex.type === 'purchased') : true;
+
             const updates = {};
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: type
+                type: type,
+                isPurchased: wasPurchased
             };
             updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1297,14 +1301,16 @@
             const hexInfo = hexWorldData[key];
             if (!hexInfo) return;
 
-            const restoredType = hexInfo.type === 'farm' || hexInfo.type === 'mill' ? 'purchased' : 'starter';
+            const wasPurchased = hexInfo.isPurchased;
+            const restoredType = wasPurchased ? 'purchased' : 'starter';
             let myColor = hexInfo.color;
 
             const updates = {};
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: restoredType
+                type: restoredType,
+                isPurchased: wasPurchased
             };
             updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
