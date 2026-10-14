@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.1</title>
+    <title>HexPolitics v5.2</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -195,8 +195,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.1</h2>
-            <p id="loader-desc">Балансування доходів ферм (+3 золота/хв)...</p>
+            <h2 id="loader-status">HexPolitics v5.2</h2>
+            <p id="loader-desc">Налаштування ферм (+1) та бонусів вітряка (+2 біля вітряка)...</p>
         </div>
     </div>
 
@@ -302,7 +302,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "5.1";
+        const CURRENT_VERSION = "5.2";
 
         let mode = "login";
         let currentUsername = "";
@@ -338,8 +338,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.1";
-            document.getElementById('loader-desc').innerText = "Оновлення балансу ферм (+3 золота/хв)...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.2";
+            document.getElementById('loader-desc').innerText = "Оновлення балансу: ферма (+1), вітряк (+2 біля нього)...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -475,7 +475,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА (v5.1 — Ферма дає +3, податок -3)
+        // ЕКОНОМІКА (v5.2 — Ферма дає +1, вітряк додає +1 до сусідніх)
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -500,9 +500,10 @@
                 }
             });
 
-            // Ферма тепер дає +3 золота/хв, щоб повністю покривати податок -3 за гекс
-            let baseIncome = getIncomeByLevel(baseLevel) + (farmsCount * 3);
+            // Базова ферма дає +1
+            let baseIncome = getIncomeByLevel(baseLevel) + farmsCount;
 
+            // Бонус вітряка: +1 за кожну сусідню ферму (разом виходить +2 для ферми біля вітряка)
             Object.keys(worldHexes).forEach(key => {
                 const h = worldHexes[key];
                 if (h.owner === username && h.type === 'mill') {
@@ -1181,7 +1182,7 @@
                         <b>Купівля нової території:</b><br>
                         💰 <b>Ціна:</b> 10 золота<br>
                         <span class="bad">⚠️ Податок: -3 золота/хв</span> за кожен новий гекс.<br><br>
-                        <span class="warn">💡 Порада:</span> Зводьте ферми (+3 золота/хв), щоб повністю перекривати податок за землевладіння!
+                        <span class="warn">💡 Порада:</span> Зводьте ферми та вітряки групами, щоб перекривати податки!
                     </div>
                 `;
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
@@ -1192,9 +1193,9 @@
                         ${hexInfo.type === 'bridge' ? '<b>Це інженерний міст.</b> На ньому не можна зводити будівлі, він слугує переправою.<br><br>' : ''}
                         <b>Доступні будівлі:</b><br><br>
                         🌾 <span class="good">Ферма (10 💰):</span><br>
-                        • Приносить <span class="good">+3 золота/хв</span> (повністю покриває податок гекса).<br><br>
+                        • Приносить <span class="good">+1 золото/хв</span> самостійно.<br><br>
                         🛞🌀 <span class="warn">Вітряк (20 💰):</span><br>
-                        • Не дає доходу сам, але додає <span class="good">+1 золото/хв</span> кожній <b>сусідній фермі</b>!
+                        • Не дає доходу сам, але додає <span class="good">+1 золото/хв</span> кожній <b>сусідній фермі</b> (разом виходить +2)!
                     </div>
                 `;
                 htmlContent = `
