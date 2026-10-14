@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.2</title>
+    <title>КОВЕЛЬ: Стратегія v2.3</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
@@ -71,7 +71,15 @@
         polygon.hex:hover { stroke: #38bdf8; stroke-width: 2.5; fill-opacity: 0.6; }
         
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
-        polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.5; }
+        polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
+
+        /* Замок/Ратуша поверх гекса */
+        .castle-icon {
+            font-size: 20px;
+            text-anchor: middle;
+            dominant-baseline: central;
+            pointer-events: none;
+        }
 
         /* Верхня панель користувача */
         #user-bar {
@@ -85,7 +93,7 @@
             color: #fff; font-weight: bold; cursor: pointer; font-size: 12px;
         }
 
-        /* Кнопки Zoom та Навігації */
+        /* Кнопки Zoom */
         #zoom-controls {
             position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
         }
@@ -125,8 +133,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.2...</h2>
-            <p id="loader-desc">Налаштування системи масштабування та Zoom</p>
+            <h2 id="loader-status">Завантаження v2.3...</h2>
+            <p id="loader-desc">Виправлення збереження та створення Замків</p>
         </div>
     </div>
 
@@ -165,10 +173,10 @@
         </div>
     </div>
 
-    <!-- Спливаюче меню заснування бази -->
+    <!-- Меню заснування бази -->
     <div id="base-modal">
         <h3>Заснувати базу</h3>
-        <p>Оберіть геральдичний колір вашої бази:</p>
+        <p>Оберіть геральдичний колір вашої ратуші:</p>
         <div class="color-picker">
             <div class="color-option selected" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #10b981;" data-color="#10b981" onclick="selectColor(this)"></div>
@@ -185,7 +193,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, set, get, child, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, set, get, child, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
         const firebaseConfig = {
@@ -203,19 +211,17 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "2.2";
+        const CURRENT_VERSION = "2.3";
         let mode = "login";
         let currentUsername = "";
         let selectedHexCoords = null;
         let selectedColor = "#3b82f6";
         
-        // Карта 60x60
         const GRID_ROWS = 60;
         const GRID_COLS = 60;
         const HEX_RADIUS = 26;
         let hexWorldData = {};
 
-        // Масштабування та перетягування
         let scale = 0.6;
         let panX = 0;
         let panY = 0;
@@ -237,8 +243,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.2!";
-            document.getElementById('loader-desc').innerText = "Оновлення Zoom-механіки...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.3!";
+            document.getElementById('loader-desc').innerText = "Перезавантаження коду...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -376,7 +382,7 @@
                     polygon.setAttribute("class", "hex");
                     polygon.setAttribute("id", `hex-${r}-${c}`);
 
-                    polygon.addEventListener('click', (e) => {
+                    polygon.addEventListener('click', () => {
                         if (isClick) handleHexClick(r, c);
                     });
                     svg.appendChild(polygon);
@@ -403,10 +409,6 @@
             }
             return points.join(" ");
         }
-
-        // ==========================================
-        // СИСТЕМА МАСШТАБУВАННЯ ТА НАВІГАЦІЇ
-        // ==========================================
 
         function updateTransform() {
             const container = document.getElementById('hex-map-container');
@@ -436,7 +438,6 @@
         function setupViewportControls() {
             const viewport = document.getElementById('hex-grid-viewport');
 
-            // Колесико мишки для Zoom
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
@@ -453,7 +454,6 @@
                 updateTransform();
             }, { passive: false });
 
-            // Dragging (Перетягування мишкою та тачем)
             viewport.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 isClick = true;
@@ -477,7 +477,6 @@
 
             window.addEventListener('mouseup', () => { isDragging = false; });
 
-            // Сенсорний Zoom і Drag (Мобільні)
             let initialTouchDistance = 0;
             let initialScale = scale;
 
@@ -517,10 +516,6 @@
 
             viewport.addEventListener('touchend', () => { isDragging = false; });
         }
-
-        // ==========================================
-        // ЛОГІКА ТЕРИТОРІЙ ТА БАЗ
-        // ==========================================
 
         function getNeighbors(r, c) {
             const isOdd = r & 1;
@@ -593,6 +588,7 @@
             selectedHexCoords = null;
         }
 
+        // ВИПРАВЛЕНИЙ ЗАПИС У FIREBASE
         window.confirmBuildBase = async function() {
             if (!selectedHexCoords) return;
 
@@ -600,15 +596,18 @@
             const coreKey = `${r}_${c}`;
             const neighbors = getNeighbors(r, c);
 
-            const newUpdates = {};
-            newUpdates[`world_hexes/${coreKey}`] = {
+            const updates = {};
+            
+            // Центральний замок/ратуша
+            updates[coreKey] = {
                 owner: currentUsername,
                 color: selectedColor,
                 type: 'core'
             };
 
+            // 6 сусідніх гексагонів
             neighbors.forEach(n => {
-                newUpdates[`world_hexes/${n.key}`] = {
+                updates[n.key] = {
                     owner: currentUsername,
                     color: selectedColor,
                     type: 'border'
@@ -616,24 +615,12 @@
             });
 
             try {
-                await set(ref(db), {
-                    ...await getExistingWorldData(),
-                    ...newUpdates
-                });
+                // Прямий підхід до оновлення гілки world_hexes
+                await update(ref(db, 'world_hexes'), updates);
                 closeBaseModal();
             } catch (err) {
                 alert('Помилка при збереженні бази: ' + err.message);
             }
-        }
-
-        async function getExistingWorldData() {
-            const snapshot = await get(child(ref(db), 'world_hexes'));
-            const data = snapshot.exists() ? snapshot.val() : {};
-            let result = {};
-            Object.keys(data).forEach(k => {
-                result[`world_hexes/${k}`] = data[k];
-            });
-            return result;
         }
 
         function listenToWorldData() {
@@ -645,6 +632,11 @@
         }
 
         function renderWorldData() {
+            const svg = document.getElementById('hex-svg');
+            
+            // Видаляємо всі старі іконки замків перед перемальовуванням
+            document.querySelectorAll('.castle-icon').forEach(icon => icon.remove());
+
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
@@ -662,6 +654,15 @@
 
                     if (hexData.type === 'core') {
                         polygon.classList.add('occupied-core');
+
+                        // Малюємо замок (🏰) у центрі заснованої бази
+                        const center = hexToPixel(parseInt(r), parseInt(c));
+                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        text.setAttribute("x", center.x);
+                        text.setAttribute("y", center.y);
+                        text.setAttribute("class", "castle-icon");
+                        text.textContent = "🏰";
+                        svg.appendChild(text);
                     } else {
                         polygon.classList.add('occupied-border');
                     }
