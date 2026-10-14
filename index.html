@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.3</title>
+    <title>КОВЕЛЬ: Стратегія v2.4</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
@@ -73,25 +73,51 @@
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
 
-        /* Замок/Ратуша поверх гекса */
+        /* Замок та написи на території */
         .castle-icon {
-            font-size: 20px;
+            font-size: 22px;
             text-anchor: middle;
             dominant-baseline: central;
             pointer-events: none;
         }
 
+        .owner-label-bg {
+            fill: rgba(15, 23, 42, 0.85);
+            rx: 6px;
+            ry: 6px;
+            stroke: rgba(255, 255, 255, 0.4);
+            stroke-width: 1;
+            pointer-events: none;
+        }
+
+        .owner-label-text {
+            font-size: 11px;
+            font-weight: 700;
+            fill: #f8fafc;
+            text-anchor: middle;
+            dominant-baseline: central;
+            pointer-events: none;
+            letter-spacing: 0.5px;
+        }
+
         /* Верхня панель користувача */
         #user-bar {
-            position: absolute; top: 15px; left: 15px; background: rgba(30, 41, 59, 0.9);
-            padding: 10px 20px; border-radius: 8px; border: 1px solid #334155;
+            position: absolute; top: 15px; left: 15px; background: rgba(30, 41, 59, 0.95);
+            padding: 10px 18px; border-radius: 10px; border: 1px solid #334155;
             display: flex; gap: 15px; align-items: center; z-index: 500;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4); backdrop-filter: blur(5px);
+        }
+        .gold-display {
+            background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b;
+            padding: 4px 10px; border-radius: 6px; font-weight: bold; color: #fbbf24;
+            display: flex; align-items: center; gap: 6px; font-size: 13px;
         }
         #user-bar button {
-            padding: 6px 12px; border-radius: 4px; border: none; background: #ef4444;
+            padding: 6px 12px; border-radius: 6px; border: none; background: #ef4444;
             color: #fff; font-weight: bold; cursor: pointer; font-size: 12px;
+            transition: background 0.2s;
         }
+        #user-bar button:hover { background: #dc2626; }
 
         /* Кнопки Zoom */
         #zoom-controls {
@@ -133,8 +159,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.3...</h2>
-            <p id="loader-desc">Виправлення збереження та створення Замків</p>
+            <h2 id="loader-status">Завантаження v2.4...</h2>
+            <p id="loader-desc">Запуск підписів власності та системи доходів (+3 золота/хв)</p>
         </div>
     </div>
 
@@ -157,6 +183,7 @@
     <div id="game-container">
         <div id="user-bar">
             <span>Гравець: <b id="current-user-display" style="color: #38bdf8;">---</b></span>
+            <div class="gold-display">💰 Золото: <span id="user-gold-display">0</span> <small style="opacity: 0.8; font-size: 10px;">(+3/хв)</small></div>
             <button onclick="logout()">Вийти</button>
         </div>
 
@@ -211,9 +238,10 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        const CURRENT_VERSION = "2.3";
+        const CURRENT_VERSION = "2.4";
         let mode = "login";
         let currentUsername = "";
+        let userGold = 0;
         let selectedHexCoords = null;
         let selectedColor = "#3b82f6";
         
@@ -221,6 +249,7 @@
         const GRID_COLS = 60;
         const HEX_RADIUS = 26;
         let hexWorldData = {};
+        let incomeInterval = null;
 
         let scale = 0.6;
         let panX = 0;
@@ -243,8 +272,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.3!";
-            document.getElementById('loader-desc').innerText = "Перезавантаження коду...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.4!";
+            document.getElementById('loader-desc').innerText = "Оновлення дохідності та стилів території...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -312,7 +341,11 @@
                         alert('Такий користувач вже існує!');
                         return;
                     }
-                    await set(ref(db, 'users/' + user), { password: pass });
+                    await set(ref(db, 'users/' + user), { 
+                        password: pass,
+                        gold: 0,
+                        lastIncomeTime: Date.now()
+                    });
                     alert('Акаунт успішно створено!');
                     switchAuthMode('login');
                 } 
@@ -324,13 +357,19 @@
                     }
                     
                     currentUsername = user;
+                    const userData = snapshot.val();
+                    userGold = userData.gold || 0;
+
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'block';
                     document.getElementById('current-user-display').innerText = user;
+                    document.getElementById('user-gold-display').innerText = userGold;
 
                     initHexGrid();
                     setupViewportControls();
                     listenToWorldData();
+                    listenToUserData();
+                    startIncomeLoop();
                 } 
                 else if (mode === 'change-pass') {
                     const newPass = document.getElementById('new-password').value.trim();
@@ -355,12 +394,53 @@
         }
 
         window.logout = function() {
+            if (incomeInterval) clearInterval(incomeInterval);
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
             switchAuthMode('login');
         }
+
+        // ==========================================
+        // СИСТЕМА ПАСИВНОГО ДОХОДУ (+3 золота / хв)
+        // ==========================================
+
+        function listenToUserData() {
+            const userRef = ref(db, `users/${currentUsername}`);
+            onValue(userRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    userGold = data.gold || 0;
+                    document.getElementById('user-gold-display').innerText = userGold;
+                }
+            });
+        }
+
+        function startIncomeLoop() {
+            if (incomeInterval) clearInterval(incomeInterval);
+            
+            // Кожні 20 секунд додаємо +1 золото (сумарно +3 за 60 секунд)
+            incomeInterval = setInterval(async () => {
+                const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
+                if (userHasBase) {
+                    try {
+                        const userRef = ref(db, `users/${currentUsername}`);
+                        const snapshot = await get(userRef);
+                        if (snapshot.exists()) {
+                            const currentG = snapshot.val().gold || 0;
+                            await update(userRef, { gold: currentG + 1 });
+                        }
+                    } catch (err) {
+                        console.error('Помилка нарахування доходів:', err);
+                    }
+                }
+            }, 20000); 
+        }
+
+        // ==========================================
+        // ГЕКСАГОНАЛЬНА СІТКА ТА КАРТА
+        // ==========================================
 
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
@@ -558,7 +638,7 @@
 
             if (hexWorldData[key]) {
                 const hexInfo = hexWorldData[key];
-                alert(`Ця територія належить гравцю: ${hexInfo.owner}`);
+                alert(`Ця територія належить володарю: ${hexInfo.owner}`);
                 return;
             }
 
@@ -588,7 +668,6 @@
             selectedHexCoords = null;
         }
 
-        // ВИПРАВЛЕНИЙ ЗАПИС У FIREBASE
         window.confirmBuildBase = async function() {
             if (!selectedHexCoords) return;
 
@@ -598,14 +677,12 @@
 
             const updates = {};
             
-            // Центральний замок/ратуша
             updates[coreKey] = {
                 owner: currentUsername,
                 color: selectedColor,
                 type: 'core'
             };
 
-            // 6 сусідніх гексагонів
             neighbors.forEach(n => {
                 updates[n.key] = {
                     owner: currentUsername,
@@ -615,7 +692,6 @@
             });
 
             try {
-                // Прямий підхід до оновлення гілки world_hexes
                 await update(ref(db, 'world_hexes'), updates);
                 closeBaseModal();
             } catch (err) {
@@ -634,8 +710,8 @@
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             
-            // Видаляємо всі старі іконки замків перед перемальовуванням
-            document.querySelectorAll('.castle-icon').forEach(icon => icon.remove());
+            // Очищення елементів поверх гексів
+            document.querySelectorAll('.castle-icon, .owner-label-bg, .owner-label-text').forEach(el => el.remove());
 
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
@@ -655,14 +731,36 @@
                     if (hexData.type === 'core') {
                         polygon.classList.add('occupied-core');
 
-                        // Малюємо замок (🏰) у центрі заснованої бази
                         const center = hexToPixel(parseInt(r), parseInt(c));
-                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        text.setAttribute("x", center.x);
-                        text.setAttribute("y", center.y);
-                        text.setAttribute("class", "castle-icon");
-                        text.textContent = "🏰";
-                        svg.appendChild(text);
+                        
+                        // 1. Іконка Замку
+                        const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        castleText.setAttribute("x", center.x);
+                        castleText.setAttribute("y", center.y + 2);
+                        castleText.setAttribute("class", "castle-icon");
+                        castleText.textContent = "🏰";
+                        svg.appendChild(castleText);
+
+                        // 2. Підпис імені гравця над Замком (Корона + Нік)
+                        const labelContent = `👑 ${hexData.owner}`;
+                        const labelY = center.y - 28;
+                        const approxWidth = Math.max(60, labelContent.length * 7.5 + 14);
+
+                        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        rect.setAttribute("x", center.x - approxWidth / 2);
+                        rect.setAttribute("y", labelY - 10);
+                        rect.setAttribute("width", approxWidth);
+                        rect.setAttribute("height", 20);
+                        rect.setAttribute("class", "owner-label-bg");
+                        svg.appendChild(rect);
+
+                        const userText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        userText.setAttribute("x", center.x);
+                        userText.setAttribute("y", labelY);
+                        userText.setAttribute("class", "owner-label-text");
+                        userText.textContent = labelContent;
+                        svg.appendChild(userText);
+
                     } else {
                         polygon.classList.add('occupied-border');
                     }
