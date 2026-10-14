@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title> HexPolitics: Стратегія v2.9</title>
+    <title>HexPolitics: Стратегія v2.9.1</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -127,7 +127,7 @@
             border: 1px solid #f87171 !important;
         }
 
-        /* Кнопки Zoom (зручно розташовані знизу справа для мобільних) */
+        /* Кнопки Zoom */
         #zoom-controls {
             position: absolute; right: 15px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
         }
@@ -181,8 +181,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.9...</h2>
-            <p id="loader-desc">Оптимізація інтерфейсу для мобільних пристроїв</p>
+            <h2 id="loader-status">Завантаження v2.9.1...</h2>
+            <p id="loader-desc">Виправлення центру масштабування на телефонах</p>
         </div>
     </div>
 
@@ -279,7 +279,7 @@
 
         const ADMIN_USERNAME = "admin"; 
 
-        const CURRENT_VERSION = "2.9";
+        const CURRENT_VERSION = "2.9.1";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
@@ -314,8 +314,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.9!";
-            document.getElementById('loader-desc').innerText = "Оптимізація тач-управління та UI...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.9.1!";
+            document.getElementById('loader-desc').innerText = "Виправлення центру масштабування...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -579,12 +579,26 @@
         }
 
         window.zoomIn = function() {
-            scale = Math.min(2.5, scale + 0.2);
+            const viewport = document.getElementById('hex-grid-viewport');
+            const cx = viewport.clientWidth / 2;
+            const cy = viewport.clientHeight / 2;
+            
+            const newScale = Math.min(2.5, scale + 0.25);
+            panX = cx - (cx - panX) * (newScale / scale);
+            panY = cy - (cy - panY) * (newScale / scale);
+            scale = newScale;
             updateTransform();
         }
 
         window.zoomOut = function() {
-            scale = Math.max(0.15, scale - 0.2);
+            const viewport = document.getElementById('hex-grid-viewport');
+            const cx = viewport.clientWidth / 2;
+            const cy = viewport.clientHeight / 2;
+            
+            const newScale = Math.max(0.15, scale - 0.25);
+            panX = cx - (cx - panX) * (newScale / scale);
+            panY = cy - (cy - panY) * (newScale / scale);
+            scale = newScale;
             updateTransform();
         }
 
@@ -599,7 +613,7 @@
         }
 
         // ==========================================
-        // ІДЕАЛЬНЕ УПРАВЛІННЯ (ПК та Мобільні)
+        // ІДЕАЛЬНЕ ЗУМ-МАСШТАБУВАННЯ ДЛЯ ТЕЛЕФОНІВ (PINCH ZOOM)
         // ==========================================
 
         function setupViewportControls() {
@@ -646,11 +660,13 @@
 
             window.addEventListener('mouseup', () => { isDragging = false; });
 
-            // Тач-управління (Один палець - перетягування, Два пальці - Pinch Zoom)
+            // Тач-управління (Фікс центру масштабування та зсуву)
             let touchStartDist = 0;
             let startScale = scale;
             let startPanX = panX;
             let startPanY = panY;
+            let pinchCenterX = 0;
+            let pinchCenterY = 0;
 
             viewport.addEventListener('touchstart', (e) => {
                 if (e.touches.length === 1) {
@@ -661,11 +677,19 @@
                 } else if (e.touches.length === 2) {
                     isDragging = false;
                     isClick = false;
+                    
+                    const rect = viewport.getBoundingClientRect();
+                    // Центр між двома пальцями для коректного масштабування на телефоні
+                    pinchCenterX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+                    pinchCenterY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
+
                     touchStartDist = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
                     startScale = scale;
+                    startPanX = panX;
+                    startPanY = panY;
                 }
             }, { passive: true });
 
@@ -683,7 +707,13 @@
                         e.touches[0].clientY - e.touches[1].clientY
                     );
                     const zoomFactor = currentDist / touchStartDist;
-                    scale = Math.min(Math.max(0.15, startScale * zoomFactor), 2.5);
+                    const newScale = Math.min(Math.max(0.15, startScale * zoomFactor), 2.5);
+
+                    // Масштабування відносно точки торкання пальців (запобігає зсуву в правий верх)
+                    panX = pinchCenterX - (pinchCenterX - startPanX) * (newScale / startScale);
+                    panY = pinchCenterY - (pinchCenterY - startPanY) * (newScale / startScale);
+                    
+                    scale = newScale;
                     updateTransform();
                 }
             }, { passive: true });
