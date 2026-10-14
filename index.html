@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>КОВЕЛЬ: Стратегія v2.7</title>
+    <title>КОВЕЛЬ: Стратегія v2.8</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; }
@@ -142,17 +142,27 @@
         .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 25px;
-            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 320px;
+            z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px;
         }
         .modal h3 { margin-bottom: 10px; color: #38bdf8; }
         .modal p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
+        
         .color-picker { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .color-option {
             width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
-            border: 2px solid transparent; transition: transform 0.2s;
+            border: 2px solid transparent; transition: transform 0.2s, opacity 0.2s;
+            position: relative;
         }
-        .color-option:hover { transform: scale(1.15); }
+        .color-option:hover:not(.disabled) { transform: scale(1.15); }
         .color-option.selected { border-color: #ffffff; transform: scale(1.15); box-shadow: 0 0 10px #fff; }
+        .color-option.disabled {
+            opacity: 0.25; cursor: not-allowed; filter: grayscale(80%);
+        }
+        .color-option.disabled::after {
+            content: "✖"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #ef4444; font-size: 16px; font-weight: bold; text-shadow: 0 0 3px #000;
+        }
+
         .modal-btns { display: flex; gap: 10px; justify-content: center; }
         .modal-btns button {
             padding: 10px 18px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold;
@@ -171,8 +181,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Завантаження v2.7...</h2>
-            <p id="loader-desc">Активація адмін-панелі та системи Вайпу Сезону</p>
+            <h2 id="loader-status">Завантаження v2.8...</h2>
+            <p id="loader-desc">Активація унікальних кольорів баз</p>
         </div>
     </div>
 
@@ -213,17 +223,19 @@
         </div>
     </div>
 
-    <!-- Меню заснування бази -->
+    <!-- Меню заснування бази з вибором унікальних кольорів -->
     <div id="base-modal" class="modal">
         <h3>Заснувати базу</h3>
-        <p>Оберіть геральдичний колір вашої ратуші:</p>
-        <div class="color-picker">
-            <div class="color-option selected" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
+        <p>Оберіть геральдичний колір (зайняті недоступні):</p>
+        <div class="color-picker" id="color-picker-container">
+            <div class="color-option" style="background: #3b82f6;" data-color="#3b82f6" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #10b981;" data-color="#10b981" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #ef4444;" data-color="#ef4444" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #8b5cf6;" data-color="#8b5cf6" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #f59e0b;" data-color="#f59e0b" onclick="selectColor(this)"></div>
             <div class="color-option" style="background: #ec4899;" data-color="#ec4899" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #06b6d4;" data-color="#06b6d4" onclick="selectColor(this)"></div>
+            <div class="color-option" style="background: #84cc16;" data-color="#84cc16" onclick="selectColor(this)"></div>
         </div>
         <div class="modal-btns">
             <button class="btn-confirm" onclick="confirmBuildBase()">Заснувати</button>
@@ -231,7 +243,7 @@
         </div>
     </div>
 
-    <!-- Меню керування та покращення ратуші -->
+    <!-- Меню керування ратушею -->
     <div id="townhall-modal" class="modal">
         <h3>🏰 Ратуша</h3>
         <div class="upgrade-info" id="townhall-info"></div>
@@ -261,16 +273,15 @@
         const db = getDatabase(app);
         const analytics = getAnalytics(app);
 
-        // Вкажіть тут свій адмінський логін в грі!
         const ADMIN_USERNAME = "admin"; 
 
-        const CURRENT_VERSION = "2.7";
+        const CURRENT_VERSION = "2.8";
         let mode = "login";
         let currentUsername = "";
         let userGold = 0;
         let userTownHallLevel = 1;
         let selectedHexCoords = null;
-        let selectedColor = "#3b82f6";
+        let selectedColor = null;
         
         const GRID_ROWS = 60;
         const GRID_COLS = 60;
@@ -299,8 +310,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "Оновлення v2.7!";
-            document.getElementById('loader-desc').innerText = "Оновлення гри та адмін-інструментів...";
+            document.getElementById('loader-status').innerText = "Оновлення v2.8!";
+            document.getElementById('loader-desc').innerText = "Оновлення унікальності кольорів...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -393,7 +404,6 @@
                     document.getElementById('current-user-display').innerText = user;
                     document.getElementById('user-gold-display').innerText = Math.floor(userGold);
                     
-                    // Показ адмінської кнопки вайпу тільки для розробника
                     if (currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
                         document.getElementById('admin-wipe-btn').style.display = 'inline-block';
                     } else {
@@ -438,19 +448,13 @@
             switchAuthMode('login');
         }
 
-        // ==========================================
-        // АДМІН-ФУНКЦІЯ: ВАЙП СЕЗОНУ
-        // ==========================================
-
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВИ ВПЕВНЕНІ, ЩО ХОЧЕТЕ ВАЙПНУТИ СЕЗОН?\n\nЦе повністю очистить всю карту і скине золото й рівні всіх гравців до початкових, але збереже всі акаунти!");
+            const confirmWipe = confirm("⚠️ ВИ ВПЕВНЕНІ, ЩО ХОЧЕТЕ ВАЙПНУТИ СЕЗОН?\n\nЦе повністю очистить карту і скине золото й рівні всіх гравців до початкових, але збереже всі акаунти!");
             if (!confirmWipe) return;
 
             try {
-                // 1. Очищення карти гексів
                 await remove(ref(db, 'world_hexes'));
 
-                // 2. Скидання золота та рівнів у всіх гравців
                 const usersSnapshot = await get(ref(db, 'users'));
                 if (usersSnapshot.exists()) {
                     const usersData = usersSnapshot.val();
@@ -467,10 +471,6 @@
                 alert("Помилка під час проведення вайпу: " + err.message);
             }
         }
-
-        // ==========================================
-        // ЕКОНОМІКА ТА ДОХОДИ РАТУШІ
-        // ==========================================
 
         function getIncomeByLevel(level) {
             if (level === 2) return 2;
@@ -520,10 +520,6 @@
                 }
             }, 20000); 
         }
-
-        // ==========================================
-        // ГЕКСАГОНАЛЬНА СІТКА ТА КАРТА
-        // ==========================================
 
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
@@ -741,11 +737,48 @@
             }
 
             selectedHexCoords = { r, c };
+            openBaseModal();
+        }
+
+        function openBaseModal() {
+            // Отримуємо списки вже використовуваних кольорів іншими гравцями
+            const takenColors = new Set();
+            Object.values(hexWorldData).forEach(h => {
+                if (h.color) takenColors.add(h.color.toLowerCase());
+            });
+
+            selectedColor = null;
+            const options = document.querySelectorAll('#color-picker-container .color-option');
+            
+            let firstAvailableSelected = false;
+
+            options.forEach(opt => {
+                opt.classList.remove('selected', 'disabled');
+                const optColor = opt.getAttribute('data-color').toLowerCase();
+
+                if (takenColors.has(optColor)) {
+                    opt.classList.add('disabled');
+                } else if (!firstAvailableSelected) {
+                    opt.classList.add('selected');
+                    selectedColor = optColor;
+                    firstAvailableSelected = true;
+                }
+            });
+
+            if (!firstAvailableSelected) {
+                alert("Усі унікальні кольори прапорів вже зайняті іншими гравцями на цій карті!");
+                return;
+            }
+
             document.getElementById('base-modal').style.display = 'block';
         }
 
         window.selectColor = function(el) {
-            document.querySelectorAll('.color-option').forEach(c => c.classList.remove('selected'));
+            if (el.classList.contains('disabled')) {
+                alert('Цей колір вже зарезервований іншим гравцем!');
+                return;
+            }
+            document.querySelectorAll('#color-picker-container .color-option').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
             selectedColor = el.getAttribute('data-color');
         }
@@ -757,6 +790,23 @@
 
         window.confirmBuildBase = async function() {
             if (!selectedHexCoords) return;
+
+            if (!selectedColor) {
+                alert("Будь ласка, виберіть доступний колір!");
+                return;
+            }
+
+            // Перевірка на випадок, якщо хтось забіг наперед
+            const takenColors = new Set();
+            Object.values(hexWorldData).forEach(h => {
+                if (h.color) takenColors.add(h.color.toLowerCase());
+            });
+
+            if (takenColors.has(selectedColor.toLowerCase())) {
+                alert("Цей колір щойно забрав інший гравець! Оберіть інший колір.");
+                openBaseModal();
+                return;
+            }
 
             const { r, c } = selectedHexCoords;
             const coreKey = `${r}_${c}`;
@@ -793,15 +843,12 @@
             const upgradeBtn = document.getElementById('upgrade-btn');
 
             let costText = "";
-            let nextIncomeText = "";
             let canUpgrade = true;
 
             if (userTownHallLevel === 1) {
                 costText = "14 золота";
-                nextIncomeText = "2 золота/хв";
             } else if (userTownHallLevel === 2) {
                 costText = "42 золота";
-                nextIncomeText = "3 золота/хв";
             } else {
                 costText = "—";
                 canUpgrade = false;
@@ -818,12 +865,7 @@
                 `}
             `;
 
-            if (canUpgrade) {
-                upgradeBtn.style.display = 'inline-block';
-            } else {
-                upgradeBtn.style.display = 'none';
-            }
-
+            upgradeBtn.style.display = canUpgrade ? 'inline-block' : 'none';
             modal.style.display = 'block';
         }
 
