@@ -4,20 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>КОВЕЛЬ: Стратегія</title>
-    <!-- Підключаємо стилі Leaflet для карти -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; }
 
-        /* Екран завантаження оновлення / лоадер */
         #update-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #0f172a; display: flex; justify-content: center; align-items: center; z-index: 2000;
             transition: opacity 0.5s ease;
         }
         .loader-content {
-            text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20px;
+            text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px;
         }
         .spinner {
             width: 50px; height: 50px; border: 5px solid #334155; border-top: 5px solid #38bdf8;
@@ -27,7 +25,6 @@
         .loader-content h2 { color: #f8fafc; font-size: 22px; }
         .loader-content p { color: #94a3b8; font-size: 14px; }
 
-        /* Екран авторизації */
         #auth-screen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #1e293b; display: flex; justify-content: center; align-items: center; z-index: 1000;
@@ -49,50 +46,40 @@
         .auth-toggle { text-align: center; font-size: 13px; color: #94a3b8; cursor: pointer; margin-top: 5px; }
         .auth-toggle:hover { color: #38bdf8; text-decoration: underline; }
 
-        /* Головний контейнер гри */
         #game-container { display: none; height: 100vh; width: 100vw; flex-direction: column; }
-
-        /* Контейнер для сторінок */
         .pages-container { flex: 1; position: relative; width: 100%; overflow: hidden; }
 
-        /* Сторінки ізольовані */
-        .page { 
-            display: none; 
-            position: absolute; 
-            top: 0; left: 0; width: 100%; height: 100%; 
-        }
+        .page { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
         .page.active { display: flex; flex-direction: column; }
 
-        /* Стиль для карти */
         #map { width: 100%; height: 100%; background: #e5e3df; }
 
-        /* Стилі для окремої сторінки ЧАТУ */
-        #page-chat {
-            background: #0f172a; padding: 15px; box-sizing: border-box;
+        /* Панель інформації про район */
+        #district-info {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(30, 41, 59, 0.9); padding: 10px 20px; border-radius: 8px;
+            border: 1px solid #475569; z-index: 1000; font-size: 14px; pointer-events: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
+
+        #page-chat { background: #0f172a; padding: 15px; box-sizing: border-box; }
         .chat-messages {
             flex: 1; background: #1e293b; border-radius: 8px; padding: 15px;
             overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid #334155;
         }
-        .chat-msg {
-            background: #334155; padding: 10px 14px; border-radius: 8px; max-width: 85%; word-break: break-word;
-        }
+        .chat-msg { background: #334155; padding: 10px 14px; border-radius: 8px; max-width: 85%; word-break: break-word; }
         .chat-msg .author { font-size: 11px; color: #38bdf8; margin-bottom: 3px; font-weight: bold; }
         .chat-msg .text { font-size: 14px; color: #f8fafc; }
-        .chat-input-area {
-            display: flex; gap: 10px; margin-top: 15px;
-        }
+        .chat-input-area { display: flex; gap: 10px; margin-top: 15px; }
         .chat-input-area input {
             flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #475569;
             background: #1e293b; color: #fff; outline: none; font-size: 14px;
         }
         .chat-input-area button {
             padding: 0 20px; border-radius: 8px; border: none; background: #3b82f6;
-            color: #fff; font-weight: bold; cursor: pointer; transition: background 0.2s;
+            color: #fff; font-weight: bold; cursor: pointer;
         }
-        .chat-input-area button:hover { background: #2563eb; }
 
-        /* Нижня панель навігації (Clash Royale style) */
         .nav-bar {
             height: 65px; background: #1e293b; display: flex;
             justify-content: space-around; align-items: center;
@@ -101,23 +88,21 @@
         .nav-btn {
             background: none; border: none; color: #94a3b8; font-size: 13px;
             cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
-            transition: color 0.2s; width: 25%;
+            width: 25%;
         }
         .nav-btn.active { color: #38bdf8; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <!-- Екран завантаження оновлення -->
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">Оновлення v1.2: Виправлення карти та чату...</h2>
-            <p>Завантаження відкритої карти Ковеля</p>
+            <h2 id="loader-status">Завантаження гри v1.4...</h2>
+            <p id="loader-desc">Ініціалізація районів Ковеля</p>
         </div>
     </div>
 
-    <!-- Екран Авторизації / Реєстрації -->
     <div id="auth-screen">
         <div class="auth-box">
             <h2 id="auth-title">Вхід у гру</h2>
@@ -128,40 +113,33 @@
         </div>
     </div>
 
-    <!-- Ігровий інтерфейс -->
     <div id="game-container">
         <div class="pages-container">
-            <!-- Сторінка 1: Мапа Ковеля -->
             <div id="page-map" class="page active">
+                <div id="district-info">📍 Оберіть ділянку Ковеля</div>
                 <div id="map"></div>
             </div>
 
-            <!-- Сторінка 2: База / Профіль -->
-            <div id="page-base" class="page" style="justify-content: center; align-items: center; background: #1e293b; color: #fff;">
+            <div id="page-base" class="page" style="justify-content: center; align-items: center; background: #1e293b;">
                 <h1 id="player-greeting">Головна база гравця</h1>
                 <p style="margin-top: 10px; color: #94a3b8;">Тут будуть покращення будівель, ресурси та території.</p>
             </div>
 
-            <!-- Сторінка 3: Чат гравців (Схований на окремій вкладці) -->
             <div id="page-chat" class="page">
                 <h2 style="margin-bottom: 10px; font-size: 18px; color: #38bdf8;">💬 Загальний чат Ковеля</h2>
-                <div class="chat-messages" id="chat-messages">
-                    <!-- Повідомлення з'являтимуться тут -->
-                </div>
+                <div class="chat-messages" id="chat-messages"></div>
                 <div class="chat-input-area">
                     <input type="text" id="chat-input" placeholder="Напишіть повідомлення..." onkeypress="handleChatKeyPress(event)">
                     <button onclick="sendChatMessage()">Надіслати</button>
                 </div>
             </div>
 
-            <!-- Сторінка 4: Бої / Території -->
-            <div id="page-battles" class="page" style="justify-content: center; align-items: center; background: #1e293b; color: #fff;">
+            <div id="page-battles" class="page" style="justify-content: center; align-items: center; background: #1e293b;">
                 <h1>Арена Ковеля</h1>
                 <p style="margin-top: 10px; color: #94a3b8;">Захоплюйте вулиці та змагайтесь з іншими гравцями.</p>
             </div>
         </div>
 
-        <!-- Нижня панель навігації -->
         <div class="nav-bar">
             <button class="nav-btn active" onclick="switchPage('map', this)">🗺️ Мапа</button>
             <button class="nav-btn" onclick="switchPage('base', this)">🏰 База</button>
@@ -170,21 +148,45 @@
         </div>
     </div>
 
-    <!-- Підключаємо скрипт Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        const CURRENT_VERSION = "1.4";
+
         let map;
         let isRegisterMode = false;
         let currentUsername = "";
 
-        // Приховати лоадер після завантаження
         window.addEventListener('load', () => {
-            setTimeout(() => {
-                const loader = document.getElementById('update-loader');
-                loader.style.opacity = '0';
-                setTimeout(() => loader.style.display = 'none', 500);
-            }, 800);
+            setTimeout(() => { hideLoader(); }, 800);
+            setInterval(checkAutoUpdate, 15000);
         });
+
+        function hideLoader() {
+            const loader = document.getElementById('update-loader');
+            loader.style.opacity = '0';
+            setTimeout(() => loader.style.display = 'none', 500);
+        }
+
+        function showUpdateScreen() {
+            const loader = document.getElementById('update-loader');
+            document.getElementById('loader-status').innerText = "Вийшло нове оновлення v1.4!";
+            document.getElementById('loader-desc').innerText = "Оновлюємо мапу районів Ковеля...";
+            loader.style.display = 'flex';
+            loader.style.opacity = '1';
+        }
+
+        function checkAutoUpdate() {
+            fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
+            .then(response => response.text())
+            .then(html => {
+                const match = html.match(/const CURRENT_VERSION = "([^"]+)";/);
+                if (match && match[1] && match[1] !== CURRENT_VERSION) {
+                    showUpdateScreen();
+                    setTimeout(() => { window.location.reload(true); }, 2000);
+                }
+            })
+            .catch(err => {});
+        }
 
         function toggleAuthMode() {
             isRegisterMode = !isRegisterMode;
@@ -229,22 +231,95 @@
 
         function initMap() {
             if (map) return;
-            const kovelCoords = [51.2176, 24.7042];
             
-            // Створюємо карту Ковеля
-            map = L.map('map', { zoomControl: false }).setView(kovelCoords, 14);
+            // Центр Ковеля
+            const kovelCenter = [51.2176, 24.7042];
+            
+            // Обмежуємо межі карти суворо навколо Ковеля (щоб не можна було вийти за межі міста)
+            const kovelBounds = L.latLngBounds(
+                [51.1700, 24.6200], // Південно-Західний кут
+                [51.2700, 24.7800]  // Північно-Східний кут
+            );
 
-            // Використовуємо безкоштовні тайли OpenStreetMap без вимог до ключа API
+            map = L.map('map', {
+                zoomControl: false,
+                minZoom: 13,
+                maxZoom: 17,
+                maxBounds: kovelBounds,
+                maxBoundsViscosity: 1.0 // Жорстке обмеження (не випустить за межі Ковеля)
+            }).setView(kovelCenter, 14);
+
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            L.marker(kovelCoords).addTo(map)
-              .bindPopup('<b>Ваша стартова позиція у Ковелі</b>')
-              .openPopup();
+            // Додаємо нерівні ігрові ділянки (райони Ковеля)
+            loadKovelDistricts();
 
             setTimeout(() => map.invalidateSize(), 200);
+        }
+
+        // Функція створення ділянок Ковеля
+        function loadKovelDistricts() {
+            // Приблизні полігони основних районів міста
+            const districts = [
+                {
+                    name: "Центр Ковеля",
+                    color: "#3b82f6",
+                    coords: [
+                        [51.2220, 24.6950], [51.2250, 24.7050], 
+                        [51.2180, 24.7150], [51.2120, 24.7000]
+                    ]
+                },
+                {
+                    name: "Район Вокзалу",
+                    color: "#eab308",
+                    coords: [
+                        [51.2250, 24.7050], [51.2320, 24.7180], 
+                        [51.2220, 24.7250], [51.2180, 24.7150]
+                    ]
+                },
+                {
+                    name: "Сільмаш",
+                    color: "#ef4444",
+                    coords: [
+                        [51.2120, 24.7000], [51.2180, 24.7150], 
+                        [51.2100, 24.7300], [51.2000, 24.7150]
+                    ]
+                },
+                {
+                    name: "Старий Ковель / Турія",
+                    color: "#10b981",
+                    coords: [
+                        [51.2220, 24.6950], [51.2120, 24.7000], 
+                        [51.2050, 24.6800], [51.2180, 24.6750]
+                    ]
+                }
+            ];
+
+            districts.forEach(d => {
+                const polygon = L.polygon(d.coords, {
+                    color: d.color,
+                    weight: 2,
+                    fillColor: d.color,
+                    fillOpacity: 0.35
+                }).addTo(map);
+
+                // Події при наведенні та кліку на ділянку
+                polygon.on('mouseover', function () {
+                    this.setStyle({ fillOpacity: 0.6, weight: 3 });
+                    document.getElementById('district-info').innerText = `📍 Ділянка: ${d.name}`;
+                });
+
+                polygon.on('mouseout', function () {
+                    this.setStyle({ fillOpacity: 0.35, weight: 2 });
+                    document.getElementById('district-info').innerText = `📍 Оберіть ділянку Ковеля`;
+                });
+
+                polygon.on('click', function () {
+                    alert(`Ви обрали район: ${d.name}. Тут можна буде зводити будівлі та захоплювати територію!`);
+                });
+            });
         }
 
         function switchPage(pageId, btn) {
@@ -259,7 +334,6 @@
             }
         }
 
-        // Логіка чату
         function sendChatMessage() {
             const input = document.getElementById('chat-input');
             const text = input.value.trim();
@@ -270,9 +344,7 @@
         }
 
         function handleChatKeyPress(e) {
-            if(e.key === 'Enter') {
-                sendChatMessage();
-            }
+            if(e.key === 'Enter') sendChatMessage();
         }
 
         function appendMessage(author, text) {
