@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v3.0</title>
+    <title>HexPolitics v3.4</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -164,7 +164,6 @@
         }
 
         .modal-btns { display: flex; gap: 8px; justify-content: center; flex-direction: column; }
-        .modal-row { display: flex; gap: 8px; justify-content: center; }
         .modal-btns button {
             padding: 9px 15px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; width: 100%;
         }
@@ -172,6 +171,7 @@
         .btn-cancel { background: #64748b; color: #fff; }
         .btn-farm { background: #f59e0b; color: #fff; }
         .btn-mill { background: #06b6d4; color: #fff; }
+        .btn-demolish { background: #dc2626; color: #fff; }
         
         .upgrade-info {
             background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px;
@@ -184,8 +184,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v3.0</h2>
-            <p id="loader-desc">Завантаження економічного оновлення (Ферми, Вітряки, Експансія)...</p>
+            <h2 id="loader-status">HexPolitics v3.4</h2>
+            <p id="loader-desc">Оновлення іконок будівель в єдиному стилі...</p>
         </div>
     </div>
 
@@ -230,7 +230,7 @@
         </div>
     </div>
 
-    <!-- Меню заснування першої бази -->
+    <!-- Меню заснування бази -->
     <div id="base-modal" class="modal">
         <h3>Заснувати базу</h3>
         <p>Оберіть унікальний колір прапора:</p>
@@ -260,13 +260,11 @@
         </div>
     </div>
 
-    <!-- Меню взаємодії з територією / будівництва -->
+    <!-- Меню території / будівництва -->
     <div id="territory-modal" class="modal">
         <h3>🌍 Територія</h3>
-        <p id="territory-desc">Купити цей гекс за 10 золота (-1 золото/хв доходу) чи побудувати ферму/вітряк?</p>
-        <div class="modal-btns" id="territory-buttons">
-            <!-- Динамічно заповнюється залежно від стану гекса -->
-        </div>
+        <p id="territory-desc"></p>
+        <div class="modal-btns" id="territory-buttons"></div>
         <div style="margin-top: 10px;">
             <button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>
         </div>
@@ -293,7 +291,7 @@
         const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "3.0";
+        const CURRENT_VERSION = "3.4";
 
         let mode = "login";
         let currentUsername = "";
@@ -329,8 +327,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v3.0";
-            document.getElementById('loader-desc').innerText = "Оновлення економіки та будівель...";
+            document.getElementById('loader-status').innerText = "HexPolitics v3.4";
+            document.getElementById('loader-desc').innerText = "Оновлення іконок та стабілізація...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -463,23 +461,22 @@
         }
 
         // ==========================================
-        // РОЗРАХУНОК ДОХОДУ З УРАХУВАННЯМ ФЕРМ, ВІТРЯКІВ ТА ПОДАТКІВ
+        // ЕКОНОМІКА (v3.4)
         // ==========================================
 
         function calculateTotalIncome(username, worldHexes) {
             let baseLevel = 1;
-            let totalTaxes = 0;
+            let purchasedTaxes = 0; 
             let farmsCount = 0;
             let millsBonus = 0;
 
-            // Знаходимо рівень ратуші гравця
             Object.values(worldHexes).forEach(h => {
                 if (h.owner === username) {
                     if (h.type === 'core') {
                         baseLevel = h.level || 1;
                     }
-                    if (h.type === 'border' || h.type === 'farm' || h.type === 'mill') {
-                        totalTaxes += 1; // Кожен купований гекс знімає 1 золотий доходу
+                    if (h.type === 'purchased') {
+                        purchasedTaxes += 1; 
                     }
                     if (h.type === 'farm') {
                         farmsCount += 1;
@@ -487,10 +484,8 @@
                 }
             });
 
-            // Базовий дохід ратуші (Lvl 1 = 1, Lvl 2 = 2, Lvl 3 = 3) + кожна ферма дає +1
             let baseIncome = getIncomeByLevel(baseLevel) + farmsCount;
 
-            // Вітряки: +1 за кожну сусідню ферму
             Object.keys(worldHexes).forEach(key => {
                 const h = worldHexes[key];
                 if (h.owner === username && h.type === 'mill') {
@@ -505,8 +500,8 @@
                 }
             });
 
-            let finalIncome = (baseIncome + millsBonus) - totalTaxes;
-            return Math.max(1, finalIncome); // Мінімум 1 золото на хв залишається
+            let finalIncome = (baseIncome + millsBonus) - purchasedTaxes;
+            return Math.max(1, finalIncome);
         }
 
         function getIncomeByLevel(level) {
@@ -610,7 +605,7 @@
         }
 
         // ==========================================
-        // КАРТА ТА КЛІКИ
+        // КАРТА ТА ІНТЕРАКТИВ
         // ==========================================
 
         function initHexGrid() {
@@ -731,9 +726,7 @@
                 const dx = e.clientX - panX - dragStartX;
                 const dy = e.clientY - panY - dragStartY;
                 
-                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                    isClick = false;
-                }
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isClick = false;
 
                 panX = e.clientX - dragStartX;
                 panY = e.clientY - dragStartY;
@@ -777,9 +770,7 @@
                 if (e.touches.length === 1 && isDragging) {
                     panX = e.touches[0].clientX - dragStartX;
                     panY = e.touches[0].clientY - dragStartY;
-                    if (Math.abs(panX - startPanX) > 5 || Math.abs(panY - startPanY) > 5) {
-                        isClick = false;
-                    }
+                    if (Math.abs(panX - startPanX) > 5 || Math.abs(panY - startPanY) > 5) isClick = false;
                     updateTransform();
                 } else if (e.touches.length === 2 && touchStartDist > 0) {
                     const currentDist = Math.hypot(
@@ -848,7 +839,6 @@
                     if (hexInfo.type === 'core') {
                         openTownHallModal();
                     } else {
-                        // Відкриваємо меню території для будівництва ферми чи вітряка
                         openTerritoryModal(r, c, hexInfo);
                     }
                 } else {
@@ -857,11 +847,9 @@
                 return;
             }
 
-            // Якщо гекс вільний, перевіряємо чи є у гравця база
             const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
             
             if (!userHasBase) {
-                // Заснування першої бази
                 if (!checkDistanceValid(r, c)) {
                     alert('Занадто близько до території іншого гравця! Потрібен щонайменше 1 вільний гекс розриву.');
                     return;
@@ -871,8 +859,6 @@
                 return;
             }
 
-            // Покупка нового суміжного гекса (Експансія)
-            // Перевіряємо, чи є у гравця сусідній контрольований гекс поруч
             const neighbors = getNeighbors(r, c);
             const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername);
 
@@ -886,7 +872,7 @@
         }
 
         // ==========================================
-        // МОДАЛЬНІ ВІКНА ТА БУДІВНИЦТВО
+        // МОДАЛЬНІ ВІКНА ТА ДІЇ
         // ==========================================
 
         function openBaseModal() {
@@ -913,7 +899,7 @@
             });
 
             if (!firstAvailableSelected) {
-                alert("Усі унікальні кольори прапорів вже зайняті іншими гравцями!");
+                alert("Усі кольори прапорів вже зайняті!");
                 return;
             }
 
@@ -921,10 +907,7 @@
         }
 
         window.selectColor = function(el) {
-            if (el.classList.contains('disabled')) {
-                alert('Цей колір вже зарезервований іншим гравцем!');
-                return;
-            }
+            if (el.classList.contains('disabled')) return;
             document.querySelectorAll('#color-picker-container .color-option').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
             selectedColor = el.getAttribute('data-color');
@@ -951,11 +934,11 @@
             };
 
             neighbors.forEach(n => {
-                if (!hexWorldData[n.key]) { // Займаємо тільки вільні навколишні гекси
+                if (!hexWorldData[n.key]) {
                     updates[n.key] = {
                         owner: currentUsername,
                         color: selectedColor,
-                        type: 'border'
+                        type: 'starter'
                     };
                 }
             });
@@ -974,18 +957,14 @@
             const infoContainer = document.getElementById('townhall-info');
             const upgradeBtn = document.getElementById('upgrade-btn');
 
-            let costText = "";
-            let canUpgrade = true;
-
-            if (userTownHallLevel === 1) costText = "14 золота";
-            else if (userTownHallLevel === 2) costText = "42 золота";
-            else { costText = "—"; canUpgrade = false; }
+            let costText = userTownHallLevel === 1 ? "14 золота" : (userTownHallLevel === 2 ? "42 золота" : "—");
+            let canUpgrade = userTownHallLevel < 3;
 
             infoContainer.innerHTML = `
                 <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
                 <div><b>Поточний дохід:</b> +${calculateTotalIncome(currentUsername, hexWorldData)} золота/хв</div>
                 ${canUpgrade ? `
-                    <div style="margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px;"><b>Наступний рівень (${userTownHallLevel + 1}):</b> + Базовий дохід</div>
+                    <div style="margin-top: 6px; border-top: 1px solid #334155; padding-top: 6px;"><b>Наступний рівень (${userTownHallLevel + 1}):</b> збільшує базовий дохід</div>
                     <div><b>Необхідно золота:</b> <span style="color: #fbbf24; font-weight: bold;">${costText}</span></div>
                 ` : `
                     <div style="margin-top: 6px; color: #10b981; font-weight: bold;">Максимальний рівень досягнуто!</div>
@@ -1031,7 +1010,6 @@
             }
         }
 
-        // Меню території (покупка гекса або побудова ферми/вітряка)
         function openTerritoryModal(r, c, hexInfo) {
             const modal = document.getElementById('territory-modal');
             const desc = document.getElementById('territory-desc');
@@ -1040,22 +1018,18 @@
             let htmlContent = '';
 
             if (!hexInfo) {
-                // Покупка вільного гекса за 10 золота (-1 дохід)
-                desc.innerHTML = "Придбати цей прикордонний гекс?<br><b>Вартість:</b> 10 золота<br><b>Ефект:</b> -1 золото/хв доходу (податок на територію)";
+                desc.innerHTML = "Придбати цей прикордонний гекс?<br><b>Вартість:</b> 10 золота<br><b>Ефект:</b> -1 золото/хв доходу (податок)";
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
-            } else if (hexInfo.type === 'border') {
-                // Можна збудувати Ферму або Вітряк на своїй території
-                desc.innerHTML = "Оберіть будівлю для зведення на цьому гексі:";
+            } else if (hexInfo.type === 'starter' || hexInfo.type === 'purchased') {
+                desc.innerHTML = "Оберіть будівлю для зведення:<br><small style='color: #94a3b8;'>🌾 Ферма: 10 💰 | 🏭 Вітряк: 20 💰</small>";
                 htmlContent = `
-                    <button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (+1 💰/хв)</button>
-                    <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🌬️ Побудувати Вітряк (+1 за ферму поруч)</button>
+                    <button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (10 💰)</button>
+                    <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🏭 Побудувати Вітряк (20 💰)</button>
                 `;
-            } else if (hexInfo.type === 'farm') {
-                desc.innerHTML = "На цьому гексі знаходиться <b>Ферма</b> (🌾). Вона приносить +1 золото/хв.";
-                htmlContent = `<span style="color: #94a3b8; font-size: 12px;">Територія повністю облаштована.</span>`;
-            } else if (hexInfo.type === 'mill') {
-                desc.innerHTML = "На цьому гексі знаходиться <b>Вітряк</b> (🌬️). Він підсилює сусідні ферми.";
-                htmlContent = `<span style="color: #94a3b8; font-size: 12px;">Територія повністю облаштована.</span>`;
+            } else if (hexInfo.type === 'farm' || hexInfo.type === 'mill') {
+                const bName = hexInfo.type === 'farm' ? 'Ферма (🌾)' : 'Вітряк (🏭)';
+                desc.innerHTML = `На цьому гексі знаходиться <b>${bName}</b>.<br>Бажаєте знести будівлю?<br><b>Вартість знесення:</b> 5 золота.`;
+                htmlContent = `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести будівлю (5 💰)</button>`;
             }
 
             buttonsContainer.innerHTML = htmlContent;
@@ -1074,7 +1048,6 @@
             }
 
             const key = `${r}_${c}`;
-            // Знаходимо колір поточного гравця
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
                 if (h.owner === currentUsername) myColor = h.color;
@@ -1084,7 +1057,7 @@
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: 'border'
+                type: 'purchased' 
             };
             updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1099,7 +1072,12 @@
         }
 
         window.buildBuilding = async function(r, c, type) {
-            // Перевіримо вартість чи інші умови за бажанням (поки будівництво безкоштовне або за символічну плату)
+            const cost = type === 'farm' ? 10 : 20; 
+            if (userGold < cost) {
+                alert(`Недостатньо золота! Потрібно ${cost} золота.`);
+                return;
+            }
+
             const key = `${r}_${c}`;
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
@@ -1110,8 +1088,9 @@
             updates[`world_hexes/${key}`] = {
                 owner: currentUsername,
                 color: myColor,
-                type: type // 'farm' або 'mill'
+                type: type
             };
+            updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1120,6 +1099,38 @@
                 alert(type === 'farm' ? "Ферму успішно зведено!" : "Вітряк успішно зведено!");
             } catch (err) {
                 alert("Помилка будівництва: " + err.message);
+            }
+        }
+
+        window.demolishBuilding = async function(r, c) {
+            const cost = 5; 
+            if (userGold < cost) {
+                alert(`Недостатньо золота для знесення! Потрібно ${cost} золота.`);
+                return;
+            }
+
+            const key = `${r}_${c}`;
+            const hexInfo = hexWorldData[key];
+            if (!hexInfo) return;
+
+            const restoredType = hexInfo.type === 'farm' || hexInfo.type === 'mill' ? 'purchased' : 'starter';
+            let myColor = hexInfo.color;
+
+            const updates = {};
+            updates[`world_hexes/${key}`] = {
+                owner: currentUsername,
+                color: myColor,
+                type: restoredType
+            };
+            updates[`users/${currentUsername}/gold`] = userGold - cost;
+            updates[`users/${currentUsername}/lastOnline`] = Date.now();
+
+            try {
+                await update(ref(db), updates);
+                closeTerritoryModal();
+                alert("Будівлю успішно знесено!");
+            } catch (err) {
+                alert("Помилка знесення: " + err.message);
             }
         }
 
@@ -1157,7 +1168,6 @@
                     if (hexData.type === 'core') {
                         polygon.classList.add('occupied-core');
 
-                        // Іконка Замку
                         const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
                         castleText.setAttribute("x", center.x);
                         castleText.setAttribute("y", center.y + 2);
@@ -1165,7 +1175,6 @@
                         castleText.textContent = "🏰";
                         svg.appendChild(castleText);
 
-                        // Підпис власника та рівня
                         const lvl = hexData.level || 1;
                         const labelContent = `👑 ${hexData.owner} [Lvl ${lvl}]`;
                         renderLabel(svg, center, labelContent);
@@ -1185,7 +1194,7 @@
                         millText.setAttribute("x", center.x);
                         millText.setAttribute("y", center.y + 2);
                         millText.setAttribute("class", "map-icon");
-                        millText.textContent = "🌬️";
+                        millText.textContent = "🏭"; // Класична іконка промислового вітряка/млина в тому ж стилі
                         svg.appendChild(millText);
 
                     } else {
@@ -1217,4 +1226,3 @@
     </script>
 </body>
 </html>
- 
