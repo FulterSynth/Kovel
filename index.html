@@ -1309,32 +1309,38 @@
     clearRouteDots();
     renderWorldData();
 }
-        function refreshUnitModal() {
-            const modal = document.getElementById('unit-modal');
-            if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
-
-            let found = null;
-            if (activeSelection.unitId) {
-                found = findMyUnitById(activeSelection.unitId);
-            }
-            if (!found) {
-                const h = hexWorldData[activeSelection.key];
-                if (isMyUnit(h)) found = { key: activeSelection.key, hex: h };
-            }
-
-            if (found) {
-                activeSelection.key = found.key;
-                const [r, c] = found.key.split('_').map(Number);
-                openUnitModal(r, c, found.hex);
-            } else {
-                modal.style.display = 'none';
-                activeSelection = null;
-            }
-        }
+       
 
         window.switchToCell = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (h) openCellForHex(r, c, h); }
-        window.switchToUnit = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (isMyUnit(h)) openUnitModal(r, c, h); }
+        windowfunction refreshUnitModal() {
+    const modal = document.getElementById('unit-modal');
+    if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
 
+    let found = null;
+    if (activeSelection.unitId) {
+        found = findMyUnitById(activeSelection.unitId);
+    }
+    if (!found) {
+        const h = hexWorldData[activeSelection.key];
+        if (isMyUnit(h)) found = { key: activeSelection.key, hex: h };
+    }
+
+    if (found) {
+        activeSelection.key = found.key;
+        const [r, c] = found.key.split('_').map(Number);
+        openUnitModal(r, c, found.hex);
+        // Оновлюємо крапки
+        clearRouteDots();
+        if (found.hex.unit.state === 'moving') {
+            const svg = document.getElementById('hex-svg');
+            setTimeout(() => renderUnitRouteDots(svg, found.hex.unit, found.key), 30);
+        }
+    } else {
+        modal.style.display = 'none';
+        activeSelection = null;
+        clearRouteDots();
+    }
+}
         window.retreatUnit = async function(r, c) {
             const key = `${r}_${c}`;
             const h = hexWorldData[key];
@@ -1663,6 +1669,7 @@ function clearRouteDots() {
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
+            document.querySelectorAll('.route-dots-group').forEach(el => el.remove()); document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
