@@ -3,16 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.21</title>
+    <title>HexPolitics v5.22</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.21
+    ПОТОЧНА ВЕРСІЯ: v5.22
 
     ГОЛОВНЕ В ЦІЙ ВЕРСІЇ:
-    - ПОВНІСТЮ переписана логіка руху. Воїн може ходити на БУДЬ-ЯКИЙ гекс:
-      свій, чужий, нічий, з будівлею, з ворогом — єдина заборона: прірва і гекс
-      де стоїть СВІЙ ІНШИЙ воїн.
+    - ПРИБРАНО стрілки маршруту, підсвічування цілі — зайве
+    - ПРОСТИЙ рух: воїн іде по гексах, 1 гекс/хв
+    - Свій воїн на шляху → обхід (BFS)
+    - Ворожий воїн / табір на шляху → бій
+    - Дійшов до цілі → стає, або б'ється якщо там ворог
 
     КЛЮЧОВІ КОНСТАНТИ:
     - FIGHT_ROUND_MS = 5000
@@ -53,8 +55,6 @@
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
         polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
-        polygon.hex.target-highlight { stroke: #10b981 !important; stroke-width: 3.5 !important; fill: #10b981 !important; fill-opacity: 0.45 !important; animation: pulse-green 1.2s infinite alternate; }
-        @keyframes pulse-green { 0% { fill-opacity: 0.25; stroke-width: 2.5; } 100% { fill-opacity: 0.55; stroke-width: 4; } }
 
         .map-icon { font-size: 16px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
         .mill-blades { transform-box: fill-box; transform-origin: 50% 50%; animation: millSpin 4s linear infinite; }
@@ -109,12 +109,6 @@
         .battle-hp-bar-fill { pointer-events: none; }
         .battle-hp-label { font-size: 10px; font-weight: 700; fill: #f8fafc; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 
-        .route-arrow-current { stroke: #10b981; stroke-width: 4; fill: none; stroke-linecap: round; stroke-dasharray: 8 4; animation: dashMove 1s linear infinite; pointer-events: none; }
-        .route-arrow-final { stroke: #3b82f6; stroke-width: 3.5; fill: none; stroke-linecap: round; stroke-dasharray: 10 5; animation: dashMove 1.5s linear infinite; pointer-events: none; opacity: 0.85; }
-        .route-arrow-head-current { fill: #10b981; pointer-events: none; }
-        .route-arrow-head-final { fill: #3b82f6; pointer-events: none; opacity: 0.9; }
-        @keyframes dashMove { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -24; } }
-
         #move-banner { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px; z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%; }
         #move-banner button { padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
     </style>
@@ -124,8 +118,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.21</h2>
-            <p id="loader-desc">Переписана логіка руху...</p>
+            <h2 id="loader-status">HexPolitics v5.22</h2>
+            <p id="loader-desc">Простий рух по гексах...</p>
         </div>
     </div>
 
@@ -237,7 +231,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.20";
+        const CURRENT_VERSION = "5.22";
 
         let mode = "login";
         let currentUsername = "";
@@ -318,17 +312,14 @@
                 const hasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
                 if (!hasBase) return;
                 const earned = diffMinutes * calculateEffectiveIncome(currentUsername, hexWorldData);
-                await update(userRef, {
-                    gold: (userData.gold || 0) + earned,
-                    lastOnline: Date.now()
-                });
+                await update(userRef, { gold: (userData.gold || 0) + earned, lastOnline: Date.now() });
                 const mins = Math.floor(diffMinutes);
                 alert(`💰 Поки вкладка була неактивна (${mins} хв), накапало: +${Math.floor(earned)} золота!`);
             } catch (e) { console.error('Помилка повернення:', e); }
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.20"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.22"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -606,9 +597,7 @@
             return u;
         }
 
-        // ============================================
-        // ПЕРЕПИСАНИЙ findPath — ходить через БУДЬ-ЯКИЙ гекс, крім прірви
-        // ============================================
+        // BFS: шукає шлях, обходячи своїх воїнів та прірву
         function findPath(startR, startC, targetR, targetC) {
             const startKey = `${startR}_${startC}`;
             const targetKey = `${targetR}_${targetC}`;
@@ -624,8 +613,10 @@
                     const key = n.key;
                     if (visited.has(key)) continue;
                     const h = hexWorldData[key];
-                    // ЄДИНА заборона — прірва
+                    // Прірва — не ходимо
                     if (h && h.type === 'chasm') continue;
+                    // Свій воїн на шляху — обходимо (крім фінальної цілі)
+                    if (key !== targetKey && isMyUnit(h)) continue;
                     visited.add(key);
                     const newPath = [...path, key];
                     if (key === targetKey) return newPath;
@@ -671,7 +662,7 @@
                 const targetHex = hexWorldData[targetKey];
                 const targetUnit = targetHex ? targetHex.unit : null;
 
-                // БІЙ
+                // ===== БІЙ =====
                 if (unit.state === 'fighting') {
                     if (touched.has(targetKey)) return;
                     touched.add(key); touched.add(targetKey);
@@ -714,11 +705,13 @@
                     return;
                 }
 
-                // РУХ
+                // ===== РУХ =====
                 if (unit.state === 'moving') {
-                   if (targetHex && targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
+                    // Прірва в цілі — зупиняємось
+                    if (targetHex && targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
+                    // Якщо цільового гекса НЕМАЄ в базі (порожній) — це ОК, йдемо далі
 
-                    // Ворожий воїн — бій
+                    // Ворожий воїн / табір на цілі — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -759,11 +752,11 @@
                         return;
                     }
 
-                    // Свій воїн на цілі — стоїмо
+                    // Свій воїн на цілі — стоїмо (не можна двох на одному гексі)
                     if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
                     // Ворожа ратуша — штурм
-                    if (targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
+                    if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
                         const attacker = { ...unit };
@@ -786,11 +779,11 @@
                         return;
                     }
 
-                    // Звичайний крок — на будь-який гекс
+                    // Звичайний крок — на будь-який гекс (в т.ч. порожній)
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
-                    const existingHexData = { ...targetHex };
+                    const existingHexData = targetHex ? { ...targetHex } : {};
                     delete existingHexData.unit;
 
                     if (nextIndex >= path.length) {
@@ -872,12 +865,6 @@
                     svg.appendChild(polygon);
                 }
             }
-
-            // #route-layer — ПІСЛЯ всіх гексів, тому ЗВЕРХУ
-            const routeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            routeLayer.setAttribute("id", "route-layer");
-            svg.appendChild(routeLayer);
-
             resetView();
         }
 
@@ -1009,15 +996,12 @@
             });
         }
 
-        // ============================================
-        // ПЕРЕПИСАНИЙ handleHexClick — режим руху ПЕРШИЙ, спрощений
-        // ============================================
         function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
 
-            // === РЕЖИМ РУХУ — ПЕРШИЙ І НАЙПРОСТІШИЙ ===
+            // ===== РЕЖИМ РУХУ =====
             if (isSelectingMoveTarget) {
                 if (!movingUnitCoords) { cancelMoveMode(); return; }
                 const { r: sr, c: sc } = movingUnitCoords;
@@ -1026,11 +1010,11 @@
                 if (targetHex && targetHex.type === 'chasm') { alert("Не можна ходити в прірву!"); return; }
                 if (isMyUnit(targetHex)) { alert("Там уже стоїть ваш воїн!"); return; }
                 const path = findPath(sr, sc, r, c);
-                if (!path || path.length === 0) { alert("Шлях не знайдено! Можливо, все заблоковано прірвами."); return; }
+                if (!path || path.length === 0) { alert("Шлях не знайдено!"); return; }
                 executeUnitMove(sr, sc, r, c, path);
                 return;
             }
-            // === КІНЕЦЬ РЕЖИМУ РУХУ ===
+            // ===== КІНЕЦЬ РЕЖИМУ РУХУ =====
 
             if (isMyUnit(hexInfo)) {
                 if (activeSelection && activeSelection.key === key && activeSelection.layer === 'unit') openCellForHex(r, c, hexInfo);
@@ -1290,18 +1274,11 @@
             btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
-
-            if (u.state === 'moving') {
-                setTimeout(() => { renderUnitRouteArrows(u, `${r}_${c}`); }, 30);
-            } else {
-                clearRouteLayer();
-            }
         }
 
         window.closeUnitModal = function() {
             document.getElementById('unit-modal').style.display = 'none';
             activeSelection = null;
-            clearRouteLayer();
             renderWorldData();
         }
 
@@ -1325,7 +1302,6 @@
             } else {
                 modal.style.display = 'none';
                 activeSelection = null;
-                clearRouteLayer();
             }
         }
 
@@ -1431,22 +1407,6 @@
                         renderWorldData();
                         updateIncomeDisplay();
                         refreshUnitModal();
-                        if (activeSelection && activeSelection.layer === 'unit') {
-                            let unit = null, unitKey = null;
-                            if (activeSelection.unitId) {
-                                const found = findMyUnitById(activeSelection.unitId);
-                                if (found) { unit = found.hex.unit; unitKey = found.key; activeSelection.key = found.key; }
-                            }
-                            if (!unit) {
-                                const h = hexWorldData[activeSelection.key];
-                                if (isMyUnit(h)) { unit = h.unit; unitKey = activeSelection.key; }
-                            }
-                            if (unit && unit.state === 'moving') {
-                                setTimeout(() => { renderUnitRouteArrows(unit, unitKey); }, 30);
-                            } else {
-                                clearRouteLayer();
-                            }
-                        }
                         renderScheduled = false;
                     });
                 }
@@ -1548,59 +1508,6 @@
             svg.appendChild(g);
         }
 
-        function clearRouteLayer() {
-            const layer = document.getElementById('route-layer');
-            if (layer) layer.innerHTML = '';
-        }
-
-        function renderUnitRouteArrows(unit, currentKey) {
-            clearRouteLayer();
-            if (!unit || unit.state !== 'moving') return;
-            if (!unit.path || !Array.isArray(unit.path)) return;
-
-            const layer = document.getElementById('route-layer');
-            if (!layer) return;
-
-            const currentIdx = unit.pathIndex || 0;
-            const remainingPath = unit.path.slice(currentIdx);
-            if (remainingPath.length === 0) return;
-
-            const [cr, cc] = currentKey.split('_').map(Number);
-            const currentCenter = hexToPixel(cr, cc);
-            const nextKey = remainingPath[0];
-            const [nr, nc] = nextKey.split('_').map(Number);
-            const nextCenter = hexToPixel(nr, nc);
-
-            layer.appendChild(svgEl("line", { x1: currentCenter.x, y1: currentCenter.y, x2: nextCenter.x, y2: nextCenter.y, class: "route-arrow-current" }));
-            const angle1 = Math.atan2(nextCenter.y - currentCenter.y, nextCenter.x - currentCenter.x);
-            const headLen = 12, headAngle = Math.PI / 6;
-            layer.appendChild(svgEl("polygon", {
-                points: `${nextCenter.x},${nextCenter.y} ${nextCenter.x - headLen * Math.cos(angle1 - headAngle)},${nextCenter.y - headLen * Math.sin(angle1 - headAngle)} ${nextCenter.x - headLen * Math.cos(angle1 + headAngle)},${nextCenter.y - headLen * Math.sin(angle1 + headAngle)}`,
-                class: "route-arrow-head-current"
-            }));
-
-            if (remainingPath.length > 1) {
-                for (let i = 1; i < remainingPath.length; i++) {
-                    const [pr, pc] = remainingPath[i - 1].split('_').map(Number);
-                    const [tr, tc] = remainingPath[i].split('_').map(Number);
-                    const pC = hexToPixel(pr, pc), tC = hexToPixel(tr, tc);
-                    layer.appendChild(svgEl("line", { x1: pC.x, y1: pC.y, x2: tC.x, y2: tC.y, class: "route-arrow-final" }));
-                }
-                const finalKey = remainingPath[remainingPath.length - 1];
-                const preFinalKey = remainingPath[remainingPath.length - 2];
-                const [fr, fc] = finalKey.split('_').map(Number);
-                const [pfr, pfc] = preFinalKey.split('_').map(Number);
-                const fC = hexToPixel(fr, fc), pfC = hexToPixel(pfr, pfc);
-                const angle2 = Math.atan2(fC.y - pfC.y, fC.x - pfC.x);
-                layer.appendChild(svgEl("polygon", {
-                    points: `${fC.x},${fC.y} ${fC.x - headLen * Math.cos(angle2 - headAngle)},${fC.y - headLen * Math.sin(angle2 - headAngle)} ${fC.x - headLen * Math.cos(angle2 + headAngle)},${fC.y - headLen * Math.sin(angle2 + headAngle)}`,
-                    class: "route-arrow-head-final"
-                }));
-                const finalPoly = document.getElementById(`hex-${fr}-${fc}`);
-                if (finalPoly) finalPoly.classList.add('target-highlight');
-            }
-        }
-
         function renderBattleHPBars(svg) {
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
@@ -1689,7 +1596,8 @@
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
-                if (!el.classList.contains('target-highlight')) { el.style.fill = '#1b263b'; el.style.stroke = '#1b263b'; }
+                el.style.fill = '#1b263b';
+                el.style.stroke = '#1b263b';
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
             });
 
@@ -1718,10 +1626,8 @@
                     return;
                 }
 
-                if (!polygon.classList.contains('target-highlight')) {
-                    polygon.style.fill = hexData.color;
-                    polygon.style.stroke = hexData.color;
-                }
+                polygon.style.fill = hexData.color;
+                polygon.style.stroke = hexData.color;
 
                 let plain = false;
                 if (hexData.type === 'core') {
