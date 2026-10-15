@@ -1716,6 +1716,42 @@ function renderUnitRouteDots(svg, unit, currentKey) {
         }
     });
 
+    svg.appendChfunction renderUnitBadgeild(g);
+}
+
+function clearRouteDots() {
+    document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
+}
+        // Малює крапки маршруту для рухомого воїна
+function renderUnitRouteDots(svg, unit, currentKey) {
+    if (!unit || unit.state !== 'moving') return;
+    if (!unit.path || !Array.isArray(unit.path)) return;
+
+    const currentIdx = unit.pathIndex || 0;
+    const remainingPath = unit.path.slice(currentIdx);
+    if (remainingPath.length === 0) return;
+
+    const g = svgEl("g", { class: "route-dots-group" });
+
+    remainingPath.forEach((key, i) => {
+        const [r, c] = key.split('_').map(Number);
+        const center = hexToPixel(r, c);
+
+        if (i === 0) {
+            // Наступний крок — зелена пульсуюча
+            g.appendChild(svgEl("circle", {
+                cx: center.x, cy: center.y, r: 7,
+                class: "route-dot-next"
+            }));
+        } else {
+            // Решта шляху — сині менші
+            g.appendChild(svgEl("circle", {
+                cx: center.x, cy: center.y, r: 4,
+                class: "route-dot-path"
+            }));
+        }
+    });
+
     svg.appendChild(g);
 }
 
