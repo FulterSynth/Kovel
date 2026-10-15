@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.17</title>
+    <title>HexPolitics v5.18</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
     ============================================
-    ПОТОЧНА ВЕРСІЯ: v5.17
+    ПОТОЧНА ВЕРСІЯ: v5.18
 
     ВЖЕ ЗРОБЛЕНО:
     - v5.9-v5.16: авторизація, економіка, варвари, будівлі, SVG
-    - v5.17: стрілки маршруту (фікс) + рух по нічиїй території
+    - v5.17: стрілки маршруту + рух по нічиїй території
+    - v5.18: фікс офлайн-доходу, HP-бари бою, фікс стрілок (окремий шар)
 
     КЛЮЧОВІ КОНСТАНТИ:
     - FIGHT_ROUND_MS = 5000
@@ -105,11 +106,17 @@
 
         .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
 
-        .route-arrow-current { stroke: #10b981; stroke-width: 3.5; fill: none; stroke-linecap: round; stroke-dasharray: 6 3; animation: dashMove 1s linear infinite; pointer-events: none; }
-        .route-arrow-final { stroke: #3b82f6; stroke-width: 3; fill: none; stroke-linecap: round; stroke-dasharray: 8 4; animation: dashMove 1.5s linear infinite; pointer-events: none; opacity: 0.8; }
+        /* HP-бари бою */
+        .battle-hp-bar-bg { fill: rgba(15, 23, 42, 0.9); stroke: #0f172a; stroke-width: 1; pointer-events: none; }
+        .battle-hp-bar-fill { pointer-events: none; }
+        .battle-hp-label { font-size: 10px; font-weight: 700; fill: #f8fafc; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+
+        /* Стрілки маршруту */
+        .route-arrow-current { stroke: #10b981; stroke-width: 4; fill: none; stroke-linecap: round; stroke-dasharray: 8 4; animation: dashMove 1s linear infinite; pointer-events: none; }
+        .route-arrow-final { stroke: #3b82f6; stroke-width: 3.5; fill: none; stroke-linecap: round; stroke-dasharray: 10 5; animation: dashMove 1.5s linear infinite; pointer-events: none; opacity: 0.85; }
         .route-arrow-head-current { fill: #10b981; pointer-events: none; }
         .route-arrow-head-final { fill: #3b82f6; pointer-events: none; opacity: 0.9; }
-        @keyframes dashMove { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -18; } }
+        @keyframes dashMove { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -24; } }
 
         #move-banner { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px; z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%; }
         #move-banner button { padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
@@ -120,8 +127,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.17</h2>
-            <p id="loader-desc">Стрілки маршруту + рух по нічиїй території...</p>
+            <h2 id="loader-status">HexPolitics v5.18</h2>
+            <p id="loader-desc">Фікс офлайн-доходу, HP-бари бою...</p>
         </div>
     </div>
 
@@ -233,7 +240,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.17";
+        const CURRENT_VERSION = "5.18";
 
         let mode = "login";
         let currentUsername = "";
@@ -285,16 +292,50 @@
         window.addEventListener('load', () => {
             setTimeout(() => { hideLoader(); }, 800);
             setInterval(checkAutoUpdate, 15000);
+
             window.addEventListener('beforeunload', () => {
                 if (currentUsername) { try { update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {} }
             });
+
+            // ВАЖЛИВО: при згортанні — saveLastOnline.
+            // При поверненні — нараховуємо офлайн-дохід.
             document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'hidden') saveLastOnline();
+                if (document.visibilityState === 'hidden') {
+                    saveLastOnline();
+                } else if (document.visibilityState === 'visible' && currentUsername) {
+                    setTimeout(applyOfflineIncomeOnReturn, 500);
+                }
             });
         });
 
+        // Окрема функція нарахування офлайн-доходу при поверненні до вкладки
+        async function applyOfflineIncomeOnReturn() {
+            if (!currentUsername) return;
+            try {
+                const userRef = ref(db, `users/${currentUsername}`);
+                const snap = await get(userRef);
+                if (!snap.exists()) return;
+                const userData = snap.val();
+                const lastTime = userData.lastOnline || Date.now();
+                const diffMinutes = (Date.now() - lastTime) / 60000;
+                if (diffMinutes < 0.5) return;
+
+                const hasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
+                if (!hasBase) return;
+
+                const incomePerMin = calculateEffectiveIncome(currentUsername, hexWorldData);
+                const earned = diffMinutes * incomePerMin;
+                await update(userRef, {
+                    gold: (userData.gold || 0) + earned,
+                    lastOnline: Date.now()
+                });
+                const mins = Math.floor(diffMinutes);
+                alert(`💰 Поки вкладка була неактивна (${mins} хв), накапало: +${Math.floor(earned)} золота!`);
+            } catch (e) { console.error('Помилка повернення:', e); }
+        }
+
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.17"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.18"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -533,9 +574,11 @@
             });
         }
 
+        // ФІКС: не оновлюємо lastOnline, коли вкладка невидима
         function startIncomeLoop() {
             if (incomeInterval) clearInterval(incomeInterval);
             incomeInterval = setInterval(async () => {
+                if (document.visibilityState !== 'visible') return;
                 if (Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core')) {
                     try {
                         const userRef = ref(db, `users/${currentUsername}`);
@@ -571,8 +614,6 @@
             return u;
         }
 
-        // BFS-пошук шляху. Дозволяємо через ВСІ гекси, крім прірви.
-        // НЕ ходимо через гекс, де стоїть СВІЙ воїн (щоб не блокувати), крім фінальної цілі.
         function findPath(startR, startC, targetR, targetC) {
             const startKey = `${startR}_${startC}`;
             const targetKey = `${targetR}_${targetC}`;
@@ -588,9 +629,7 @@
                     const key = n.key;
                     if (visited.has(key)) continue;
                     const h = hexWorldData[key];
-                    // Прірва — не ходимо (окрім випадку, якщо це міст — але міст не має type 'chasm', тому ок)
                     if (h && h.type === 'chasm') continue;
-                    // Не ходимо через свого воїна (крім фінальної цілі)
                     if (key !== targetKey && isMyUnit(h)) continue;
                     visited.add(key);
                     const newPath = [...path, key];
@@ -637,7 +676,6 @@
                 const targetHex = hexWorldData[targetKey];
                 const targetUnit = targetHex ? targetHex.unit : null;
 
-                // БІЙ
                 if (unit.state === 'fighting') {
                     if (touched.has(targetKey)) return;
                     touched.add(key); touched.add(targetKey);
@@ -680,11 +718,9 @@
                     return;
                 }
 
-                // РУХ
                 if (unit.state === 'moving') {
                     if (!targetHex || targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
-                    // Ворожий воїн на цілі — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -725,10 +761,8 @@
                         return;
                     }
 
-                    // Свій воїн на цілі — стоїмо
                     if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
-                    // Ворожа ратуша — штурм
                     if (targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -752,7 +786,6 @@
                         return;
                     }
 
-                    // Звичайний крок — на будь-який гекс (нічий, свій, ворожий)
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
@@ -826,6 +859,14 @@
             const height = GRID_ROWS * HEX_RADIUS * 1.5 + HEX_RADIUS * 2;
             svg.setAttribute('width', width);
             svg.setAttribute('height', height);
+
+            // === ОКРЕМИЙ ШАР ДЛЯ СТРІЛОК ===
+            // Створюємо <g id="route-layer"> — він завжди зверху,
+            // renderWorldData його НЕ чіпає.
+            const routeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            routeLayer.setAttribute("id", "route-layer");
+            svg.appendChild(routeLayer);
+
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
                     const center = hexToPixel(r, c);
@@ -947,8 +988,6 @@
 
         function isMyUnit(hex) { return !!(hex && hex.unit && hex.unit.owner === currentUsername); }
 
-        // getMoveTargets — куди може ступити воїн зараз (для підсвічування).
-        // Дозволяємо будь-який гекс (крім прірви та свого воїна).
         function getMoveTargets(r, c) {
             return getNeighbors(r, c).filter(n => {
                 const h = hexWorldData[n.key];
@@ -1231,22 +1270,17 @@
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
 
-            // Стрілки маршруту — малюємо ПІСЛЯ показу меню, окремим setTimeout,
-            // щоб гарантовано було після будь-якого renderWorldData
             if (u.state === 'moving') {
                 setTimeout(() => {
-                    document.querySelectorAll('.route-arrows').forEach(el => el.remove());
-                    const svg = document.getElementById('hex-svg');
-                    if (svg) renderUnitRouteArrows(svg, u, `${r}_${c}`);
-                }, 50);
+                    renderUnitRouteArrows(u, `${r}_${c}`);
+                }, 30);
             }
         }
 
         window.closeUnitModal = function() {
             document.getElementById('unit-modal').style.display = 'none';
             activeSelection = null;
-            document.querySelectorAll('.route-arrows').forEach(el => el.remove());
-            document.querySelectorAll('polygon.hex.target-highlight').forEach(el => el.classList.remove('target-highlight'));
+            clearRouteLayer();
             renderWorldData();
         }
 
@@ -1260,6 +1294,7 @@
             } else {
                 modal.style.display = 'none';
                 activeSelection = null;
+                clearRouteLayer();
             }
         }
 
@@ -1365,12 +1400,9 @@
                 if (activeSelection && activeSelection.layer === 'unit') {
                     const h = hexWorldData[activeSelection.key];
                     if (isMyUnit(h) && h.unit.state === 'moving') {
-                        const [rr, cc] = activeSelection.key.split('_').map(Number);
-                        setTimeout(() => {
-                            document.querySelectorAll('.route-arrows').forEach(el => el.remove());
-                            const svg = document.getElementById('hex-svg');
-                            if (svg) renderUnitRouteArrows(svg, h.unit, activeSelection.key);
-                        }, 30);
+                        setTimeout(() => { renderUnitRouteArrows(h.unit, activeSelection.key); }, 30);
+                    } else {
+                        clearRouteLayer();
                     }
                 }
             });
@@ -1471,10 +1503,20 @@
             svg.appendChild(g);
         }
 
-        // Стрілки маршруту
-        function renderUnitRouteArrows(svg, unit, currentKey) {
+        // === СТРІЛКИ МАРШРУТУ (у окремому шарі #route-layer) ===
+        function clearRouteLayer() {
+            const layer = document.getElementById('route-layer');
+            if (layer) layer.innerHTML = '';
+        }
+
+        function renderUnitRouteArrows(unit, currentKey) {
+            clearRouteLayer();
             if (!unit || unit.state !== 'moving') return;
             if (!unit.path || !Array.isArray(unit.path)) return;
+
+            const layer = document.getElementById('route-layer');
+            if (!layer) return;
+
             const currentIdx = unit.pathIndex || 0;
             const remainingPath = unit.path.slice(currentIdx);
             if (remainingPath.length === 0) return;
@@ -1485,23 +1527,22 @@
             const [nr, nc] = nextKey.split('_').map(Number);
             const nextCenter = hexToPixel(nr, nc);
 
-            const g1 = svgEl("g", { class: "route-arrows" });
-            g1.appendChild(svgEl("line", { x1: currentCenter.x, y1: currentCenter.y, x2: nextCenter.x, y2: nextCenter.y, class: "route-arrow-current" }));
+            // Зелена стрілка до наступного кроку
+            layer.appendChild(svgEl("line", { x1: currentCenter.x, y1: currentCenter.y, x2: nextCenter.x, y2: nextCenter.y, class: "route-arrow-current" }));
             const angle1 = Math.atan2(nextCenter.y - currentCenter.y, nextCenter.x - currentCenter.x);
-            const headLen = 10, headAngle = Math.PI / 6;
-            g1.appendChild(svgEl("polygon", {
+            const headLen = 12, headAngle = Math.PI / 6;
+            layer.appendChild(svgEl("polygon", {
                 points: `${nextCenter.x},${nextCenter.y} ${nextCenter.x - headLen * Math.cos(angle1 - headAngle)},${nextCenter.y - headLen * Math.sin(angle1 - headAngle)} ${nextCenter.x - headLen * Math.cos(angle1 + headAngle)},${nextCenter.y - headLen * Math.sin(angle1 + headAngle)}`,
                 class: "route-arrow-head-current"
             }));
-            svg.appendChild(g1);
 
+            // Синя стрілка до фінального гекса (якщо > 1 кроку)
             if (remainingPath.length > 1) {
-                const g2 = svgEl("g", { class: "route-arrows" });
                 for (let i = 1; i < remainingPath.length; i++) {
                     const [pr, pc] = remainingPath[i - 1].split('_').map(Number);
                     const [tr, tc] = remainingPath[i].split('_').map(Number);
                     const pC = hexToPixel(pr, pc), tC = hexToPixel(tr, tc);
-                    g2.appendChild(svgEl("line", { x1: pC.x, y1: pC.y, x2: tC.x, y2: tC.y, class: "route-arrow-final" }));
+                    layer.appendChild(svgEl("line", { x1: pC.x, y1: pC.y, x2: tC.x, y2: tC.y, class: "route-arrow-final" }));
                 }
                 const finalKey = remainingPath[remainingPath.length - 1];
                 const preFinalKey = remainingPath[remainingPath.length - 2];
@@ -1509,14 +1550,64 @@
                 const [pfr, pfc] = preFinalKey.split('_').map(Number);
                 const fC = hexToPixel(fr, fc), pfC = hexToPixel(pfr, pfc);
                 const angle2 = Math.atan2(fC.y - pfC.y, fC.x - pfC.x);
-                g2.appendChild(svgEl("polygon", {
+                layer.appendChild(svgEl("polygon", {
                     points: `${fC.x},${fC.y} ${fC.x - headLen * Math.cos(angle2 - headAngle)},${fC.y - headLen * Math.sin(angle2 - headAngle)} ${fC.x - headLen * Math.cos(angle2 + headAngle)},${fC.y - headLen * Math.sin(angle2 + headAngle)}`,
                     class: "route-arrow-head-final"
                 }));
-                svg.appendChild(g2);
                 const finalPoly = document.getElementById(`hex-${fr}-${fc}`);
                 if (finalPoly) finalPoly.classList.add('target-highlight');
             }
+        }
+
+        // === HP-БАРИ БОЮ ===
+        function renderBattleHPBars(svg) {
+            Object.keys(hexWorldData).forEach(key => {
+                const h = hexWorldData[key];
+                if (!h || !h.unit) return;
+                if (h.unit.state !== 'fighting') return;
+                if (h.unit.owner !== currentUsername) return;
+
+                const targetKey = h.unit.targetKey;
+                if (!targetKey) return;
+                const targetHex = hexWorldData[targetKey];
+                if (!targetHex || !targetHex.unit) return;
+
+                const [r1, c1] = key.split('_').map(Number);
+                const [r2, c2] = targetKey.split('_').map(Number);
+                const p1 = hexToPixel(r1, c1);
+                const p2 = hexToPixel(r2, c2);
+
+                drawBattleHPBar(svg, p1.x, p1.y - 30, h.unit, "#3b82f6", "Ви");
+                drawBattleHPBar(svg, p2.x, p2.y - 30, targetHex.unit, "#ef4444", "Ворог");
+            });
+        }
+
+        function drawBattleHPBar(svg, cx, cy, unit, color, label) {
+            const barW = 44, barH = 9;
+            const bx = cx - barW / 2;
+            const by = cy;
+            const maxHp = unit.maxHp || 100;
+            const pct = Math.max(0, Math.min(1, (unit.hp || 0) / maxHp));
+
+            const labelText = svgEl("text", { x: cx, y: by - 8, class: "battle-hp-label", "font-size": "10" });
+            labelText.textContent = label;
+            svg.appendChild(labelText);
+
+            svg.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, class: "battle-hp-bar-bg" }));
+
+            const pctColor = pct > 0.5 ? color : (pct > 0.25 ? '#f59e0b' : '#ef4444');
+            svg.appendChild(svgEl("rect", {
+                x: bx + 1, y: by + 1,
+                width: Math.max(0, (barW - 2) * pct),
+                height: barH - 2,
+                rx: (barH - 2) / 2,
+                fill: pctColor,
+                class: "battle-hp-bar-fill"
+            }));
+
+            const hpText = svgEl("text", { x: cx, y: by + barH / 2 + 0.5, class: "battle-hp-label", "font-size": "8" });
+            hpText.textContent = `${Math.round(unit.hp)}/${maxHp}`;
+            svg.appendChild(hpText);
         }
 
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
@@ -1554,7 +1645,9 @@
 
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
+            // НЕ чіпаємо #route-layer — він окремий
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
+            document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
                 if (!el.classList.contains('target-highlight')) { el.style.fill = '#1b263b'; el.style.stroke = '#1b263b'; }
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
@@ -1610,6 +1703,10 @@
                 if (u.big) renderUnitBadge(svg, u.center.x, u.center.y, 15, u.unit, u.color, u.barbarian);
                 else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
             });
+
+            // HP-бари бою — поверх юнітів
+            renderBattleHPBars(svg);
+
             labelQueue.forEach(l => renderLabel(svg, l.center, l.text));
         }
 
