@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.11</title>
+    <title>HexPolitics v5.12</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -92,7 +92,7 @@
             pointer-events: none;
         }
 
-        /* === АНІМАЦІЇ ДЛЯ SVG-ОБ'ЄКТІВ === */
+        /* === АНІМАЦІЯ ДЛЯ ВІТРЯКА === */
         .mill-blades {
             transform-origin: 50% 50%;
             animation: millSpin 4s linear infinite;
@@ -100,15 +100,6 @@
         @keyframes millSpin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
-        }
-
-        .flag-wave {
-            transform-origin: 0% 50%;
-            animation: flagWave 1.5s ease-in-out infinite alternate;
-        }
-        @keyframes flagWave {
-            from { transform: skewY(-3deg) scaleX(1); }
-            to { transform: skewY(3deg) scaleX(0.96); }
         }
 
         .owner-label-bg {
@@ -227,8 +218,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.11</h2>
-            <p id="loader-desc">Нова графіка: вітряк, ферма, ратуша...</p>
+            <h2 id="loader-status">HexPolitics v5.12</h2>
+            <p id="loader-desc">Статичний прапор...</p>
         </div>
     </div>
 
@@ -340,7 +331,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.11";
+        const CURRENT_VERSION = "5.12";
 
         let mode = "login";
         let currentUsername = "";
@@ -408,7 +399,7 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.11";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.12";
             document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
@@ -2067,22 +2058,18 @@
             g.appendChild(svgEl("circle", { cx: cx - 14, cy: cy - 5, r: 1.5, fill: "#fbbf24" }));
             g.appendChild(svgEl("circle", { cx: cx + 14, cy: cy - 5, r: 1.5, fill: "#fbbf24" }));
 
-            // Прапор на центральній вежі (майорить!)
-            const flagPole = svgEl("line", {
+            // Прапор (СТАТИЧНИЙ — без анімації)
+            g.appendChild(svgEl("line", {
                 x1: cx, y1: cy - 19, x2: cx, y2: cy - 30,
                 stroke: "#94a3b8", "stroke-width": 1.5
-            });
-            g.appendChild(flagPole);
+            }));
 
-            const flagGroup = svgEl("g", { class: "flag-wave" });
-            const flag = svgEl("path", {
+            g.appendChild(svgEl("path", {
                 d: `M ${cx} ${cy - 30} L ${cx + 11} ${cy - 28} L ${cx} ${cy - 23} Z`,
                 fill: teamColor, stroke: "rgba(0,0,0,0.4)", "stroke-width": 0.8
-            });
-            flagGroup.appendChild(flag);
-            g.appendChild(flagGroup);
+            }));
 
-            // Емблема на прапорі (крапка)
+            // Емблема на прапорі
             g.appendChild(svgEl("circle", {
                 cx: cx + 5, cy: cy - 27.5, r: 1.2,
                 fill: "rgba(255,255,255,0.85)"
@@ -2090,43 +2077,42 @@
 
             // Рівень ратуші — значок корони
             if (level >= 2) {
-                g.appendChild(svgEl("text", {
+                const crown = svgEl("text", {
                     x: cx + 14, y: cy - 22,
                     "font-size": "9", "text-anchor": "middle",
                     fill: "#fbbf24"
-                })).textContent = "👑";
+                });
+                crown.textContent = "👑";
+                g.appendChild(crown);
             }
 
             svg.appendChild(g);
         }
 
         // ==========================================
-        // 🌾 ФЕРМА — будиночок з полем та деревом
+        // 🌾 ФЕРМА
         // ==========================================
         function renderFarmVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x;
             const cy = center.y;
 
-            // Тінь
             g.appendChild(svgEl("ellipse", {
                 cx: cx, cy: cy + 12, rx: 20, ry: 5,
                 fill: "rgba(0,0,0,0.4)"
             }));
 
-            // Поле з колосками (праворуч)
+            // Поле
             g.appendChild(svgEl("rect", {
                 x: cx + 4, y: cy - 2, width: 14, height: 12,
                 fill: "#a16207", stroke: "#78350f", "stroke-width": 1, rx: 1
             }));
-            // Борозни поля
             for (let i = 0; i < 4; i++) {
                 g.appendChild(svgEl("line", {
                     x1: cx + 6, y1: cy + i * 3, x2: cx + 16, y2: cy + i * 3,
                     stroke: "#78350f", "stroke-width": 0.7
                 }));
             }
-            // Колоски
             for (let i = 0; i < 3; i++) {
                 g.appendChild(svgEl("line", {
                     x1: cx + 8 + i * 3, y1: cy - 2, x2: cx + 8 + i * 3, y2: cy - 7,
@@ -2140,12 +2126,11 @@
                 fill: "#eab308", stroke: "#78350f", "stroke-width": 1.5
             }));
 
-            // Солом'яний дах
+            // Дах
             g.appendChild(svgEl("path", {
                 d: `M ${cx - 16} ${cy - 4} L ${cx - 5} ${cy - 15} L ${cx + 6} ${cy - 4} Z`,
                 fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
             }));
-            // Смужки на даху
             for (let i = 0; i < 3; i++) {
                 g.appendChild(svgEl("line", {
                     x1: cx - 13 + i * 3, y1: cy - 5, x2: cx - 8 + i * 3, y2: cy - 12,
@@ -2165,7 +2150,7 @@
                 fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
             }));
 
-            // Дерево (ліворуч)
+            // Дерево
             g.appendChild(svgEl("rect", {
                 x: cx - 19, y: cy + 4, width: 2.5, height: 7,
                 fill: "#78350f"
@@ -2190,19 +2175,18 @@
             const cx = center.x;
             const cy = center.y;
 
-            // Тінь
             g.appendChild(svgEl("ellipse", {
                 cx: cx, cy: cy + 14, rx: 15, ry: 5,
                 fill: "rgba(0,0,0,0.4)"
             }));
 
-            // Основа вітряка (трапеція)
+            // Основа вітряка
             g.appendChild(svgEl("path", {
                 d: `M ${cx - 9} ${cy + 12} L ${cx - 6} ${cy - 4} L ${cx + 6} ${cy - 4} L ${cx + 9} ${cy + 12} Z`,
                 fill: "#f5f5f4", stroke: "#78350f", "stroke-width": 1.5, "stroke-linejoin": "round"
             }));
 
-            // Дах (конус)
+            // Дах
             g.appendChild(svgEl("path", {
                 d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`,
                 fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
@@ -2220,14 +2204,10 @@
                 fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
             }));
 
-            // === КРИЛА (анімована група) ===
+            // === КРИЛА (анімовані) ===
             const bladesGroup = svgEl("g", { class: "mill-blades" });
-            // Центр обертання — має бути (cx, cy - 8). Використовуємо transform-origin через трансформ групи
-            // Оскільки CSS transform-origin: 50% 50% від bounding box, треба підлаштувати:
-            // Простіше зробити крила відносно 0,0 і зсунути групу до центру
             bladesGroup.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
 
-            // 4 крила хрестом
             const bladeColor = "#fef3c7";
             const bladeStroke = "#78350f";
 
@@ -2237,7 +2217,6 @@
                 x: -1.5, y: -18, width: 3, height: 18,
                 fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
             }));
-            // Сітка на крилі
             for (let i = 0; i < 4; i++) {
                 b1.appendChild(svgEl("line", {
                     x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4,
@@ -2288,7 +2267,7 @@
             }
             bladesGroup.appendChild(b4);
 
-            // Центральна втулка
+            // Втулка
             bladesGroup.appendChild(svgEl("circle", {
                 cx: 0, cy: 0, r: 2.5,
                 fill: "#78350f", stroke: "#451a03", "stroke-width": 1
@@ -2300,30 +2279,26 @@
         }
 
         // ==========================================
-        // ⛺ ТАБІР ВАРВАРІВ (поки залишаємо старий вигляд)
+        // ⛺ ТАБІР ВАРВАРІВ
         // ==========================================
         function renderBarbarianCampVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x;
             const cy = center.y;
 
-            // Тінь
             g.appendChild(svgEl("ellipse", {
                 cx: cx, cy: cy + 8, rx: 15, ry: 4,
                 fill: "rgba(0,0,0,0.5)"
             }));
 
-            // Намет
             g.appendChild(svgEl("polygon", {
                 points: `${cx - 4},${cy - 12} ${cx - 16},${cy + 6} ${cx + 8},${cy + 6}`,
                 fill: "#dc2626", stroke: "#450a0a", "stroke-width": 1.5
             }));
-            // Вхід у намет
             g.appendChild(svgEl("polygon", {
                 points: `${cx - 3},${cy + 6} ${cx - 6},${cy - 2} ${cx - 1},${cy - 2}`,
                 fill: "#450a0a"
             }));
-            // Прапор варварів
             g.appendChild(svgEl("line", {
                 x1: cx - 4, y1: cy - 12, x2: cx - 4, y2: cy - 20,
                 stroke: "#1e293b", "stroke-width": 1
@@ -2333,7 +2308,6 @@
                 fill: "#0f172a", stroke: "#450a0a", "stroke-width": 0.8
             }));
 
-            // Багаття (ліворуч)
             const fx = cx + 10;
             const fy = cy + 4;
             g.appendChild(svgEl("ellipse", { cx: fx, cy: fy + 2, rx: 4, ry: 1.5, fill: "#1c1917" }));
@@ -2350,7 +2324,7 @@
         }
 
         // ==========================================
-        // 🌉 МІСТ (залишаємо старий)
+        // 🌉 МІСТ
         // ==========================================
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
