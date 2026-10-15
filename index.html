@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.6</title>
+    <title>HexPolitics v5.7 (Fixed)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -66,14 +66,27 @@
 
         polygon.hex {
             stroke: #1b263b; stroke-width: 1.5; fill: #1b263b; fill-opacity: 0.3;
-            transition: fill-opacity 0.2s ease; cursor: pointer;
+            transition: fill-opacity 0.2s ease, stroke 0.2s ease; cursor: pointer;
         }
         polygon.hex:hover { stroke: #38bdf8; stroke-width: 2.5; fill-opacity: 0.6; }
         
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
-        polygon.hex.bridge-hex { stroke: #fbbf24; stroke-width: 2; fill-opacity: 0.75; }
+        polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
+
+        /* Яскраве підсвічування цілей руху */
+        polygon.hex.target-highlight {
+            stroke: #10b981 !important;
+            stroke-width: 3.5 !important;
+            fill: #10b981 !important;
+            fill-opacity: 0.45 !important;
+            animation: pulse-green 1.2s infinite alternate;
+        }
+        @keyframes pulse-green {
+            0% { fill-opacity: 0.25; stroke-width: 2.5; }
+            100% { fill-opacity: 0.55; stroke-width: 4; }
+        }
 
         /* Іконки на гексах */
         .map-icon {
@@ -189,8 +202,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.6</h2>
-            <p id="loader-desc">Завантаження міцності Ратуші (200 HP) та системи гарнізонного захисту...</p>
+            <h2 id="loader-status">HexPolitics v5.7</h2>
+            <p id="loader-desc">Виправлення будівництва, підсвічування руху воїнів та текстури мосту...</p>
         </div>
     </div>
 
@@ -278,7 +291,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, get, child, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDrQeerlWPJ0d_gZ3acvW54FQmihdAQqK4",
@@ -287,16 +299,14 @@
             projectId: "kovel-game",
             storageBucket: "kovel-game.firebasestorage.app",
             messagingSenderId: "1028978690479",
-            appId: "1:1028978690479:web:c37e96a9b07175d325c75a",
-            measurementId: "G-5LQ72T83R8"
+            appId: "1:1028978690479:web:c37e96a9b07175d325c75a"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-        const analytics = getAnalytics(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "5.6";
+        const CURRENT_VERSION = "5.7";
 
         let mode = "login";
         let currentUsername = "";
@@ -335,8 +345,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.6";
-            document.getElementById('loader-desc').innerText = "Завантаження оновленої системи Ратуші (200 HP)...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.7";
+            document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -474,7 +484,7 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА ТА УТРИМАННЯ
+        // ЕКОНОМІКА ТА ОБРАХУНОК ДОХОДУ
         // ==========================================
 
         function calculateRawIncome(username, worldHexes) {
@@ -685,8 +695,9 @@
         }
 
         // ==========================================
-        // ІГРОВИЙ СЕРВЕРНИЙ ЦИКЛ (Рух, бої та оборонні вежі)
+        // АВТОМАТИЧНИЙ БІЙ ТА РУХ ЮНІТІВ
         // ==========================================
+
         function startGameLoop() {
             if (gameLoopInterval) clearInterval(gameLoopInterval);
 
@@ -701,7 +712,6 @@
                     const h = hexWorldData[key];
                     if (!h) return;
 
-                    // Обробка руху юніта
                     if (h.unit && h.unit.state === 'moving' && h.unit.owner === currentUsername) {
                         if (now >= h.unit.arrivalTime) {
                             const targetKey = h.unit.targetKey;
@@ -714,7 +724,6 @@
                                 updates[`world_hexes/${key}`] = h;
                                 updatesNeeded = true;
                             } 
-                            // 1. Атака на ворожого юніта
                             else if (targetHex.unit) {
                                 const defender = targetHex.unit;
                                 const attacker = h.unit;
@@ -758,17 +767,14 @@
                                 }
                                 updatesNeeded = true;
                             } 
-                            // 2. Атака порожньої Ратуші (200 HP, 30 DMG відповіді)
                             else if (targetHex.type === 'core' && targetHex.owner !== currentUsername) {
                                 const attacker = h.unit;
                                 let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
 
-                                // Ратуша завдає 30 DMG, нападник б'є її на свій DMG
                                 coreHp -= attacker.dmg;
                                 attacker.hp -= 30;
 
                                 if (coreHp <= 0) {
-                                    // Ратушу повністю зруйновано!
                                     attacker.state = 'idle';
                                     delete attacker.targetKey;
                                     delete attacker.arrivalTime;
@@ -783,18 +789,15 @@
                                     updates[`world_hexes/${key}/unit`] = null;
                                     alert("💥 Ратушу ворога повністю зруйновано!");
                                 } else if (attacker.hp <= 0) {
-                                    // Захист Ратуші знищив нападника
                                     updates[`world_hexes/${key}/unit`] = null;
                                     updates[`world_hexes/${targetKey}/hp`] = coreHp;
                                 } else {
-                                    // Бій триває
                                     attacker.state = 'fighting';
                                     updates[`world_hexes/${key}/unit`] = attacker;
                                     updates[`world_hexes/${targetKey}/hp`] = coreHp;
                                 }
                                 updatesNeeded = true;
                             } 
-                            // 3. Звичайне переміщення
                             else {
                                 const movingUnit = h.unit;
                                 movingUnit.state = 'idle';
@@ -826,7 +829,7 @@
         }
 
         // ==========================================
-        // КАРТА ТА ІНТЕРАКТИВ
+        // ІНТЕРАКТИВ ТА КАРТА
         // ==========================================
 
         function initHexGrid() {
@@ -1004,6 +1007,7 @@
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
 
+            // Режим пересування воїна
             if (isSelectingMoveTarget) {
                 if (movingUnitCoords) {
                     const { r: sr, c: sc } = movingUnitCoords;
@@ -1011,7 +1015,7 @@
                     const isValidMove = neighbors.some(n => n.r === r && n.c === c);
 
                     if (!isValidMove) {
-                        alert("Можна пересуватися лише на сусідні клітинки (1 крок)!");
+                        alert("Можна пересуватися лише на підсвічені зелені сусідні гекси (1 крок)!");
                         return;
                     }
 
@@ -1025,6 +1029,7 @@
                 return;
             }
 
+            // Якщо клітинка належить гравцю
             if (hexInfo && hexInfo.owner === currentUsername) {
                 if (hexInfo.type === 'core') {
                     openTownHallModal(hexInfo);
@@ -1034,16 +1039,19 @@
                 return;
             }
 
+            // Табір варварів
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
                 openTerritoryModal(r, c, hexInfo);
                 return;
             }
 
+            // Чужа територія
             if (hexInfo && hexInfo.owner && hexInfo.owner !== currentUsername && hexInfo.type !== 'chasm') {
                 alert(`Ця територія належить володарю: ${hexInfo.owner}`);
                 return;
             }
 
+            // Заснування бази
             if (!userHasBaseOnMap) {
                 if (hexInfo && hexInfo.type === 'chasm') {
                     alert('Не можна засновувати базу всередині прірви!');
@@ -1058,6 +1066,7 @@
                 return;
             }
 
+            // Побудова мосту через прірву
             if (hexInfo && hexInfo.type === 'chasm') {
                 if (!isBridgeAccessible(r, c)) {
                     alert('Занадто далеко від вашої території!');
@@ -1068,6 +1077,7 @@
                 return;
             }
 
+            // Купівля нейтральної землі
             const neighbors = getNeighbors(r, c);
             const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
 
@@ -1076,10 +1086,8 @@
                 return;
             }
 
-            if (!hexInfo || hexInfo.type === 'starter') {
-                selectedHexCoords = { r, c };
-                openTerritoryModal(r, c, null);
-            }
+            selectedHexCoords = { r, c };
+            openTerritoryModal(r, c, hexInfo || null);
         }
 
         // ==========================================
@@ -1382,7 +1390,7 @@
                 return;
             }
 
-            if (!hexInfo) {
+            if (!hexInfo || hexInfo.type === 'starter' || !hexInfo.owner) {
                 title.innerText = "🌍 Придбати гекс";
                 cardHtml = `
                     <div class="info-card">
@@ -1479,11 +1487,29 @@
             closeTerritoryModal();
             isSelectingMoveTarget = true;
             movingUnitCoords = { r, c };
-            alert("Клікніть на сусідній гекс, куди хочете перемістити воїна (час переходу: 1 хвилина).");
+
+            // Підсвічуємо всі доступні сусідні гекси зеленим
+            const neighbors = getNeighbors(r, c);
+            neighbors.forEach(n => {
+                const polygon = document.getElementById(`hex-${n.r}-${n.c}`);
+                if (polygon) {
+                    polygon.classList.add('target-highlight');
+                }
+            });
+
+            alert("🟢 Клікніть на підсвічений зелений гекс поруч, щоб відправити воїна!");
+        }
+
+        function clearMoveHighlights() {
+            document.querySelectorAll('polygon.hex.target-highlight').forEach(el => {
+                el.classList.remove('target-highlight');
+            });
         }
 
         async function executeUnitMove(sr, sc, tr, tc) {
             isSelectingMoveTarget = false;
+            clearMoveHighlights();
+
             const sourceKey = `${sr}_${sc}`;
             const targetKey = `${tr}_${tc}`;
 
@@ -1613,25 +1639,35 @@
         }
 
         // ==========================================
-        // ВЕКТОРНИЙ РЕНДЕРИНГ
+        // ОНОВЛЕНИЙ ВЕКТОРНИЙ РЕНДЕРИНГ
         // ==========================================
 
         function renderBridgeVector(svg, center) {
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "map-icon");
 
-            const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            line1.setAttribute("x1", center.x - 12); line1.setAttribute("y1", center.y - 6);
-            line1.setAttribute("x2", center.x + 12); line1.setAttribute("y2", center.y - 6);
-            line1.setAttribute("stroke", "#78350f"); line1.setAttribute("stroke-width", "2.5");
+            // Головні дерев'яні балки мосту
+            const b1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            b1.setAttribute("x1", center.x - 14); b1.setAttribute("y1", center.y - 7);
+            b1.setAttribute("x2", center.x + 14); b1.setAttribute("y2", center.y - 7);
+            b1.setAttribute("stroke", "#d97706"); b1.setAttribute("stroke-width", "3");
 
-            const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            line2.setAttribute("x1", center.x - 12); line2.setAttribute("y1", center.y + 6);
-            line2.setAttribute("x2", center.x + 12); line2.setAttribute("y2", center.y + 6);
-            line2.setAttribute("stroke", "#78350f"); line2.setAttribute("stroke-width", "2.5");
+            const b2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            b2.setAttribute("x1", center.x - 14); b2.setAttribute("y1", center.y + 7);
+            b2.setAttribute("x2", center.x + 14); b2.setAttribute("y2", center.y + 7);
+            b2.setAttribute("stroke", "#d97706"); b2.setAttribute("stroke-width", "3");
 
-            g.appendChild(line1);
-            g.appendChild(line2);
+            // Поперечні дошки
+            for (let dx = -10; dx <= 10; dx += 5) {
+                const plank = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                plank.setAttribute("x1", center.x + dx); plank.setAttribute("y1", center.y - 8);
+                plank.setAttribute("x2", center.x + dx); plank.setAttribute("y2", center.y + 8);
+                plank.setAttribute("stroke", "#f59e0b"); plank.setAttribute("stroke-width", "2");
+                g.appendChild(plank);
+            }
+
+            g.appendChild(b1);
+            g.appendChild(b2);
             svg.appendChild(g);
         }
 
@@ -1695,8 +1731,10 @@
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text').forEach(el => el.remove());
 
             document.querySelectorAll('polygon.hex').forEach(el => {
-                el.style.fill = '#1b263b';
-                el.style.stroke = '#1b263b';
+                if (!el.classList.contains('target-highlight')) {
+                    el.style.fill = '#1b263b';
+                    el.style.stroke = '#1b263b';
+                }
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
             });
 
@@ -1718,8 +1756,10 @@
                             renderClubmanVector(svg, {x: center.x, y: center.y - 4}, "#7f1d1d", hexData.unit.hp, hexData.unit.maxHp);
                         }
                     } else {
-                        polygon.style.fill = hexData.color;
-                        polygon.style.stroke = hexData.color;
+                        if (!polygon.classList.contains('target-highlight')) {
+                            polygon.style.fill = hexData.color;
+                            polygon.style.stroke = hexData.color;
+                        }
 
                         const center = hexToPixel(parseInt(r), parseInt(c));
 
