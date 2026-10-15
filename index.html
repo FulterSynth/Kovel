@@ -716,7 +716,7 @@
 
                 // РУХ
                 if (unit.state === 'moving') {
-                    if (!targetHex || targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
+                   if (targetHex && targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
                     // Ворожий воїн — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
