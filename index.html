@@ -470,6 +470,7 @@
                     hexWorldData = worldSnap.exists() ? worldSnap.val() : {};
 
                     await processOfflineProgress(user, userData, hexWorldData);
+                    await catchUpOffline();
 
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('game-container').style.display = 'block';
@@ -755,6 +756,158 @@
             return u;
         }
 
+        // Обробляє всі воїни гравця, у яких настав час дії на момент `now`.
+        // Повертає { changed, messages }. Використовується і живим циклом, і «доганянням» після офлайну.
+        async function processUnits(now) {
+            const updates = {};
+            const messages = [];
+            const touched = new Set();   // гекси, які вже зачепив цей тік (щоб шляхи оновлення не конфліктували)
+            let goldBonus = 0;
+
+            Object.keys(hexWorldData).forEach(key => {
+                const h = hexWorldData[key];
+                if (!h || !h.unit || h.unit.owner !== currentUsername) return;
+
+                const unit = h.unit;
+                if (unit.state !== 'moving' && unit.state !== 'fighting') return;
+                if (!unit.arrivalTime || now < unit.arrivalTime) return;
+
+                const targetKey = unit.targetKey;
+                if (touched.has(key) || touched.has(targetKey)) return;   // дочекаємось наступного тіку
+
+                const srcPath = `world_hexes/${key}`;
+                const dstPath = `world_hexes/${targetKey}`;
+                const targetHex = hexWorldData[targetKey];
+                const targetUnit = targetHex ? targetHex.unit : null;
+
+                // 1. Ціль зникла / прірва / там уже стоїть свій воїн -> воїн просто зупиняється
+                if (!targetHex || targetHex.type === 'chasm' || (targetUnit && targetUnit.owner === currentUsername)) {
+                    updates[`${srcPath}/unit`] = stopTravel(unit);
+                    touched.add(key);
+                    return;
+                }
+
+                touched.add(key);
+                touched.add(targetKey);
+
+                // 2. На цілі стоїть ворожий воїн (гравець або варвар) -> бій
+                if (targetUnit) {
+                    const attacker = { ...unit };
+                    const defender = { ...targetUnit };
+                    const isCamp = targetHex.type === 'barbarian_camp';
+                    const isCore = targetHex.type === 'core';
+
+                    defender.hp -= attacker.dmg;
+                    attacker.hp -= defender.dmg;
+
+                    if (defender.hp <= 0 && attacker.hp <= 0) {
+                        updates[`${srcPath}/unit`] = null;
+                        if (isCamp) updates[dstPath] = null;
+                        else updates[`${dstPath}/unit`] = null;
+                    } else if (defender.hp <= 0) {
+                        const winner = stopTravel(attacker);
+                        if (isCamp) {
+                            const reward = targetHex.reward || 100;
+                            goldBonus += reward;
+                            updates[dstPath] = {
+                                owner: currentUsername,
+                                color: h.color,
+                                type: 'purchased',
+                                isPurchased: true,
+                                unit: winner
+                            };
+                            updates[`${srcPath}/unit`] = null;
+                            messages.push(`🎉 Ви зачистили табір варварів та здобули скарб: +${reward} золота!`);
+                        } else if (isCore) {
+                            // Гарнізон Ратуші знищено, але сама Ратуша ще стоїть — воїн лишається на місці
+                            updates[`${dstPath}/unit`] = null;
+                            updates[`${srcPath}/unit`] = winner;
+                        } else {
+                            updates[`${dstPath}/unit`] = winner;
+                            updates[`${srcPath}/unit`] = null;
+                        }
+                    } else if (attacker.hp <= 0) {
+                        updates[`${srcPath}/unit`] = null;
+                        updates[`${dstPath}/unit`] = defender;
+                    } else {
+                        // Обидва живі — бій триває наступним раундом
+                        attacker.state = 'fighting';
+                        attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                        updates[`${srcPath}/unit`] = attacker;
+                        updates[`${dstPath}/unit`] = defender;
+                    }
+                    return;
+                }
+
+                // 3. Штурм ворожої Ратуші
+                if (targetHex.type === 'core' && targetHex.owner !== currentUsername) {
+                    const attacker = { ...unit };
+                    let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
+
+                    coreHp -= attacker.dmg;
+                    attacker.hp -= 30;
+
+                    if (coreHp <= 0) {
+                        updates[dstPath] = {
+                            owner: currentUsername,
+                            color: h.color,
+                            type: 'purchased',
+                            isPurchased: true,
+                            unit: stopTravel(attacker)
+                        };
+                        updates[`${srcPath}/unit`] = null;
+
+                        // Безкоштовна «стартова» земля навколо знищеної Ратуші знову стає нічиєю
+                        const loser = targetHex.owner;
+                        Object.keys(hexWorldData).forEach(k => {
+                            const x = hexWorldData[k];
+                            if (x && x.owner === loser && x.type === 'starter' && !x.unit && !touched.has(k)) {
+                                updates[`world_hexes/${k}`] = null;
+                                touched.add(k);
+                            }
+                        });
+                        messages.push("💥 Ратушу ворога повністю зруйновано!");
+                    } else if (attacker.hp <= 0) {
+                        updates[`${srcPath}/unit`] = null;
+                        updates[`${dstPath}/hp`] = coreHp;
+                    } else {
+                        attacker.state = 'fighting';
+                        attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                        updates[`${srcPath}/unit`] = attacker;
+                        updates[`${dstPath}/hp`] = coreHp;
+                    }
+                    return;
+                }
+
+                // 4. Звичайне пересування — змінюємо ТІЛЬКИ воїна, сам гекс (рівень ратуші, HP, будівлі) не чіпаємо
+                const moved = stopTravel(unit);
+                if (targetHex.type === 'barbarian_camp') {
+                    // табір без охоронця — просто займаємо
+                    updates[dstPath] = {
+                        owner: currentUsername,
+                        color: h.color,
+                        type: 'purchased',
+                        isPurchased: true,
+                        unit: moved
+                    };
+                } else {
+                    updates[`${dstPath}/unit`] = moved;
+                }
+                updates[`${srcPath}/unit`] = null;
+            });
+
+
+            if (goldBonus) {
+                // золото читаємо свіже з бази — локальне значення при вході ще не завантажене
+                const gSnap = await get(ref(db, `users/${currentUsername}/gold`));
+                updates[`users/${currentUsername}/gold`] = (gSnap.exists() ? gSnap.val() : 0) + goldBonus;
+            }
+            if (Object.keys(updates).length === 0) return { changed: false, messages };
+
+            await update(ref(db), updates);
+            return { changed: true, messages };
+        }
+
         function startGameLoop() {
             if (gameLoopInterval) clearInterval(gameLoopInterval);
 
@@ -763,155 +916,40 @@
                 gameLoopBusy = true;
 
                 try {
-                    const updates = {};
-                    const messages = [];
-                    const touched = new Set();   // гекси, які вже зачепив цей тік (щоб шляхи оновлення не конфліктували)
-                    let goldBonus = 0;
-                    const now = Date.now();
-
-                    Object.keys(hexWorldData).forEach(key => {
-                        const h = hexWorldData[key];
-                        if (!h || !h.unit || h.unit.owner !== currentUsername) return;
-
-                        const unit = h.unit;
-                        if (unit.state !== 'moving' && unit.state !== 'fighting') return;
-                        if (!unit.arrivalTime || now < unit.arrivalTime) return;
-
-                        const targetKey = unit.targetKey;
-                        if (touched.has(key) || touched.has(targetKey)) return;   // дочекаємось наступного тіку
-
-                        const srcPath = `world_hexes/${key}`;
-                        const dstPath = `world_hexes/${targetKey}`;
-                        const targetHex = hexWorldData[targetKey];
-                        const targetUnit = targetHex ? targetHex.unit : null;
-
-                        // 1. Ціль зникла / прірва / там уже стоїть свій воїн -> воїн просто зупиняється
-                        if (!targetHex || targetHex.type === 'chasm' || (targetUnit && targetUnit.owner === currentUsername)) {
-                            updates[`${srcPath}/unit`] = stopTravel(unit);
-                            touched.add(key);
-                            return;
-                        }
-
-                        touched.add(key);
-                        touched.add(targetKey);
-
-                        // 2. На цілі стоїть ворожий воїн (гравець або варвар) -> бій
-                        if (targetUnit) {
-                            const attacker = { ...unit };
-                            const defender = { ...targetUnit };
-                            const isCamp = targetHex.type === 'barbarian_camp';
-                            const isCore = targetHex.type === 'core';
-
-                            defender.hp -= attacker.dmg;
-                            attacker.hp -= defender.dmg;
-
-                            if (defender.hp <= 0 && attacker.hp <= 0) {
-                                updates[`${srcPath}/unit`] = null;
-                                if (isCamp) updates[dstPath] = null;
-                                else updates[`${dstPath}/unit`] = null;
-                            } else if (defender.hp <= 0) {
-                                const winner = stopTravel(attacker);
-                                if (isCamp) {
-                                    const reward = targetHex.reward || 100;
-                                    goldBonus += reward;
-                                    updates[dstPath] = {
-                                        owner: currentUsername,
-                                        color: h.color,
-                                        type: 'purchased',
-                                        isPurchased: true,
-                                        unit: winner
-                                    };
-                                    updates[`${srcPath}/unit`] = null;
-                                    messages.push(`🎉 Ви зачистили табір варварів та здобули скарб: +${reward} золота!`);
-                                } else if (isCore) {
-                                    // Гарнізон Ратуші знищено, але сама Ратуша ще стоїть — воїн лишається на місці
-                                    updates[`${dstPath}/unit`] = null;
-                                    updates[`${srcPath}/unit`] = winner;
-                                } else {
-                                    updates[`${dstPath}/unit`] = winner;
-                                    updates[`${srcPath}/unit`] = null;
-                                }
-                            } else if (attacker.hp <= 0) {
-                                updates[`${srcPath}/unit`] = null;
-                                updates[`${dstPath}/unit`] = defender;
-                            } else {
-                                // Обидва живі — бій триває наступним раундом
-                                attacker.state = 'fighting';
-                                attacker.arrivalTime = now + FIGHT_ROUND_MS;
-                                updates[`${srcPath}/unit`] = attacker;
-                                updates[`${dstPath}/unit`] = defender;
-                            }
-                            return;
-                        }
-
-                        // 3. Штурм ворожої Ратуші
-                        if (targetHex.type === 'core' && targetHex.owner !== currentUsername) {
-                            const attacker = { ...unit };
-                            let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
-
-                            coreHp -= attacker.dmg;
-                            attacker.hp -= 30;
-
-                            if (coreHp <= 0) {
-                                updates[dstPath] = {
-                                    owner: currentUsername,
-                                    color: h.color,
-                                    type: 'purchased',
-                                    isPurchased: true,
-                                    unit: stopTravel(attacker)
-                                };
-                                updates[`${srcPath}/unit`] = null;
-
-                                // Безкоштовна «стартова» земля навколо знищеної Ратуші знову стає нічиєю
-                                const loser = targetHex.owner;
-                                Object.keys(hexWorldData).forEach(k => {
-                                    const x = hexWorldData[k];
-                                    if (x && x.owner === loser && x.type === 'starter' && !x.unit && !touched.has(k)) {
-                                        updates[`world_hexes/${k}`] = null;
-                                        touched.add(k);
-                                    }
-                                });
-                                messages.push("💥 Ратушу ворога повністю зруйновано!");
-                            } else if (attacker.hp <= 0) {
-                                updates[`${srcPath}/unit`] = null;
-                                updates[`${dstPath}/hp`] = coreHp;
-                            } else {
-                                attacker.state = 'fighting';
-                                attacker.arrivalTime = now + FIGHT_ROUND_MS;
-                                updates[`${srcPath}/unit`] = attacker;
-                                updates[`${dstPath}/hp`] = coreHp;
-                            }
-                            return;
-                        }
-
-                        // 4. Звичайне пересування — змінюємо ТІЛЬКИ воїна, сам гекс (рівень ратуші, HP, будівлі) не чіпаємо
-                        const moved = stopTravel(unit);
-                        if (targetHex.type === 'barbarian_camp') {
-                            // табір без охоронця — просто займаємо
-                            updates[dstPath] = {
-                                owner: currentUsername,
-                                color: h.color,
-                                type: 'purchased',
-                                isPurchased: true,
-                                unit: moved
-                            };
-                        } else {
-                            updates[`${dstPath}/unit`] = moved;
-                        }
-                        updates[`${srcPath}/unit`] = null;
-                    });
-
-                    if (goldBonus) updates[`users/${currentUsername}/gold`] = userGold + goldBonus;
-                    if (Object.keys(updates).length === 0) return;
-
-                    await update(ref(db), updates);
-                    messages.forEach(m => alert(m));
+                    const res = await processUnits(Date.now());
+                    res.messages.forEach(m => alert(m));
                 } catch (err) {
                     console.error('Помилка ігрового циклу:', err);
                 } finally {
                     gameLoopBusy = false;
                 }
             }, 3000);
+        }
+
+        // Офлайн-«доганяння»: проходимо по подіях воїнів у хронологічному порядку (переходи, раунди боїв),
+        // ніби гра йшла весь цей час. Викликається один раз при вході.
+        async function catchUpOffline() {
+            const report = [];
+            for (let i = 0; i < 500; i++) {
+                const realNow = Date.now();
+                let next = null;
+                Object.values(hexWorldData).forEach(h => {
+                    if (!h || !h.unit || h.unit.owner !== currentUsername) return;
+                    const u = h.unit;
+                    if (u.state !== 'moving' && u.state !== 'fighting') return;
+                    if (!u.arrivalTime || u.arrivalTime > realNow) return;
+                    next = next === null ? u.arrivalTime : Math.min(next, u.arrivalTime);
+                });
+                if (next === null) break;
+
+                const res = await processUnits(next);
+                report.push(...res.messages);
+                if (!res.changed) break;
+
+                const snap = await get(child(ref(db), 'world_hexes'));
+                hexWorldData = snap.exists() ? snap.val() : {};
+            }
+            if (report.length) alert("Поки вас не було:\n" + report.join("\n"));
         }
 
         // ==========================================
