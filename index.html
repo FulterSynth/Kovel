@@ -3,21 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.25</title>
+    <title>HexPolitics v5.26</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.25
+    ПОТОЧНА ВЕРСІЯ: v5.26
 
-    ВЖЕ ЗРОБЛЕНО:
-    - v5.9-v5.22: авторизація, економіка, варвари, будівлі, SVG, рух по гексах
-    - v5.23: спроба крапок маршруту (була зламана)
-    - v5.24: виправлено 4 помилки + крапки маршруту
-
-    КЛЮЧОВІ КОНСТАНТИ:
-    - FIGHT_ROUND_MS = 5000
-    - MOVE_STEP_MS = 60000
-    - GRID_ROWS = 60, GRID_COLS = 60
+    ВИПРАВЛЕНО В ЦІЙ ВЕРСІЇ:
+    - renderUnitBadge: прибрано дублікат circle, відновлено const s = k
+    - clearRouteDots: прибрано дублікат функції
+    - renderWorldData: більше НЕ стирає крапки маршруту
+    - listenToWorldData: перемальовує крапки після кожного рендеру
     ============================================
     -->
     <style>
@@ -103,7 +99,6 @@
 
         .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
 
-        /* Крапки маршруту воїна */
         .route-dot-next { fill: #10b981; stroke: #ffffff; stroke-width: 2; pointer-events: none; animation: dotPulse 1.2s ease-in-out infinite; filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.9)); }
         .route-dot-path { fill: #3b82f6; stroke: #ffffff; stroke-width: 1.5; pointer-events: none; opacity: 0.8; }
         @keyframes dotPulse { 0%, 100% { r: 6; } 50% { r: 8; } }
@@ -113,153 +108,31 @@
         .battle-hp-label { font-size: 10px; font-weight: 700; fill: #f8fafc; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 
         #move-banner { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px; z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%; }
-        /* ===== ЧАТ ===== */
-#chat-button {
-    position: fixed;
-    left: 15px;
-    bottom: 25px;
-    width: 50px;
-    height: 50px;
-    background: rgba(59, 130, 246, 0.95);
-    border: 2px solid #1e40af;
-    color: #fff;
-    border-radius: 50%;
-    font-size: 24px;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    z-index: 600;
-    transition: transform 0.2s, background 0.2s;
-}
-#chat-button:hover { background: #2563eb; transform: scale(1.05); }
-#chat-button .unread-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    background: #ef4444;
-    color: #fff;
-    font-size: 11px;
-    font-weight: bold;
-    border-radius: 10px;
-    padding: 1px 6px;
-    min-width: 18px;
-    text-align: center;
-    display: none;
-}
-#chat-button.has-unread .unread-badge { display: block; }
-
-#chat-panel {
-    position: fixed;
-    left: 15px;
-    bottom: 85px;
-    width: 320px;
-    max-width: calc(100vw - 30px);
-    height: 400px;
-    max-height: calc(100vh - 150px);
-    background: rgba(15, 23, 42, 0.97);
-    border: 2px solid #334155;
-    border-radius: 12px;
-    z-index: 700;
-    display: none;
-    flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-    overflow: hidden;
-    backdrop-filter: blur(5px);
-}
-#chat-panel.open { display: flex; }
-
-#chat-header {
-    padding: 10px 12px;
-    background: rgba(30, 41, 59, 0.95);
-    border-bottom: 1px solid #334155;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 13px;
-    font-weight: bold;
-    color: #38bdf8;
-}
-#chat-header button {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0 5px;
-    font-weight: bold;
-}
-#chat-header button:hover { color: #ef4444; }
-
-#chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 1.35;
-}
-.chat-msg {
-    background: rgba(30, 41, 59, 0.7);
-    border-radius: 8px;
-    padding: 6px 9px;
-    word-wrap: break-word;
-    border-left: 3px solid #3b82f6;
-}
-.chat-msg.own {
-    border-left-color: #10b981;
-    background: rgba(16, 185, 129, 0.15);
-}
-.chat-msg .msg-author {
-    font-weight: bold;
-    color: #38bdf8;
-    margin-right: 6px;
-}
-.chat-msg.own .msg-author { color: #34d399; }
-.chat-msg .msg-time {
-    font-size: 10px;
-    color: #64748b;
-    margin-left: 6px;
-}
-.chat-msg .msg-text {
-    color: #e2e8f0;
-    margin-top: 2px;
-    display: block;
-}
-
-#chat-input-row {
-    display: flex;
-    padding: 8px;
-    gap: 6px;
-    border-top: 1px solid #334155;
-    background: rgba(30, 41, 59, 0.95);
-}
-#chat-input {
-    flex: 1;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border: 1px solid #475569;
-    background: #1e293b;
-    color: #fff;
-    font-size: 13px;
-    outline: none;
-}
-#chat-input:focus { border-color: #38bdf8; }
-#chat-send-btn {
-    padding: 0 14px;
-    border: none;
-    background: #3b82f6;
-    color: #fff;
-    font-weight: bold;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-}
-#chat-send-btn:hover { background: #2563eb; }
         #move-banner button { padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
+
+        /* ===== ЧАТ ===== */
+        #chat-button { position: fixed; left: 15px; bottom: 25px; width: 50px; height: 50px; background: rgba(59, 130, 246, 0.95); border: 2px solid #1e40af; color: #fff; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 600; transition: transform 0.2s, background 0.2s; }
+        #chat-button:hover { background: #2563eb; transform: scale(1.05); }
+        #chat-button .unread-badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; display: none; }
+        #chat-button.has-unread .unread-badge { display: block; }
+
+        #chat-panel { position: fixed; left: 15px; bottom: 85px; width: 320px; max-width: calc(100vw - 30px); height: 400px; max-height: calc(100vh - 150px); background: rgba(15, 23, 42, 0.97); border: 2px solid #334155; border-radius: 12px; z-index: 700; display: none; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,0.6); overflow: hidden; backdrop-filter: blur(5px); }
+        #chat-panel.open { display: flex; }
+        #chat-header { padding: 10px 12px; background: rgba(30, 41, 59, 0.95); border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #38bdf8; }
+        #chat-header button { background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 0 5px; font-weight: bold; }
+        #chat-header button:hover { color: #ef4444; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.35; }
+        .chat-msg { background: rgba(30, 41, 59, 0.7); border-radius: 8px; padding: 6px 9px; word-wrap: break-word; border-left: 3px solid #3b82f6; }
+        .chat-msg.own { border-left-color: #10b981; background: rgba(16, 185, 129, 0.15); }
+        .chat-msg .msg-author { font-weight: bold; color: #38bdf8; margin-right: 6px; }
+        .chat-msg.own .msg-author { color: #34d399; }
+        .chat-msg .msg-time { font-size: 10px; color: #64748b; margin-left: 6px; }
+        .chat-msg .msg-text { color: #e2e8f0; margin-top: 2px; display: block; }
+        #chat-input-row { display: flex; padding: 8px; gap: 6px; border-top: 1px solid #334155; background: rgba(30, 41, 59, 0.95); }
+        #chat-input { flex: 1; padding: 8px 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 13px; outline: none; }
+        #chat-input:focus { border-color: #38bdf8; }
+        #chat-send-btn { padding: 0 14px; border: none; background: #3b82f6; color: #fff; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        #chat-send-btn:hover { background: #2563eb; }
     </style>
 </head>
 <body>
@@ -267,8 +140,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.25</h2>
-            <p id="loader-desc">Виправлено помилки + крапки маршруту...</p>
+            <h2 id="loader-status">HexPolitics v5.26</h2>
+            <p id="loader-desc">Виправлено renderUnitBadge, крапки маршруту...</p>
         </div>
     </div>
 
@@ -361,7 +234,7 @@
         <span>🟢 Оберіть будь-який гекс на карті</span>
         <button onclick="cancelMoveMode()">Скасувати</button>
     </div>
-    <!-- Чат -->
+
     <button id="chat-button" onclick="toggleChat()">
         💬
         <span class="unread-badge" id="chat-unread-badge">0</span>
@@ -372,12 +245,13 @@
             <span>💬 Чат гравців</span>
             <button onclick="toggleChat()">✕</button>
         </div>
-        <div id="chat-messages" id="chat-messages-container"></div>
+        <div id="chat-messages"></div>
         <div id="chat-input-row">
             <input type="text" id="chat-input" placeholder="Повідомлення..." maxlength="200" onkeydown="if(event.key==='Enter') sendChatMessage()">
             <button id="chat-send-btn" onclick="sendChatMessage()">➤</button>
         </div>
     </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, get, child, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
@@ -396,7 +270,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.25";
+        const CURRENT_VERSION = "5.26";
 
         let mode = "login";
         let currentUsername = "";
@@ -484,7 +358,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.25"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.26"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -580,7 +454,7 @@
             incomeInterval = null; gameLoopInterval = null; respawnInterval = null;
             if (unsubWorld) { unsubWorld(); unsubWorld = null; }
             if (unsubUser) { unsubUser(); unsubUser = null; }
-                        stopChatListener();
+            stopChatListener();
             const chatPanel = document.getElementById('chat-panel');
             if (chatPanel) chatPanel.classList.remove('open');
             chatOpen = false;
@@ -852,7 +726,7 @@
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
-                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner };
+                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: winner };
                             updates[`${srcPath}/unit`] = null;
                             messages.push(`🎉 Табір зачищено! +${reward} золота`);
                             continuePathAfterCombat(winner, updates, targetKey, isOffline);
@@ -895,7 +769,7 @@
                             if (isCamp) {
                                 const reward = targetHex.reward || 100;
                                 goldBonus += reward;
-                                updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner };
+                                updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: winner };
                                 updates[`${srcPath}/unit`] = null;
                                 messages.push(`🎉 Табір зачищено! +${reward} золота`);
                                 continuePathAfterCombat(winner, updates, targetKey, isOffline);
@@ -926,7 +800,7 @@
                         coreHp -= attacker.dmg;
                         attacker.hp -= 30;
                         if (coreHp <= 0) {
-                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: stopTravel(attacker) };
+                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: stopTravel(attacker) };
                             updates[`${srcPath}/unit`] = null;
                             messages.push("💥 Ратушу ворога зруйновано!");
                         } else if (attacker.hp <= 0) {
@@ -1135,6 +1009,14 @@
         }
 
         function isMyUnit(hex) { return !!(hex && hex.unit && hex.unit.owner === currentUsername); }
+
+        function getPlayerColor(username) {
+            let color = null;
+            Object.values(hexWorldData).forEach(h => {
+                if (!color && h.owner === username && typeof h.color === 'string' && h.color.length > 0) color = h.color;
+            });
+            return color || '#3b82f6';
+        }
 
         function findMyUnitById(unitId) {
             if (!unitId) return null;
@@ -1351,10 +1233,8 @@
 
         window.buildBridge = async function(r, c) {
             if (userGold < 30) { alert("Потрібно 30 золота."); return; }
-            let myColor = "#3b82f6";
-            Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const updates = {};
-            updates[`world_hexes/${r}_${c}`] = { owner: currentUsername, color: myColor, type: 'bridge', isPurchased: true };
+            updates[`world_hexes/${r}_${c}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'bridge', isPurchased: true };
             updates[`users/${currentUsername}/gold`] = userGold - 30;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
@@ -1491,10 +1371,8 @@
             if (userGold < 10) { alert("Потрібно 10 золота."); return; }
             const key = `${r}_${c}`;
             if (hexWorldData[key]) { alert("Зайнято."); closeTerritoryModal(); return; }
-            let myColor = "#3b82f6";
-            Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const updates = {};
-            updates[`world_hexes/${key}`] = { owner: currentUsername, color: myColor, type: 'purchased', isPurchased: true };
+            updates[`world_hexes/${key}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'purchased', isPurchased: true };
             updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Придбано!"); } catch (err) { alert(err.message); }
@@ -1544,11 +1422,9 @@
             const key = `${r}_${c}`;
             const currentHex = hexWorldData[key];
             if (!currentHex || currentHex.owner !== currentUsername) { alert("Це не ваш гекс!"); closeTerritoryModal(); return; }
-            let myColor = currentHex.color || "#3b82f6";
-            if (!currentHex.color) Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const wasPurchased = currentHex.isPurchased === true || currentHex.type === 'purchased';
             const updates = {};
-            updates[`world_hexes/${key}`] = { owner: currentUsername, color: myColor, type: type, isPurchased: wasPurchased, unit: currentHex.unit || null };
+            updates[`world_hexes/${key}`] = { owner: currentUsername, color: currentHex.color || getPlayerColor(currentUsername), type: type, isPurchased: wasPurchased, unit: currentHex.unit || null };
             updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
             try { await update(ref(db), updates); closeTerritoryModal(); alert(type === 'farm' ? "🌾 Ферму зведено!" : "🛞🌀 Вітряк зведено!"); } catch (err) { alert(err.message); }
@@ -1567,8 +1443,9 @@
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
             try { await update(ref(db), updates); closeTerritoryModal(); alert("🔨 Знесено!"); } catch (err) { alert(err.message); }
         }
+
         // ===== ЧАТ =====
-        const CHAT_MAX_MESSAGES = 100;   // тримаємо останні 100 повідомлень
+        const CHAT_MAX_MESSAGES = 100;
         let chatUnreadCount = 0;
         let chatLastSeenTimestamp = 0;
         let chatUnsubscribe = null;
@@ -1576,25 +1453,18 @@
 
         function chatTimestampToTime(ts) {
             const d = new Date(ts);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const mm = String(d.getMinutes()).padStart(2, '0');
-            return `${hh}:${mm}`;
+            return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         }
 
         window.toggleChat = function() {
             const panel = document.getElementById('chat-panel');
-            const btn = document.getElementById('chat-button');
             chatOpen = !chatOpen;
             if (chatOpen) {
                 panel.classList.add('open');
                 chatUnreadCount = 0;
                 updateChatUnreadBadge();
                 chatLastSeenTimestamp = Date.now();
-                setTimeout(() => {
-                    const input = document.getElementById('chat-input');
-                    if (input) input.focus();
-                    scrollChatToBottom();
-                }, 100);
+                setTimeout(() => { const input = document.getElementById('chat-input'); if (input) input.focus(); scrollChatToBottom(); }, 100);
             } else {
                 panel.classList.remove('open');
             }
@@ -1603,13 +1473,8 @@
         function updateChatUnreadBadge() {
             const badge = document.getElementById('chat-unread-badge');
             const btn = document.getElementById('chat-button');
-            if (chatUnreadCount > 0) {
-                badge.textContent = chatUnreadCount > 99 ? '99+' : chatUnreadCount;
-                btn.classList.add('has-unread');
-            } else {
-                badge.textContent = '0';
-                btn.classList.remove('has-unread');
-            }
+            if (chatUnreadCount > 0) { badge.textContent = chatUnreadCount > 99 ? '99+' : chatUnreadCount; btn.classList.add('has-unread'); }
+            else { badge.textContent = '0'; btn.classList.remove('has-unread'); }
         }
 
         function scrollChatToBottom() {
@@ -1624,51 +1489,26 @@
             if (!text) return;
             input.value = '';
             try {
-                const chatRef = ref(db, 'chat_messages');
                 const newMsgRef = ref(db, 'chat_messages/' + Date.now() + '_' + Math.random().toString(36).substr(2, 4));
-                await set(newMsgRef, {
-                    author: currentUsername,
-                    text: text,
-                    time: Date.now()
-                });
-                // Обрізаємо старі повідомлення (тримаємо останні CHAT_MAX_MESSAGES)
-                // — опційно, робимо раз на кілька повідомлень
-            } catch (err) {
-                console.error('Помилка відправки:', err);
-                alert('Не вдалось відправити повідомлення');
-            }
+                await set(newMsgRef, { author: currentUsername, text: text, time: Date.now() });
+            } catch (err) { console.error('Помилка відправки:', err); alert('Не вдалось відправити'); }
         }
 
         function renderChatMessages(messages) {
             const container = document.getElementById('chat-messages');
             if (!container) return;
             const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
-
-            // Сортуємо за часом
             const sorted = Object.values(messages).sort((a, b) => a.time - b.time);
             const toShow = sorted.slice(-CHAT_MAX_MESSAGES);
-
             container.innerHTML = toShow.map(m => {
                 const isOwn = m.author === currentUsername;
                 const cls = isOwn ? 'chat-msg own' : 'chat-msg';
-                const safeAuthor = escapeHtml(m.author);
-                const safeText = escapeHtml(m.text);
-                return `<div class="${cls}">
-                    <span class="msg-author">${safeAuthor}</span><span class="msg-time">${chatTimestampToTime(m.time)}</span>
-                    <span class="msg-text">${safeText}</span>
-                </div>`;
+                return `<div class="${cls}"><span class="msg-author">${escapeHtml(m.author)}</span><span class="msg-time">${chatTimestampToTime(m.time)}</span><span class="msg-text">${escapeHtml(m.text)}</span></div>`;
             }).join('');
-
-            // Підрахунок непрочитаних (якщо чат закритий)
             if (!chatOpen) {
                 const newUnread = toShow.filter(m => m.time > chatLastSeenTimestamp && m.author !== currentUsername).length;
-                if (newUnread > chatUnreadCount) {
-                    chatUnreadCount = newUnread;
-                    updateChatUnreadBadge();
-                }
+                if (newUnread > chatUnreadCount) { chatUnreadCount = newUnread; updateChatUnreadBadge(); }
             }
-
-            // Автоскрол вниз, якщо були внизу
             if (wasAtBottom) scrollChatToBottom();
         }
 
@@ -1678,13 +1518,11 @@
 
         function startChatListener() {
             if (chatUnsubscribe) chatUnsubscribe();
-            const chatRef = ref(db, 'chat_messages');
-            chatUnsubscribe = onValue(chatRef, (snapshot) => {
-                if (snapshot.exists()) {
-                    renderChatMessages(snapshot.val());
-                } else {
+            chatUnsubscribe = onValue(ref(db, 'chat_messages'), (snapshot) => {
+                if (snapshot.exists()) renderChatMessages(snapshot.val());
+                else {
                     const container = document.getElementById('chat-messages');
-                    if (container) container.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;font-size:12px;">Чат поки порожній. Напиши перше повідомлення!</div>';
+                    if (container) container.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;font-size:12px;">Чат поки порожній.</div>';
                 }
             });
         }
@@ -1692,6 +1530,7 @@
         function stopChatListener() {
             if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
         }
+
         function listenToWorldData() {
             if (unsubWorld) unsubWorld();
             let renderScheduled = false;
@@ -1703,6 +1542,22 @@
                         renderWorldData();
                         updateIncomeDisplay();
                         refreshUnitModal();
+                        if (activeSelection && activeSelection.layer === 'unit') {
+                            clearRouteDots();
+                            let unit = null, unitKey = null;
+                            if (activeSelection.unitId) {
+                                const found = findMyUnitById(activeSelection.unitId);
+                                if (found) { unit = found.hex.unit; unitKey = found.key; }
+                            }
+                            if (!unit) {
+                                const h = hexWorldData[activeSelection.key];
+                                if (isMyUnit(h)) { unit = h.unit; unitKey = activeSelection.key; }
+                            }
+                            if (unit && unit.state === 'moving') {
+                                const svg = document.getElementById('hex-svg');
+                                renderUnitRouteDots(svg, unit, unitKey);
+                            }
+                        }
                         renderScheduled = false;
                     });
                 }
@@ -1810,17 +1665,14 @@
                 if (!h || !h.unit) return;
                 if (h.unit.state !== 'fighting') return;
                 if (h.unit.owner !== currentUsername) return;
-
                 const targetKey = h.unit.targetKey;
                 if (!targetKey) return;
                 const targetHex = hexWorldData[targetKey];
                 if (!targetHex || !targetHex.unit) return;
-
                 const [r1, c1] = key.split('_').map(Number);
                 const [r2, c2] = targetKey.split('_').map(Number);
                 const p1 = hexToPixel(r1, c1);
                 const p2 = hexToPixel(r2, c2);
-
                 drawBattleHPBar(svg, p1.x, p1.y - 30, h.unit, "#3b82f6", "Ви");
                 drawBattleHPBar(svg, p2.x, p2.y - 30, targetHex.unit, "#ef4444", "Ворог");
             });
@@ -1832,23 +1684,12 @@
             const by = cy;
             const maxHp = unit.maxHp || 100;
             const pct = Math.max(0, Math.min(1, (unit.hp || 0) / maxHp));
-
             const labelText = svgEl("text", { x: cx, y: by - 8, class: "battle-hp-label", "font-size": "10" });
             labelText.textContent = label;
             svg.appendChild(labelText);
-
             svg.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, class: "battle-hp-bar-bg" }));
-
             const pctColor = pct > 0.5 ? color : (pct > 0.25 ? '#f59e0b' : '#ef4444');
-            svg.appendChild(svgEl("rect", {
-                x: bx + 1, y: by + 1,
-                width: Math.max(0, (barW - 2) * pct),
-                height: barH - 2,
-                rx: (barH - 2) / 2,
-                fill: pctColor,
-                class: "battle-hp-bar-fill"
-            }));
-
+            svg.appendChild(svgEl("rect", { x: bx + 1, y: by + 1, width: Math.max(0, (barW - 2) * pct), height: barH - 2, rx: (barH - 2) / 2, fill: pctColor, class: "battle-hp-bar-fill" }));
             const hpText = svgEl("text", { x: cx, y: by + barH / 2 + 0.5, class: "battle-hp-label", "font-size": "8" });
             hpText.textContent = `${Math.round(unit.hp)}/${maxHp}`;
             svg.appendChild(hpText);
@@ -1857,24 +1698,16 @@
         function renderUnitRouteDots(svg, unit, currentKey) {
             if (!unit || unit.state !== 'moving') return;
             if (!unit.path || !Array.isArray(unit.path)) return;
-
             const currentIdx = unit.pathIndex || 0;
             const remainingPath = unit.path.slice(currentIdx);
             if (remainingPath.length === 0) return;
-
             const g = svgEl("g", { class: "route-dots-group" });
-
             remainingPath.forEach((key, i) => {
                 const [r, c] = key.split('_').map(Number);
                 const center = hexToPixel(r, c);
-
-                if (i === 0) {
-                    g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 7, class: "route-dot-next" }));
-                } else {
-                    g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 4, class: "route-dot-path" }));
-                }
+                if (i === 0) g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 7, class: "route-dot-next" }));
+                else g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 4, class: "route-dot-path" }));
             });
-
             svg.appendChild(g);
         }
 
@@ -1884,10 +1717,10 @@
 
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
+            const s = k;
             const ringColor = unit.state === 'fighting' ? '#ef4444' : (unit.state === 'moving' ? '#a78bfa' : '#ffffff');
             const g = svgEl("g", { class: "unit-badge" });
             const unitBgColor = isBarbarian ? '#450a0a' : (teamColor || '#0f172a');
-            g.appendChild(svgEl("circle", { cx, cy, r, fill: unitBgColor, stroke: ringColor, 'stroke-width': 2.5 * k, 'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none' }));
             g.appendChild(svgEl("circle", { cx, cy, r, fill: unitBgColor, stroke: ringColor, 'stroke-width': 2.5 * k, 'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none' }));
             g.appendChild(svgEl("line", { x1: cx - 2 * s, y1: cy + 4 * s, x2: cx - 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
             g.appendChild(svgEl("line", { x1: cx + 2 * s, y1: cy + 4 * s, x2: cx + 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
@@ -1919,8 +1752,8 @@
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
-            document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
+            // УВАГА: НЕ стираємо .route-dots-group тут — це робить clearRouteDots явно
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
@@ -2001,4 +1834,3 @@
     </script>
 </body>
 </html>
-
