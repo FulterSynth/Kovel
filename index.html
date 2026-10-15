@@ -3,16 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.28</title>
+    <title>HexPolitics v5.29.1</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.28
+    ПОТОЧНА ВЕРСІЯ: v5.29.1
 
-    ВИПРАВЛЕНО:
-    - v5.27: фікс Firebase conflict при вбивстві варвара
-    - v5.28: рамка воїна — темніший колір гравця (замість білого/фіолетового)
-             У бою рамка залишається червоною (сигнал небезпеки).
+    НОВЕ:
+    - v5.29.1: фікс кольору воїна на нейтральній території
+               захоплення гексів через меню воїна (нічий — 10 золота, ворожий — безкоштовно)
+               ОКУПАЦІЯ: ворожий воїн/варвар на твоєму гексі (idle) блокує дохід
+
+    ФОРМАТ: файл розбито на 2 частини (Частина 1/2 — ця, Частина 2/2 — продовження)
     ============================================
     -->
     <style>
@@ -88,6 +90,8 @@
         .btn-move { background: #8b5cf6; color: #fff; }
         .btn-heal { background: #10b981; color: #fff; }
         .btn-repair { background: #0284c7; color: #fff; }
+        .btn-capture { background: #10b981; color: #fff; }
+        .btn-capture-enemy { background: #dc2626; color: #fff; }
 
         .upgrade-info { background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
         .info-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; line-height: 1.4; }
@@ -138,8 +142,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.28</h2>
-            <p id="loader-desc">Рамка воїна в колір гравця...</p>
+            <h2 id="loader-status">HexPolitics v5.29.1</h2>
+            <p id="loader-desc">Захоплення гексів, окупація, фікс кольору...</p>
         </div>
     </div>
 
@@ -268,7 +272,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.28";
+        const CURRENT_VERSION = "5.29.1";
 
         let mode = "login";
         let currentUsername = "";
@@ -356,7 +360,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.28"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.29.1"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -472,9 +476,17 @@
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
                 if (h.owner === username) {
-                    if (h.type === 'core') baseLevel = h.level || 1;
+                    // ФІКС v5.29.1: якщо на гексі стоїть ВОРОЖИЙ воїн або варвар (idle) → гекс окуповано
+                    const isOccupiedByEnemy = h.unit && 
+                                              h.unit.owner !== username && 
+                                              h.unit.state === 'idle';
+                    
+                    if (!isOccupiedByEnemy) {
+                        if (h.type === 'core') baseLevel = h.level || 1;
+                        if (h.type === 'farm') farmsCount += 1;
+                    }
+                    // Утримання — все одно (гекс твій)
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') totalUpkeep += 2;
-                    if (h.type === 'farm') farmsCount += 1;
                 }
                 if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) totalUpkeep += 1;
             });
@@ -517,7 +529,7 @@
         }
 
         // ===== ВАРВАРИ =====
-        function makeBarbarianUnit(level) { const cfg = BARBARIAN_LEVELS[level]; return { id: generateUnitId(), type: 'barbarian', level, hp: cfg.hp, maxHp: cfg.hp, dmg: cfg.dmg, lastCombat: 0, owner: '__barbarian__' }; }
+        function makeBarbarianUnit(level) { const cfg = BARBARIAN_LEVELS[level]; return { id: generateUnitId(), type: 'barbarian', level, hp: cfg.hp, maxHp: cfg.hp, dmg: cfg.dmg, lastCombat: 0, owner: '__barbarian__', state: 'idle' }; }
         function makeBarbarianCamp(level) { const cfg = BARBARIAN_LEVELS[level]; return { type: 'barbarian_camp', level, unit: makeBarbarianUnit(level), reward: Math.floor(Math.random() * (cfg.rewardMax - cfg.rewardMin + 1)) + cfg.rewardMin }; }
         function pickRandomBarbarianLevel() { const r = Math.random(); if (r < 0.50) return 'weak'; if (r < 0.85) return 'medium'; return 'strong'; }
 
@@ -1048,7 +1060,8 @@
             });
         }
 
-        function handleHexClick(r, c) {
+        // === МІСЦЕ ДЛЯ ЧАСТИНИ 2/2 ===
+                function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
@@ -1317,6 +1330,19 @@
             if (u.state === 'idle') {
                 btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна</button>`;
                 if (u.hp < u.maxHp) btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати (10 💰)</button>`;
+
+                // === НОВЕ v5.29.1: кнопки захоплення гекса ===
+                const hexOwner = hexInfo.owner;
+                const hexType = hexInfo.type;
+                if (hexOwner !== currentUsername) {
+                    if (!hexOwner) {
+                        // Нічий гекс — платне захоплення
+                        btns += `<button class="btn-capture" onclick="captureHex(${r}, ${c})">🌍 Захопити гекс (10 💰)</button>`;
+                    } else if (hexType !== 'barbarian_camp' && hexType !== 'core' && !hexInfo.unit) {
+                        // Ворожий гекс — безкоштовне відвоювання (немає ворожого воїна, не табір, не ратуша)
+                        btns += `<button class="btn-capture-enemy" onclick="captureHex(${r}, ${c})">⚔️ Відвоювати гекс</button>`;
+                    }
+                }
             } else if (u.state === 'fighting') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">🏃 Відступити</button>`;
             else if (u.state === 'moving') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">↩️ Скасувати рух</button>`;
             btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
@@ -1368,6 +1394,93 @@
 
         window.switchToCell = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (h) openCellForHex(r, c, h); }
         window.switchToUnit = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (isMyUnit(h)) openUnitModal(r, c, h); }
+
+        // === НОВЕ v5.29.1: захоплення гекса ===
+        // Нічий гекс → платиш 10 золота → гекс твій
+        // Ворожий гекс (без воїна, не табір, не ратуша) → безкоштовно → гекс твій
+        window.captureHex = async function(r, c) {
+            const key = `${r}_${c}`;
+            const hexInfo = hexWorldData[key];
+            const hexOwner = hexInfo ? hexInfo.owner : null;
+
+            if (hexOwner === currentUsername) {
+                alert("Це вже ваш гекс!");
+                return;
+            }
+
+            if (hexInfo && hexInfo.type === 'chasm') {
+                alert("Не можна захопити прірву!");
+                return;
+            }
+
+            // Перевіряємо, чи воїн дійсно стоїть на цьому гексі
+            if (!isMyUnit(hexInfo)) {
+                alert("Тут немає вашого воїна!");
+                return;
+            }
+
+            // === НІЧИЙ (порожній) ГЕКС ===
+            if (!hexInfo || !hexOwner) {
+                if (userGold < 10) {
+                    alert("Потрібно 10 золота для захоплення нейтрального гекса.");
+                    return;
+                }
+                const updates = {};
+                // Зберігаємо воїна, який стоїть на гексі
+                updates[`world_hexes/${key}`] = {
+                    owner: currentUsername,
+                    color: getPlayerColor(currentUsername),
+                    type: 'purchased',
+                    isPurchased: true,
+                    unit: hexInfo ? hexInfo.unit : null
+                };
+                updates[`users/${currentUsername}/gold`] = userGold - 10;
+                updates[`users/${currentUsername}/lastOnline`] = Date.now();
+                try {
+                    await update(ref(db), updates);
+                    closeUnitModal();
+                    alert("🌍 Нейтральний гекс захоплено! (-10 золота)");
+                } catch (err) { alert("Помилка захоплення: " + err.message); }
+                return;
+            }
+
+            // === ВОРОЖИЙ ГЕКС ===
+            if (hexOwner !== currentUsername) {
+                const isCamp = hexInfo.type === 'barbarian_camp';
+                const isCore = hexInfo.type === 'core';
+
+                if (hexInfo.unit && hexInfo.unit.owner !== currentUsername) {
+                    alert("На гексі стоїть ворожий воїн. Спочатку перемагай його в бою!");
+                    return;
+                }
+
+                if (isCamp) {
+                    alert("Табір варварів не можна захопити напряму — атакуй його воїном!");
+                    return;
+                }
+
+                if (isCore) {
+                    alert("Ворожу ратушу треба руйнувати атакою, а не захопленням!");
+                    return;
+                }
+
+                const updates = {};
+                updates[`world_hexes/${key}`] = {
+                    owner: currentUsername,
+                    color: getPlayerColor(currentUsername),
+                    type: 'purchased',
+                    isPurchased: true,
+                    unit: hexInfo.unit || null
+                };
+                updates[`users/${currentUsername}/lastOnline`] = Date.now();
+                try {
+                    await update(ref(db), updates);
+                    closeUnitModal();
+                    alert("⚔️ Ворожий гекс відвойовано!");
+                } catch (err) { alert("Помилка захоплення: " + err.message); }
+                return;
+            }
+        }
 
         window.retreatUnit = async function(r, c) {
             const key = `${r}_${c}`;
@@ -1823,7 +1936,9 @@
 
                 if (hasUnit) {
                     const isBarb = hexData.unit.type === 'barbarian';
-                    unitQueue.push({ center, unit: hexData.unit, color: isBarb ? '#dc2626' : (hexData.color || '#38bdf8'), barbarian: isBarb, big: plain });
+                    // ФІКС v5.29.1: колір воїна — завжди від ВЛАСНИКА (не від гекса)
+                    const unitColor = isBarb ? '#dc2626' : getPlayerColor(hexData.unit.owner);
+                    unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: plain });
                 }
             });
 
