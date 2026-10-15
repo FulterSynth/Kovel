@@ -1022,87 +1022,66 @@
             return true;
         }
 
-        function handleHexClick(r, c) {
+function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
-            const userHasBaseOnMap = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
+            const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
 
+            // Якщо ми зараз обираємо куди походити воїном
             if (isSelectingMoveTarget) {
                 if (movingUnitCoords) {
                     const { r: sr, c: sc } = movingUnitCoords;
                     const neighbors = getNeighbors(sr, sc);
-                    const isValidMove = neighbors.some(n => n.r === r && n.c === c);
-
-                    if (!isValidMove) {
-                        alert("Можна пересуватися лише на підсвічені зелені сусідні гекси (1 крок)!");
+                    
+                    // Перевіряємо чи клікнули на сусідню зелену клітинку
+                    if (neighbors.some(n => n.r === r && n.c === c)) {
+                        if (hexInfo && hexInfo.type === 'chasm') {
+                            alert("Не можна йти у прірву без мосту!");
+                            return;
+                        }
+                        executeUnitMove(sr, sc, r, c);
+                        return;
+                    } else {
+                        alert("Оберіть сусідню зелену клітинку для ходу!");
                         return;
                     }
-
-                    if (hexInfo && hexInfo.type === 'chasm') {
-                        alert("Не можна йти у прірву без мосту!");
-                        return;
-                    }
-
-                    executeUnitMove(sr, sc, r, c);
                 }
+            }
+
+            // Якщо клікнули на свого вільного воїна — одразу активуємо рух
+            if (hexInfo && hexInfo.unit && hexInfo.unit.owner === currentUsername && hexInfo.unit.state === 'idle') {
+                startMoveUnit(r, c);
                 return;
             }
 
-            if (hexInfo && hexInfo.owner === currentUsername) {
-                if (hexInfo.type === 'core') {
-                    openTownHallModal(hexInfo);
-                } else {
-                    openTerritoryModal(r, c, hexInfo);
-                }
-                return;
-            }
-
-            if (hexInfo && hexInfo.type === 'barbarian_camp') {
-                openTerritoryModal(r, c, hexInfo);
-                return;
-            }
-
-            if (hexInfo && hexInfo.owner && hexInfo.owner !== currentUsername && hexInfo.type !== 'chasm') {
-                alert(`Ця територія належить володарю: ${hexInfo.owner}`);
-                return;
-            }
-
-            if (!userHasBaseOnMap) {
-                if (hexInfo && hexInfo.type === 'chasm') {
-                    alert('Не можна засновувати базу всередині прірви!');
-                    return;
-                }
-                if (!checkDistanceValid(r, c)) {
-                    alert('Занадто близько до території іншого гравця!');
-                    return;
-                }
+            if (!userHasBase) {
+                if (hexInfo && hexInfo.type === 'chasm') { alert('Не можна будувати базу у прірві!'); return; }
                 selectedHexCoords = { r, c };
                 openBaseModal();
                 return;
             }
 
             if (hexInfo && hexInfo.type === 'chasm') {
-                if (!isBridgeAccessible(r, c)) {
-                    alert('Занадто далеко від вашої території!');
-                    return;
-                }
                 selectedHexCoords = { r, c };
                 openBridgeModal(r, c);
                 return;
             }
 
-            const neighbors = getNeighbors(r, c);
-            const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
+            if (hexInfo && hexInfo.owner === currentUsername) {
+                if (hexInfo.type === 'core') openTownHallModal(hexInfo);
+                else openTerritoryModal(r, c, hexInfo);
+                return;
+            }
 
-            if (!isAdjacentToMyTerritory) {
-                alert('Ви можете взаємодіяти лише з територіями, що межують з вашими землями!');
+            const neighbors = getNeighbors(r, c);
+            if (!neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm')) {
+                alert('Можна взаємодіяти лише з прилеглими землями!');
                 return;
             }
 
             selectedHexCoords = { r, c };
             openTerritoryModal(r, c, hexInfo || null);
         }
-
         // ==========================================
         // МОДАЛЬНІ ВІКНА ТА ДІЇ (БЕЗКОШТОВНО ДЛЯ ADMIN)
         // ==========================================
