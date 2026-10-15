@@ -3,7 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.12</title>
+    <title>HexPolitics v5.14</title>
+    <!--
+    ============================================
+    HexPolitics — браузерна гекс-стратегія
+    ============================================
+
+    ПОТОЧНА ВЕРСІЯ: v5.14
+
+    КОНТЕКСТ ПРОЄКТУ:
+    - Браузерна гра на HTML + SVG + Firebase RTDB
+    - Авторизація: логін + пароль (без Anonymous Auth)
+    - Карта: 60×60 гексів, HEX_RADIUS = 26
+    - Стиль графіки: SVG-вектори, cartoon-ish, вид спереду
+    - Firebase проєкт: kovel-game
+
+    ВЖЕ ЗРОБЛЕНО:
+    - v5.9:  будівництво навколо ратуші
+    - v5.10: офлайн-дохід (lastOnline + beforeunload + visibilitychange)
+    - v5.11: SVG-графіка — ратуша, ферма, вітряк
+    - v5.12: статичний прапор (прибрано flag-wave)
+    - v5.13: фікс вітряка (розділено SVG-transform і CSS-animation)
+    - v5.14: система варварів (25 таборів, 3 рівні, регенерація, респавн)
+
+    ПЛАНУЄТЬСЯ:
+    - v5.15: детальні воїн з дубиною + варвар (SVG-фігурки)
+    - v5.16: прірва з камінням, міст з перилами
+    - Далі:   глобальна карта, вплив, лідерборд
+
+    КЛЮЧОВІ КОНСТАНТИ:
+    - FIGHT_ROUND_MS = 5000 (5 сек на раунд бою)
+    - GRID_ROWS = 60, GRID_COLS = 60
+    - BARRACKS_RESPAWN_MS = 10 хв, BARRACKS_MIN = 15, BARRACKS_MAX = 25
+    - Дохід: базовий 1/хв + ферми +1 + вітряк бонус - утримання
+    - Купівля гекса: 10 золота, утримання -2/хв
+    - Найм воїна: 15 золота, утримання -1/хв
+    ============================================
+    -->
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -92,7 +128,6 @@
             pointer-events: none;
         }
 
-        /* === АНІМАЦІЯ ДЛЯ ВІТРЯКА === */
         .mill-blades {
             transform-origin: 50% 50%;
             animation: millSpin 4s linear infinite;
@@ -218,8 +253,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.12</h2>
-            <p id="loader-desc">Статичний прапор...</p>
+            <h2 id="loader-status">HexPolitics v5.14</h2>
+            <p id="loader-desc">Оновлення системи варварів...</p>
         </div>
     </div>
 
@@ -331,7 +366,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.12";
+        const CURRENT_VERSION = "5.14";
 
         let mode = "login";
         let currentUsername = "";
@@ -348,12 +383,24 @@
         let gameLoopBusy = false;
         const FIGHT_ROUND_MS = 5000;
 
+        // === ВАРВАРИ ===
+        const BARBARIAN_LEVELS = {
+            weak:   { hp: 40,  dmg: 15, rewardMin: 40,  rewardMax: 60  },
+            medium: { hp: 80,  dmg: 25, rewardMin: 80,  rewardMax: 120 },
+            strong: { hp: 150, dmg: 40, rewardMin: 150, rewardMax: 220 }
+        };
+        const BARBARIAN_TARGET_COUNT = 25;    // скільки таборів має бути на карті
+        const BARBARIAN_MIN_COUNT = 15;       // якщо менше — респавнимо
+        const BARBARIAN_REGEN_MS = 3 * 60 * 1000;   // 3 хв без атаки → регенерація
+        const RESPAWN_CHECK_MS = 10 * 60 * 1000;    // раз на 10 хв перевіряємо респавн
+
         const GRID_ROWS = 60;
         const GRID_COLS = 60;
         const HEX_RADIUS = 26;
         let hexWorldData = {};
         let incomeInterval = null;
         let gameLoopInterval = null;
+        let respawnInterval = null;
 
         let scale = 0.45;
         let panX = 0;
@@ -399,7 +446,7 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.12";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.14";
             document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
@@ -505,6 +552,7 @@
                     listenToUserData();
                     startIncomeLoop();
                     startGameLoop();
+                    startRespawnLoop();
                 }
                 else if (mode === 'change-pass') {
                     const newPass = document.getElementById('new-password').value.trim();
@@ -539,8 +587,10 @@
 
             if (incomeInterval) clearInterval(incomeInterval);
             if (gameLoopInterval) clearInterval(gameLoopInterval);
+            if (respawnInterval) clearInterval(respawnInterval);
             incomeInterval = null;
             gameLoopInterval = null;
+            respawnInterval = null;
             if (unsubWorld) { unsubWorld(); unsubWorld = null; }
             if (unsubUser) { unsubUser(); unsubUser = null; }
             cancelMoveMode();
@@ -649,6 +699,40 @@
             }
         }
 
+        // ==========================================
+        // ГЕНЕРАЦІЯ КАРТИ + ВАРВАРИ
+        // ==========================================
+
+        function makeBarbarianUnit(level) {
+            const cfg = BARBARIAN_LEVELS[level];
+            return {
+                type: 'barbarian',
+                level: level,
+                hp: cfg.hp,
+                maxHp: cfg.hp,
+                dmg: cfg.dmg,
+                lastCombat: 0
+            };
+        }
+
+        function makeBarbarianCamp(level) {
+            const cfg = BARBARIAN_LEVELS[level];
+            return {
+                type: 'barbarian_camp',
+                level: level,
+                unit: makeBarbarianUnit(level),
+                reward: Math.floor(Math.random() * (cfg.rewardMax - cfg.rewardMin + 1)) + cfg.rewardMin
+            };
+        }
+
+        function pickRandomBarbarianLevel() {
+            // 50% слабкий, 35% середній, 15% сильний
+            const r = Math.random();
+            if (r < 0.50) return 'weak';
+            if (r < 0.85) return 'medium';
+            return 'strong';
+        }
+
         function generateInitialMap() {
             let mapData = {};
             for (let r = 0; r < GRID_ROWS; r++) {
@@ -676,34 +760,72 @@
                 mapData = newMap;
             }
 
-            let barbarianCampsCount = 0;
+            // Ставимо 25 таборів варварів
+            let campsCount = 0;
             let attempts = 0;
-            while (barbarianCampsCount < 3 && attempts < 200) {
+            while (campsCount < BARBARIAN_TARGET_COUNT && attempts < 2000) {
                 attempts++;
                 const rr = Math.floor(Math.random() * GRID_ROWS);
                 const rc = Math.floor(Math.random() * GRID_COLS);
                 const rKey = `${rr}_${rc}`;
 
                 if (!mapData[rKey]) {
-                    mapData[rKey] = {
-                        type: 'barbarian_camp',
-                        unit: {
-                            type: 'barbarian',
-                            hp: 70,
-                            maxHp: 70,
-                            dmg: 20
-                        },
-                        reward: Math.floor(Math.random() * 51) + 70
-                    };
-                    barbarianCampsCount++;
+                    mapData[rKey] = makeBarbarianCamp(pickRandomBarbarianLevel());
+                    campsCount++;
                 }
             }
 
             return mapData;
         }
 
+        // Респавн: якщо таборів менше мінімуму — додаємо нові
+        async function tryRespawnBarbarians() {
+            if (!currentUsername) return;
+            try {
+                const snap = await get(ref(db, 'world_hexes'));
+                if (!snap.exists()) return;
+                const world = snap.val();
+
+                let campCount = 0;
+                Object.values(world).forEach(h => {
+                    if (h && h.type === 'barbarian_camp') campCount++;
+                });
+
+                if (campCount >= BARBARIAN_MIN_COUNT) return;
+
+                const toAdd = Math.min(BARBARIAN_TARGET_COUNT - campCount, 5);
+                const updates = {};
+                let added = 0;
+                let attempts = 0;
+
+                while (added < toAdd && attempts < 500) {
+                    attempts++;
+                    const rr = Math.floor(Math.random() * GRID_ROWS);
+                    const rc = Math.floor(Math.random() * GRID_COLS);
+                    const key = `${rr}_${rc}`;
+
+                    if (!world[key] && !updates[`world_hexes/${key}`]) {
+                        updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel());
+                        added++;
+                    }
+                }
+
+                if (added > 0) {
+                    await update(ref(db), updates);
+                    console.log(`🐗 Респавн: додано ${added} таборів варварів`);
+                }
+            } catch (err) {
+                console.error('Помилка респавну:', err);
+            }
+        }
+
+        function startRespawnLoop() {
+            if (respawnInterval) clearInterval(respawnInterval);
+            respawnInterval = setInterval(tryRespawnBarbarians, RESPAWN_CHECK_MS);
+        }
+
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий ландшафт з прірвами (27%), таборами варварів та скине золото гравців.");
+            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий ландшафт з прірвами (27%), 25 таборів варварів (3 рівні), та скине золото гравців.");
             if (!confirmWipe) return;
 
             try {
@@ -780,6 +902,39 @@
         }
 
         // ==========================================
+        // РЕГЕНЕРАЦІЯ ВАРВАРІВ
+        // ==========================================
+
+        async function tryRegenerateBarbarians() {
+            const now = Date.now();
+            const updates = {};
+            let count = 0;
+
+            Object.keys(hexWorldData).forEach(key => {
+                const h = hexWorldData[key];
+                if (!h || h.type !== 'barbarian_camp' || !h.unit) return;
+                if (h.unit.type !== 'barbarian') return;
+
+                const lastCombat = h.unit.lastCombat || 0;
+                const timeSinceCombat = now - lastCombat;
+
+                if (timeSinceCombat > BARBARIAN_REGEN_MS && h.unit.hp < h.unit.maxHp) {
+                    updates[`world_hexes/${key}/unit/hp`] = h.unit.maxHp;
+                    count++;
+                }
+            });
+
+            if (count > 0) {
+                try {
+                    await update(ref(db), updates);
+                    console.log(`💚 Регенерація: ${count} варварів відновили HP`);
+                } catch (err) {
+                    console.error('Помилка регенерації:', err);
+                }
+            }
+        }
+
+        // ==========================================
         // БІЙ ТА РУХ
         // ==========================================
 
@@ -830,6 +985,11 @@
                     defender.hp -= attacker.dmg;
                     attacker.hp -= defender.dmg;
 
+                    // Оновлюємо час останнього бою для варвара (щоб регенерація не спрацювала під час бою)
+                    if (isCamp) {
+                        defender.lastCombat = now;
+                    }
+
                     if (defender.hp <= 0 && attacker.hp <= 0) {
                         updates[`${srcPath}/unit`] = null;
                         if (isCamp) updates[dstPath] = null;
@@ -839,11 +999,12 @@
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
+                            // Завойована земля — безкоштовна (starter), без утримання
                             updates[dstPath] = {
                                 owner: currentUsername,
                                 color: h.color,
-                                type: 'purchased',
-                                isPurchased: true,
+                                type: 'starter',
+                                isPurchased: false,
                                 unit: winner
                             };
                             updates[`${srcPath}/unit`] = null;
@@ -910,8 +1071,8 @@
                     updates[dstPath] = {
                         owner: currentUsername,
                         color: h.color,
-                        type: 'purchased',
-                        isPurchased: true,
+                        type: 'starter',
+                        isPurchased: false,
                         unit: moved
                     };
                 } else {
@@ -939,6 +1100,7 @@
                 gameLoopBusy = true;
 
                 try {
+                    await tryRegenerateBarbarians();
                     const res = await processUnits(Date.now());
                     res.messages.forEach(m => alert(m));
                 } catch (err) {
@@ -1607,13 +1769,28 @@
             let actionBtns = '';
 
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
-                title.innerText = "⛺ Табір варварів";
+                const level = hexInfo.level || 'weak';
+                const levelNames = { weak: '🟢 Слабкий', medium: '🟡 Середній', strong: '🔴 Сильний' };
+                const cfg = BARBARIAN_LEVELS[level] || BARBARIAN_LEVELS.weak;
+                const curHp = hexInfo.unit ? Math.round(hexInfo.unit.hp) : cfg.hp;
+                const curDmg = hexInfo.unit ? hexInfo.unit.dmg : cfg.dmg;
+                const lastCombat = (hexInfo.unit && hexInfo.unit.lastCombat) || 0;
+                const timeSince = lastCombat ? Math.floor((Date.now() - lastCombat) / 1000) : -1;
+                const regenInfo = timeSince >= 0 && curHp < cfg.hp
+                    ? `<br><span class="warn">💚 Регенерація через ${Math.max(0, Math.ceil((BARBARIAN_REGEN_MS - timeSince*1000)/1000))} сек</span>`
+                    : '';
+
+                title.innerText = `⛺ Табір варварів (${levelNames[level]})`;
                 cardHtml = `
                     <div class="info-card">
                         <b>Увага, дика територія!</b><br>
-                        Тут засіли варвари з чорно-червоними дубинами.<br>
-                        ❤️ <b>HP варвара:</b> ${hexInfo.unit ? hexInfo.unit.hp : 70} / 70<br>
-                        💰 <b>Скарб у таборі:</b> ${hexInfo.reward || 100} золота.<br>
+                        Тип варвара: <b>${levelNames[level]}</b><br>
+                        ❤️ <b>HP:</b> ${curHp} / ${cfg.hp}<br>
+                        ⚔️ <b>Урон:</b> ${curDmg}<br>
+                        💰 <b>Скарб у таборі:</b> ${hexInfo.reward || 100} золота<br>
+                        ${regenInfo}
+                        <br><br>
+                        <span class="good">✅ Завойована земля стане безкоштовною (без утримання)</span>
                     </div>
                 `;
                 cardContainer.innerHTML = cardHtml;
@@ -1650,7 +1827,7 @@
             cardHtml = `
                 <div class="info-card">
                     ${isBridge ? '<b>Це інженерний міст.</b><br><br>' : ''}
-                    ${isStarter ? '<span class="good">Земля навколо ратуші — безкоштовна, без утримання.</span><br><br>' : ''}
+                    ${isStarter ? '<span class="good">Земля безкоштовна (без утримання).</span><br><br>' : ''}
                     ${isPurchased ? '<span class="warn">Куплена земля (утримання: -2 💰/хв).</span><br><br>' : ''}
                     ${isFarm ? '<b>🌾 Тут стоїть Ферма (+1 💰/хв).</b><br><br>' : ''}
                     ${isMill ? '<b>🛞🌀 Тут стоїть Вітряк (+бонус фермам поруч).</b><br><br>' : ''}
@@ -1981,28 +2158,21 @@
             return el;
         }
 
-        // ==========================================
-        // 🏰 РАТУША — фортеця з вежами та прапором
-        // ==========================================
         function renderTownHallVector(svg, center, teamColor, level) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x;
             const cy = center.y;
 
-            // Тінь під будівлею
-            const shadow = svgEl("ellipse", {
+            g.appendChild(svgEl("ellipse", {
                 cx: cx, cy: cy + 14, rx: 22, ry: 6,
                 fill: "rgba(0,0,0,0.45)"
-            });
-            g.appendChild(shadow);
+            }));
 
-            // Основа фортеці
             g.appendChild(svgEl("rect", {
                 x: cx - 18, y: cy - 4, width: 36, height: 18,
                 fill: "#475569", stroke: "#1e293b", "stroke-width": 1.5, rx: 2
             }));
 
-            // Кам'яна текстура (квадратики)
             for (let i = 0; i < 6; i++) {
                 const bx = cx - 16 + (i * 6) % 30;
                 const by = cy + 1 + Math.floor(i / 5) * 5;
@@ -2012,13 +2182,11 @@
                 }));
             }
 
-            // Центральна вежа
             g.appendChild(svgEl("rect", {
                 x: cx - 8, y: cy - 16, width: 16, height: 14,
                 fill: "#64748b", stroke: "#1e293b", "stroke-width": 1.5
             }));
 
-            // Зубці центральної вежі
             for (let i = 0; i < 4; i++) {
                 g.appendChild(svgEl("rect", {
                     x: cx - 8 + i * 4.5, y: cy - 19, width: 2.5, height: 3,
@@ -2026,7 +2194,6 @@
                 }));
             }
 
-            // Бокові вежі
             g.appendChild(svgEl("rect", {
                 x: cx - 20, y: cy - 10, width: 10, height: 10,
                 fill: "#64748b", stroke: "#1e293b", "stroke-width": 1.5
@@ -2036,7 +2203,6 @@
                 fill: "#64748b", stroke: "#1e293b", "stroke-width": 1.5
             }));
 
-            // Зубці бокових веж
             for (let i = 0; i < 3; i++) {
                 g.appendChild(svgEl("rect", {
                     x: cx - 20 + i * 3.5, y: cy - 13, width: 2, height: 3,
@@ -2048,17 +2214,14 @@
                 }));
             }
 
-            // Ворота
             g.appendChild(svgEl("path", {
                 d: `M ${cx - 5} ${cy + 14} L ${cx - 5} ${cy + 4} Q ${cx} ${cy - 2} ${cx + 5} ${cy + 4} L ${cx + 5} ${cy + 14} Z`,
                 fill: "#1e293b", stroke: "#0f172a", "stroke-width": 1
             }));
 
-            // Вікна
             g.appendChild(svgEl("circle", { cx: cx - 14, cy: cy - 5, r: 1.5, fill: "#fbbf24" }));
             g.appendChild(svgEl("circle", { cx: cx + 14, cy: cy - 5, r: 1.5, fill: "#fbbf24" }));
 
-            // Прапор (СТАТИЧНИЙ — без анімації)
             g.appendChild(svgEl("line", {
                 x1: cx, y1: cy - 19, x2: cx, y2: cy - 30,
                 stroke: "#94a3b8", "stroke-width": 1.5
@@ -2069,13 +2232,11 @@
                 fill: teamColor, stroke: "rgba(0,0,0,0.4)", "stroke-width": 0.8
             }));
 
-            // Емблема на прапорі
             g.appendChild(svgEl("circle", {
                 cx: cx + 5, cy: cy - 27.5, r: 1.2,
                 fill: "rgba(255,255,255,0.85)"
             }));
 
-            // Рівень ратуші — значок корони
             if (level >= 2) {
                 const crown = svgEl("text", {
                     x: cx + 14, y: cy - 22,
@@ -2089,9 +2250,6 @@
             svg.appendChild(g);
         }
 
-        // ==========================================
-        // 🌾 ФЕРМА
-        // ==========================================
         function renderFarmVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x;
@@ -2102,7 +2260,6 @@
                 fill: "rgba(0,0,0,0.4)"
             }));
 
-            // Поле
             g.appendChild(svgEl("rect", {
                 x: cx + 4, y: cy - 2, width: 14, height: 12,
                 fill: "#a16207", stroke: "#78350f", "stroke-width": 1, rx: 1
@@ -2120,13 +2277,11 @@
                 }));
             }
 
-            // Стіни будиночка
             g.appendChild(svgEl("rect", {
                 x: cx - 14, y: cy - 4, width: 18, height: 14,
                 fill: "#eab308", stroke: "#78350f", "stroke-width": 1.5
             }));
 
-            // Дах
             g.appendChild(svgEl("path", {
                 d: `M ${cx - 16} ${cy - 4} L ${cx - 5} ${cy - 15} L ${cx + 6} ${cy - 4} Z`,
                 fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
@@ -2138,19 +2293,16 @@
                 }));
             }
 
-            // Двері
             g.appendChild(svgEl("rect", {
                 x: cx - 8, y: cy + 3, width: 5, height: 7,
                 fill: "#78350f", stroke: "#451a03", "stroke-width": 1
             }));
 
-            // Вікно
             g.appendChild(svgEl("rect", {
                 x: cx - 1, y: cy + 1, width: 3, height: 3,
                 fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
             }));
 
-            // Дерево
             g.appendChild(svgEl("rect", {
                 x: cx - 19, y: cy + 4, width: 2.5, height: 7,
                 fill: "#78350f"
@@ -2167,129 +2319,119 @@
             svg.appendChild(g);
         }
 
-        // ==========================================
-        // 🛞🌀 ВІТРЯК — з анімованими крилами
-        // ==========================================
-function renderMillVector(svg, center) {
-    const g = svgEl("g", { class: "map-icon" });
-    const cx = center.x;
-    const cy = center.y;
-
-    g.appendChild(svgEl("ellipse", {
-        cx: cx, cy: cy + 14, rx: 15, ry: 5,
-        fill: "rgba(0,0,0,0.4)"
-    }));
-
-    // Основа вітряка
-    g.appendChild(svgEl("path", {
-        d: `M ${cx - 9} ${cy + 12} L ${cx - 6} ${cy - 4} L ${cx + 6} ${cy - 4} L ${cx + 9} ${cy + 12} Z`,
-        fill: "#f5f5f4", stroke: "#78350f", "stroke-width": 1.5, "stroke-linejoin": "round"
-    }));
-
-    // Дах
-    g.appendChild(svgEl("path", {
-        d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`,
-        fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
-    }));
-
-    // Двері
-    g.appendChild(svgEl("rect", {
-        x: cx - 3, y: cy + 4, width: 6, height: 8,
-        fill: "#78350f", stroke: "#451a03", "stroke-width": 1, rx: 0.5
-    }));
-
-    // Вікно
-    g.appendChild(svgEl("circle", {
-        cx: cx, cy: cy - 1, r: 2,
-        fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
-    }));
-
-    // === КРИЛА ===
-    // ВАЖЛИВО: позиціювання (translate) — на ЗОВНІШНІЙ групі через SVG-атрибут.
-    // Обертання — на ВНУТРІШНІЙ групі через CSS-клас mill-blades.
-    // Якщо змішати їх на одній групі — CSS затирає SVG transform і лопасті відлітають за екран.
-    const bladesPositioner = svgEl("g", {});
-    bladesPositioner.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
-
-    const bladesGroup = svgEl("g", { class: "mill-blades" });
-
-    const bladeColor = "#fef3c7";
-    const bladeStroke = "#78350f";
-
-    // Крило 1 (верх)
-    const b1 = svgEl("g", {});
-    b1.appendChild(svgEl("rect", {
-        x: -1.5, y: -18, width: 3, height: 18,
-        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-    }));
-    for (let i = 0; i < 4; i++) {
-        b1.appendChild(svgEl("line", {
-            x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4,
-            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-        }));
-    }
-    bladesGroup.appendChild(b1);
-
-    // Крило 2 (низ)
-    const b2 = svgEl("g", {});
-    b2.appendChild(svgEl("rect", {
-        x: -1.5, y: 0, width: 3, height: 18,
-        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-    }));
-    for (let i = 0; i < 4; i++) {
-        b2.appendChild(svgEl("line", {
-            x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4,
-            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-        }));
-    }
-    bladesGroup.appendChild(b2);
-
-    // Крило 3 (ліво)
-    const b3 = svgEl("g", {});
-    b3.appendChild(svgEl("rect", {
-        x: -18, y: -1.5, width: 18, height: 3,
-        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-    }));
-    for (let i = 0; i < 4; i++) {
-        b3.appendChild(svgEl("line", {
-            x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5,
-            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-        }));
-    }
-    bladesGroup.appendChild(b3);
-
-    // Крило 4 (право)
-    const b4 = svgEl("g", {});
-    b4.appendChild(svgEl("rect", {
-        x: 0, y: -1.5, width: 18, height: 3,
-        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-    }));
-    for (let i = 0; i < 4; i++) {
-        b4.appendChild(svgEl("line", {
-            x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5,
-            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-        }));
-    }
-    bladesGroup.appendChild(b4);
-
-    // Втулка (центр)
-    bladesGroup.appendChild(svgEl("circle", {
-        cx: 0, cy: 0, r: 2.5,
-        fill: "#78350f", stroke: "#451a03", "stroke-width": 1
-    }));
-
-    bladesPositioner.appendChild(bladesGroup);
-    g.appendChild(bladesPositioner);
-
-    svg.appendChild(g);
-}
-        // ==========================================
-        // ⛺ ТАБІР ВАРВАРІВ
-        // ==========================================
-        function renderBarbarianCampVector(svg, center) {
+        function renderMillVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x;
             const cy = center.y;
+
+            g.appendChild(svgEl("ellipse", {
+                cx: cx, cy: cy + 14, rx: 15, ry: 5,
+                fill: "rgba(0,0,0,0.4)"
+            }));
+
+            g.appendChild(svgEl("path", {
+                d: `M ${cx - 9} ${cy + 12} L ${cx - 6} ${cy - 4} L ${cx + 6} ${cy - 4} L ${cx + 9} ${cy + 12} Z`,
+                fill: "#f5f5f4", stroke: "#78350f", "stroke-width": 1.5, "stroke-linejoin": "round"
+            }));
+
+            g.appendChild(svgEl("path", {
+                d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`,
+                fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
+            }));
+
+            g.appendChild(svgEl("rect", {
+                x: cx - 3, y: cy + 4, width: 6, height: 8,
+                fill: "#78350f", stroke: "#451a03", "stroke-width": 1, rx: 0.5
+            }));
+
+            g.appendChild(svgEl("circle", {
+                cx: cx, cy: cy - 1, r: 2,
+                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
+            }));
+
+            const bladesPositioner = svgEl("g", {});
+            bladesPositioner.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
+
+            const bladesGroup = svgEl("g", { class: "mill-blades" });
+
+            const bladeColor = "#fef3c7";
+            const bladeStroke = "#78350f";
+
+            const b1 = svgEl("g", {});
+            b1.appendChild(svgEl("rect", {
+                x: -1.5, y: -18, width: 3, height: 18,
+                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+            }));
+            for (let i = 0; i < 4; i++) {
+                b1.appendChild(svgEl("line", {
+                    x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4,
+                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+                }));
+            }
+            bladesGroup.appendChild(b1);
+
+            const b2 = svgEl("g", {});
+            b2.appendChild(svgEl("rect", {
+                x: -1.5, y: 0, width: 3, height: 18,
+                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+            }));
+            for (let i = 0; i < 4; i++) {
+                b2.appendChild(svgEl("line", {
+                    x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4,
+                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+                }));
+            }
+            bladesGroup.appendChild(b2);
+
+            const b3 = svgEl("g", {});
+            b3.appendChild(svgEl("rect", {
+                x: -18, y: -1.5, width: 18, height: 3,
+                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+            }));
+            for (let i = 0; i < 4; i++) {
+                b3.appendChild(svgEl("line", {
+                    x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5,
+                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+                }));
+            }
+            bladesGroup.appendChild(b3);
+
+            const b4 = svgEl("g", {});
+            b4.appendChild(svgEl("rect", {
+                x: 0, y: -1.5, width: 18, height: 3,
+                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+            }));
+            for (let i = 0; i < 4; i++) {
+                b4.appendChild(svgEl("line", {
+                    x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5,
+                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+                }));
+            }
+            bladesGroup.appendChild(b4);
+
+            bladesGroup.appendChild(svgEl("circle", {
+                cx: 0, cy: 0, r: 2.5,
+                fill: "#78350f", stroke: "#451a03", "stroke-width": 1
+            }));
+
+            bladesPositioner.appendChild(bladesGroup);
+            g.appendChild(bladesPositioner);
+
+            svg.appendChild(g);
+        }
+
+        function renderBarbarianCampVector(svg, center, level) {
+            const g = svgEl("g", { class: "map-icon" });
+            const cx = center.x;
+            const cy = center.y;
+
+            // Кольори залежать від рівня
+            const colors = {
+                weak:   { tent: "#22c55e", dark: "#052e16", flag: "#16a34a" },
+                medium: { tent: "#f59e0b", dark: "#451a03", flag: "#d97706" },
+                strong: { tent: "#dc2626", dark: "#450a0a", flag: "#b91c1c" }
+            };
+            const c = colors[level] || colors.weak;
 
             g.appendChild(svgEl("ellipse", {
                 cx: cx, cy: cy + 8, rx: 15, ry: 4,
@@ -2298,11 +2440,11 @@ function renderMillVector(svg, center) {
 
             g.appendChild(svgEl("polygon", {
                 points: `${cx - 4},${cy - 12} ${cx - 16},${cy + 6} ${cx + 8},${cy + 6}`,
-                fill: "#dc2626", stroke: "#450a0a", "stroke-width": 1.5
+                fill: c.tent, stroke: c.dark, "stroke-width": 1.5
             }));
             g.appendChild(svgEl("polygon", {
                 points: `${cx - 3},${cy + 6} ${cx - 6},${cy - 2} ${cx - 1},${cy - 2}`,
-                fill: "#450a0a"
+                fill: c.dark
             }));
             g.appendChild(svgEl("line", {
                 x1: cx - 4, y1: cy - 12, x2: cx - 4, y2: cy - 20,
@@ -2310,7 +2452,7 @@ function renderMillVector(svg, center) {
             }));
             g.appendChild(svgEl("polygon", {
                 points: `${cx - 4},${cy - 20} ${cx + 3},${cy - 18} ${cx - 4},${cy - 15}`,
-                fill: "#0f172a", stroke: "#450a0a", "stroke-width": 0.8
+                fill: c.flag, stroke: c.dark, "stroke-width": 0.8
             }));
 
             const fx = cx + 10;
@@ -2328,9 +2470,6 @@ function renderMillVector(svg, center) {
             svg.appendChild(g);
         }
 
-        // ==========================================
-        // 🌉 МІСТ
-        // ==========================================
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
 
@@ -2426,9 +2565,13 @@ function renderMillVector(svg, center) {
                 }
 
                 if (hexData.type === 'barbarian_camp') {
-                    polygon.style.fill = '#450a0a';
-                    polygon.style.stroke = '#dc2626';
-                    renderBarbarianCampVector(svg, center);
+                    const level = hexData.level || 'weak';
+                    // Колір гекса залежить від рівня
+                    const bgColors = { weak: "#14532d", medium: "#78350f", strong: "#450a0a" };
+                    const borderColors = { weak: "#22c55e", medium: "#f59e0b", strong: "#dc2626" };
+                    polygon.style.fill = bgColors[level] || bgColors.weak;
+                    polygon.style.stroke = borderColors[level] || borderColors.weak;
+                    renderBarbarianCampVector(svg, center, level);
                     if (hasUnit) unitQueue.push({ center, unit: hexData.unit, color: '#dc2626', barbarian: true, big: false });
                     return;
                 }
