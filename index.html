@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.19</title>
+    <title>HexPolitics v5.20</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.19
+    ПОТОЧНА ВЕРСІЯ: v5.20
 
-    ВЖЕ ЗРОБЛЕНО:
-    - v5.9-v5.17: авторизація, економіка, варвари, будівлі, SVG
-    - v5.18: фікс офлайн-доходу, HP-бари бою
-    - v5.19: фікс стрілок (route-layer зверху), меню воїна не закривається при русі,
-             оптимізація рендеру, унікальні id воїнів
+    ГОЛОВНЕ В ЦІЙ ВЕРСІЇ:
+    - ПОВНІСТЮ переписана логіка руху. Воїн може ходити на БУДЬ-ЯКИЙ гекс:
+      свій, чужий, нічий, з будівлею, з ворогом — єдина заборона: прірва і гекс
+      де стоїть СВІЙ ІНШИЙ воїн.
 
     КЛЮЧОВІ КОНСТАНТИ:
     - FIGHT_ROUND_MS = 5000
@@ -125,8 +124,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.19</h2>
-            <p id="loader-desc">Фікс стрілок, меню воїна, оптимізація...</p>
+            <h2 id="loader-status">HexPolitics v5.20</h2>
+            <p id="loader-desc">Переписана логіка руху...</p>
         </div>
     </div>
 
@@ -238,7 +237,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.19";
+        const CURRENT_VERSION = "5.20";
 
         let mode = "login";
         let currentUsername = "";
@@ -329,7 +328,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.19"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.20"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -607,6 +606,9 @@
             return u;
         }
 
+        // ============================================
+        // ПЕРЕПИСАНИЙ findPath — ходить через БУДЬ-ЯКИЙ гекс, крім прірви
+        // ============================================
         function findPath(startR, startC, targetR, targetC) {
             const startKey = `${startR}_${startC}`;
             const targetKey = `${targetR}_${targetC}`;
@@ -614,7 +616,7 @@
             const visited = new Set([startKey]);
             const queue = [{ r: startR, c: startC, path: [] }];
             let iterations = 0;
-            const MAX_ITER = 10000;
+            const MAX_ITER = 20000;
 
             while (queue.length > 0 && iterations++ < MAX_ITER) {
                 const { r, c, path } = queue.shift();
@@ -622,8 +624,8 @@
                     const key = n.key;
                     if (visited.has(key)) continue;
                     const h = hexWorldData[key];
+                    // ЄДИНА заборона — прірва
                     if (h && h.type === 'chasm') continue;
-                    if (key !== targetKey && isMyUnit(h)) continue;
                     visited.add(key);
                     const newPath = [...path, key];
                     if (key === targetKey) return newPath;
@@ -669,6 +671,7 @@
                 const targetHex = hexWorldData[targetKey];
                 const targetUnit = targetHex ? targetHex.unit : null;
 
+                // БІЙ
                 if (unit.state === 'fighting') {
                     if (touched.has(targetKey)) return;
                     touched.add(key); touched.add(targetKey);
@@ -711,9 +714,11 @@
                     return;
                 }
 
+                // РУХ
                 if (unit.state === 'moving') {
                     if (!targetHex || targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
+                    // Ворожий воїн — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -754,8 +759,10 @@
                         return;
                     }
 
+                    // Свій воїн на цілі — стоїмо
                     if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
+                    // Ворожа ратуша — штурм
                     if (targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -779,6 +786,7 @@
                         return;
                     }
 
+                    // Звичайний крок — на будь-який гекс
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
@@ -865,7 +873,7 @@
                 }
             }
 
-            // ФІКС: #route-layer створюється ПІСЛЯ всіх гексів (тому ЗВЕРХУ)
+            // #route-layer — ПІСЛЯ всіх гексів, тому ЗВЕРХУ
             const routeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
             routeLayer.setAttribute("id", "route-layer");
             svg.appendChild(routeLayer);
@@ -1001,11 +1009,15 @@
             });
         }
 
+        // ============================================
+        // ПЕРЕПИСАНИЙ handleHexClick — режим руху ПЕРШИЙ, спрощений
+        // ============================================
         function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
 
+            // === РЕЖИМ РУХУ — ПЕРШИЙ І НАЙПРОСТІШИЙ ===
             if (isSelectingMoveTarget) {
                 if (!movingUnitCoords) { cancelMoveMode(); return; }
                 const { r: sr, c: sc } = movingUnitCoords;
@@ -1014,10 +1026,11 @@
                 if (targetHex && targetHex.type === 'chasm') { alert("Не можна ходити в прірву!"); return; }
                 if (isMyUnit(targetHex)) { alert("Там уже стоїть ваш воїн!"); return; }
                 const path = findPath(sr, sc, r, c);
-                if (!path || path.length === 0) { alert("Шлях не знайдено! Спробуйте ближчий гекс."); return; }
+                if (!path || path.length === 0) { alert("Шлях не знайдено! Можливо, все заблоковано прірвами."); return; }
                 executeUnitMove(sr, sc, r, c, path);
                 return;
             }
+            // === КІНЕЦЬ РЕЖИМУ РУХУ ===
 
             if (isMyUnit(hexInfo)) {
                 if (activeSelection && activeSelection.key === key && activeSelection.layer === 'unit') openCellForHex(r, c, hexInfo);
@@ -1175,7 +1188,6 @@
             if (!coreKey || !coreHex) { alert("Ратушу не знайдено!"); return; }
             if (coreHex.unit) { alert("На Ратуші вже стоїть воїн!"); return; }
             const updates = {};
-            // ФІКС: унікальний id для воїна
             updates[`world_hexes/${coreKey}/unit`] = {
                 id: generateUnitId(),
                 type: 'clubman', owner: currentUsername, hp: 100, maxHp: 100, dmg: 25, state: 'idle'
@@ -1257,7 +1269,6 @@
 
         function openUnitModal(r, c, hexInfo) {
             hideAllModals();
-            // ФІКС: зберігаємо unitId для відстеження
             const unitId = hexInfo.unit && hexInfo.unit.id ? hexInfo.unit.id : null;
             activeSelection = { key: `${r}_${c}`, unitId: unitId, layer: 'unit' };
             const u = hexInfo.unit;
@@ -1298,7 +1309,6 @@
             const modal = document.getElementById('unit-modal');
             if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
 
-            // ФІКС: шукаємо воїна по unitId, а не по ключу гекса
             let found = null;
             if (activeSelection.unitId) {
                 found = findMyUnitById(activeSelection.unitId);
@@ -1410,7 +1420,6 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("🔨 Знесено!"); } catch (err) { alert(err.message); }
         }
 
-        // ФІКС: оптимізація через requestAnimationFrame
         function listenToWorldData() {
             if (unsubWorld) unsubWorld();
             let renderScheduled = false;
