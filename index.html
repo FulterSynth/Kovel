@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.8 (Admin Infinite Gold)</title>
+    <title>HexPolitics v5.8</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -75,6 +75,7 @@
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
         polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
 
+        /* Яскраве підсвічування цілей руху */
         polygon.hex.target-highlight {
             stroke: #10b981 !important;
             stroke-width: 3.5 !important;
@@ -87,6 +88,7 @@
             100% { fill-opacity: 0.55; stroke-width: 4; }
         }
 
+        /* Іконки на гексах */
         .map-icon {
             font-size: 16px;
             text-anchor: middle;
@@ -112,6 +114,7 @@
             letter-spacing: 0.5px;
         }
 
+        /* Верхня панель користувача */
         #user-bar {
             position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(30, 41, 59, 0.95);
             padding: 8px 12px; border-radius: 10px; border: 1px solid #334155;
@@ -135,6 +138,7 @@
 
         .btn-wipe { background: #b91c1c !important; border: 1px solid #f87171 !important; }
 
+        /* Кнопки Zoom */
         #zoom-controls {
             position: absolute; right: 15px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
         }
@@ -146,6 +150,7 @@
         }
         .zoom-btn:hover { background: #3b82f6; }
 
+        /* Модальні вікна */
         .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px;
@@ -190,6 +195,21 @@
         .info-card .bad { color: #f87171; font-weight: bold; }
         .info-card .good { color: #34d399; font-weight: bold; }
         .info-card .warn { color: #fbbf24; font-weight: bold; }
+
+        /* Воїни на карті */
+        .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
+
+        /* Підказка під час вибору цілі руху */
+        #move-banner {
+            display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+            background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px;
+            z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%;
+        }
+        #move-banner button {
+            padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff;
+            font-weight: bold; font-size: 11px; cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -198,7 +218,7 @@
         <div class="loader-content">
             <div class="spinner"></div>
             <h2 id="loader-status">HexPolitics v5.8</h2>
-            <p id="loader-desc">Активація безкінечного золота для адміністратора...</p>
+            <p id="loader-desc">Виправлення будівництва, підсвічування руху воїнів та текстури мосту...</p>
         </div>
     </div>
 
@@ -283,6 +303,22 @@
         </div>
     </div>
 
+    <!-- Меню воїна -->
+    <div id="unit-modal" class="modal">
+        <h3>🛡️ Ваш воїн</h3>
+        <div id="unit-card"></div>
+        <div class="modal-btns" id="unit-buttons"></div>
+        <div style="margin-top: 8px;">
+            <button class="btn-cancel" onclick="closeUnitModal()">Закрити</button>
+        </div>
+    </div>
+
+    <!-- Підказка під час руху воїна -->
+    <div id="move-banner">
+        <span>🟢 Оберіть зелений гекс для воїна</span>
+        <button onclick="cancelMoveMode()">Скасувати</button>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, set, get, child, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
@@ -311,6 +347,12 @@
         let selectedColor = null;
         let isSelectingMoveTarget = false;
         let movingUnitCoords = null;
+        let activeSelection = null;   // { key, layer: 'unit' | 'cell' } — що зараз відкрито на клітинці з воїном
+        let unsubWorld = null;
+        let unsubUser = null;
+        let viewportReady = false;
+        let gameLoopBusy = false;
+        const FIGHT_ROUND_MS = 5000;
         
         const GRID_ROWS = 60;
         const GRID_COLS = 60;
@@ -341,7 +383,7 @@
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
             document.getElementById('loader-status').innerText = "HexPolitics v5.8";
-            document.getElementById('loader-desc').innerText = "Налаштування безкінечного золота для admin...";
+            document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -407,7 +449,7 @@
                     }
                     await set(ref(db, 'users/' + user), { 
                         password: pass,
-                        gold: user.toLowerCase() === ADMIN_USERNAME.toLowerCase() ? 999999 : 0,
+                        gold: 0,
                         townHallLevel: 1,
                         lastOnline: Date.now()
                     });
@@ -424,11 +466,6 @@
                     currentUsername = user;
                     const userData = snapshot.val();
                     
-                    // Якщо це admin, автоматично встановлюємо безкінечне золото в базі
-                    if (currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
-                        await update(ref(db, `users/${currentUsername}`), { gold: 999999 });
-                    }
-
                     const worldSnap = await get(child(dbRef, 'world_hexes'));
                     hexWorldData = worldSnap.exists() ? worldSnap.val() : {};
 
@@ -476,6 +513,16 @@
         window.logout = function() {
             if (incomeInterval) clearInterval(incomeInterval);
             if (gameLoopInterval) clearInterval(gameLoopInterval);
+            incomeInterval = null;
+            gameLoopInterval = null;
+            if (unsubWorld) { unsubWorld(); unsubWorld = null; }
+            if (unsubUser) { unsubUser(); unsubUser = null; }
+            cancelMoveMode();
+            hideAllModals();
+            activeSelection = null;
+            selectedHexCoords = null;
+            hexWorldData = {};
+            currentUsername = "";
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('username').value = '';
@@ -484,16 +531,10 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА ТА БЕЗКІНЕЧНЕ ЗОЛОТО ADMIN
+        // ЕКОНОМІКА ТА ОБРАХУНОК ДОХОДУ
         // ==========================================
 
-        function isAdmin() {
-            return currentUsername && currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase();
-        }
-
         function calculateRawIncome(username, worldHexes) {
-            if (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) return 9999;
-            
             let baseLevel = 1;
             let totalUpkeep = 0; 
             let farmsCount = 0;
@@ -504,15 +545,20 @@
                     if (h.type === 'core') {
                         baseLevel = h.level || 1;
                     }
+                    
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') {
                         totalUpkeep += 2; 
                     }
+                    
                     if (h.type === 'farm') {
                         farmsCount += 1;
                     }
-                    if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) {
-                        totalUpkeep += 1;
-                    }
+
+                }
+
+                // Воїн коштує утримання, де б він не стояв (навіть на чужій землі)
+                if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) {
+                    totalUpkeep += 1;
                 }
             });
 
@@ -536,7 +582,6 @@
         }
 
         function calculateEffectiveIncome(username, worldHexes) {
-            if (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) return 9999;
             let raw = calculateRawIncome(username, worldHexes);
             return Math.max(1, raw);
         }
@@ -553,13 +598,13 @@
             const diffMinutes = (now - lastTime) / 60000;
 
             let currentGold = userData.gold || 0;
-            if (username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
-                currentGold = 999999;
-            } else if (diffMinutes > 0.2) {
+
+            if (diffMinutes > 0.2) {
                 const hasBase = Object.values(worldHexes).some(h => h.owner === username && h.type === 'core');
                 if (hasBase) {
                     const incomePerMin = calculateEffectiveIncome(username, worldHexes);
-                    currentGold += (diffMinutes * incomePerMin);
+                    const earnedGold = diffMinutes * incomePerMin;
+                    currentGold += earnedGold;
                 }
             }
 
@@ -635,7 +680,7 @@
                     const usersData = usersSnapshot.val();
                     const updates = {};
                     Object.keys(usersData).forEach(u => {
-                        updates[`users/${u}/gold`] = (u.toLowerCase() === ADMIN_USERNAME.toLowerCase() ? 999999 : 0);
+                        updates[`users/${u}/gold`] = 0;
                         updates[`users/${u}/townHallLevel`] = 1;
                     });
                     await update(ref(db), updates);
@@ -648,11 +693,6 @@
         }
 
         function updateIncomeDisplay() {
-            if (isAdmin()) {
-                document.getElementById('user-gold-display').innerText = "∞ (999k)";
-                document.getElementById('income-speed-text').innerHTML = "(∞/хв)";
-                return;
-            }
             const raw = calculateRawIncome(currentUsername, hexWorldData);
             const effective = Math.max(1, raw);
             
@@ -665,17 +705,13 @@
 
         function listenToUserData() {
             const userRef = ref(db, `users/${currentUsername}`);
-            onValue(userRef, (snapshot) => {
+            if (unsubUser) unsubUser();
+            unsubUser = onValue(userRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
-                    userGold = isAdmin() ? 999999 : (data.gold || 0);
+                    userGold = data.gold || 0;
                     userTownHallLevel = data.townHallLevel || 1;
-                    
-                    if (isAdmin()) {
-                        document.getElementById('user-gold-display').innerText = "∞";
-                    } else {
-                        document.getElementById('user-gold-display').innerText = Math.floor(userGold);
-                    }
+                    document.getElementById('user-gold-display').innerText = Math.floor(userGold);
                     updateIncomeDisplay();
                 }
             });
@@ -685,11 +721,6 @@
             if (incomeInterval) clearInterval(incomeInterval);
             
             incomeInterval = setInterval(async () => {
-                if (isAdmin()) {
-                    await update(ref(db, `users/${currentUsername}`), { gold: 999999, lastOnline: Date.now() });
-                    return;
-                }
-
                 const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
                 if (userHasBase) {
                     try {
@@ -714,136 +745,171 @@
         }
 
         // ==========================================
-        // АВТОМАТИЧНИЙ БІЙ ТА РУХ
+        // АВТОМАТИЧНИЙ БІЙ ТА РУХ ЮНІТІВ
         // ==========================================
+
+        function stopTravel(unit) {
+            const u = { ...unit, state: 'idle' };
+            delete u.targetKey;
+            delete u.arrivalTime;
+            return u;
+        }
 
         function startGameLoop() {
             if (gameLoopInterval) clearInterval(gameLoopInterval);
 
             gameLoopInterval = setInterval(async () => {
-                if (!currentUsername) return;
-                
-                let updatesNeeded = false;
-                let updates = {};
-                const now = Date.now();
+                if (!currentUsername || gameLoopBusy) return;
+                gameLoopBusy = true;
 
-                Object.keys(hexWorldData).forEach(key => {
-                    const h = hexWorldData[key];
-                    if (!h) return;
+                try {
+                    const updates = {};
+                    const messages = [];
+                    const touched = new Set();   // гекси, які вже зачепив цей тік (щоб шляхи оновлення не конфліктували)
+                    let goldBonus = 0;
+                    const now = Date.now();
 
-                    if (h.unit && h.unit.state === 'moving' && h.unit.owner === currentUsername) {
-                        if (now >= h.unit.arrivalTime) {
-                            const targetKey = h.unit.targetKey;
-                            const targetHex = hexWorldData[targetKey];
+                    Object.keys(hexWorldData).forEach(key => {
+                        const h = hexWorldData[key];
+                        if (!h || !h.unit || h.unit.owner !== currentUsername) return;
 
-                            if (!targetHex || targetHex.type === 'chasm') {
-                                h.unit.state = 'idle';
-                                delete h.unit.targetKey;
-                                delete h.unit.arrivalTime;
-                                updates[`world_hexes/${key}`] = h;
-                                updatesNeeded = true;
-                            } 
-                            else if (targetHex.unit) {
-                                const defender = targetHex.unit;
-                                const attacker = h.unit;
+                        const unit = h.unit;
+                        if (unit.state !== 'moving' && unit.state !== 'fighting') return;
+                        if (!unit.arrivalTime || now < unit.arrivalTime) return;
 
-                                defender.hp -= attacker.dmg;
-                                attacker.hp -= defender.dmg;
+                        const targetKey = unit.targetKey;
+                        if (touched.has(key) || touched.has(targetKey)) return;   // дочекаємось наступного тіку
 
-                                if (defender.hp <= 0 && attacker.hp <= 0) {
-                                    updates[`world_hexes/${targetKey}/unit`] = null;
-                                    if (targetHex.type === 'barbarian_camp') {
-                                        updates[`world_hexes/${targetKey}`] = null;
-                                    }
-                                    updates[`world_hexes/${key}/unit`] = null;
-                                } else if (defender.hp <= 0) {
-                                    attacker.state = 'idle';
-                                    delete attacker.targetKey;
-                                    delete attacker.arrivalTime;
-                                    
-                                    updates[`world_hexes/${targetKey}/unit`] = attacker;
-                                    updates[`world_hexes/${key}/unit`] = null;
+                        const srcPath = `world_hexes/${key}`;
+                        const dstPath = `world_hexes/${targetKey}`;
+                        const targetHex = hexWorldData[targetKey];
+                        const targetUnit = targetHex ? targetHex.unit : null;
 
-                                    if (targetHex.type === 'barbarian_camp') {
-                                        const reward = targetHex.reward || 100;
-                                        const goldToAdd = isAdmin() ? 0 : reward;
-                                        updates[`users/${currentUsername}/gold`] = isAdmin() ? 999999 : (userGold + goldToAdd);
-                                        updates[`world_hexes/${targetKey}`] = {
-                                            owner: currentUsername,
-                                            color: h.color,
-                                            type: 'purchased',
-                                            isPurchased: true,
-                                            unit: attacker
-                                        };
-                                        alert(`🎉 Ви зачистили табір варварів та здобули скарб!`);
-                                    }
-                                } else if (attacker.hp <= 0) {
-                                    updates[`world_hexes/${key}/unit`] = null;
-                                    updates[`world_hexes/${targetKey}/unit`] = defender;
-                                } else {
-                                    attacker.state = 'fighting';
-                                    updates[`world_hexes/${key}/unit`] = attacker;
-                                    updates[`world_hexes/${targetKey}/unit`] = defender;
-                                }
-                                updatesNeeded = true;
-                            } 
-                            else if (targetHex.type === 'core' && targetHex.owner !== currentUsername) {
-                                const attacker = h.unit;
-                                let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
+                        // 1. Ціль зникла / прірва / там уже стоїть свій воїн -> воїн просто зупиняється
+                        if (!targetHex || targetHex.type === 'chasm' || (targetUnit && targetUnit.owner === currentUsername)) {
+                            updates[`${srcPath}/unit`] = stopTravel(unit);
+                            touched.add(key);
+                            return;
+                        }
 
-                                coreHp -= attacker.dmg;
-                                attacker.hp -= 30;
+                        touched.add(key);
+                        touched.add(targetKey);
 
-                                if (coreHp <= 0) {
-                                    attacker.state = 'idle';
-                                    delete attacker.targetKey;
-                                    delete attacker.arrivalTime;
+                        // 2. На цілі стоїть ворожий воїн (гравець або варвар) -> бій
+                        if (targetUnit) {
+                            const attacker = { ...unit };
+                            const defender = { ...targetUnit };
+                            const isCamp = targetHex.type === 'barbarian_camp';
+                            const isCore = targetHex.type === 'core';
 
-                                    updates[`world_hexes/${targetKey}`] = {
+                            defender.hp -= attacker.dmg;
+                            attacker.hp -= defender.dmg;
+
+                            if (defender.hp <= 0 && attacker.hp <= 0) {
+                                updates[`${srcPath}/unit`] = null;
+                                if (isCamp) updates[dstPath] = null;
+                                else updates[`${dstPath}/unit`] = null;
+                            } else if (defender.hp <= 0) {
+                                const winner = stopTravel(attacker);
+                                if (isCamp) {
+                                    const reward = targetHex.reward || 100;
+                                    goldBonus += reward;
+                                    updates[dstPath] = {
                                         owner: currentUsername,
                                         color: h.color,
                                         type: 'purchased',
                                         isPurchased: true,
-                                        unit: attacker
+                                        unit: winner
                                     };
-                                    updates[`world_hexes/${key}/unit`] = null;
-                                    alert("💥 Ратушу ворога повністю зруйновано!");
-                                } else if (attacker.hp <= 0) {
-                                    updates[`world_hexes/${key}/unit`] = null;
-                                    updates[`world_hexes/${targetKey}/hp`] = coreHp;
+                                    updates[`${srcPath}/unit`] = null;
+                                    messages.push(`🎉 Ви зачистили табір варварів та здобули скарб: +${reward} золота!`);
+                                } else if (isCore) {
+                                    // Гарнізон Ратуші знищено, але сама Ратуша ще стоїть — воїн лишається на місці
+                                    updates[`${dstPath}/unit`] = null;
+                                    updates[`${srcPath}/unit`] = winner;
                                 } else {
-                                    attacker.state = 'fighting';
-                                    updates[`world_hexes/${key}/unit`] = attacker;
-                                    updates[`world_hexes/${targetKey}/hp`] = coreHp;
+                                    updates[`${dstPath}/unit`] = winner;
+                                    updates[`${srcPath}/unit`] = null;
                                 }
-                                updatesNeeded = true;
-                            } 
-                            else {
-                                const movingUnit = h.unit;
-                                movingUnit.state = 'idle';
-                                delete movingUnit.targetKey;
-                                delete movingUnit.arrivalTime;
-
-                                let newOwner = targetHex.owner || h.owner;
-                                let newColor = targetHex.color || h.color;
-                                let newType = targetHex.type === 'starter' || targetHex.type === 'purchased' ? targetHex.type : (targetHex.type || 'purchased');
-
-                                updates[`world_hexes/${targetKey}`] = {
-                                    owner: newOwner,
-                                    color: newColor,
-                                    type: newType,
-                                    isPurchased: targetHex.isPurchased || newType === 'purchased',
-                                    unit: movingUnit
-                                };
-                                updates[`world_hexes/${key}/unit`] = null;
-                                updatesNeeded = true;
+                            } else if (attacker.hp <= 0) {
+                                updates[`${srcPath}/unit`] = null;
+                                updates[`${dstPath}/unit`] = defender;
+                            } else {
+                                // Обидва живі — бій триває наступним раундом
+                                attacker.state = 'fighting';
+                                attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                                updates[`${srcPath}/unit`] = attacker;
+                                updates[`${dstPath}/unit`] = defender;
                             }
+                            return;
                         }
-                    }
-                });
 
-                if (updatesNeeded) {
+                        // 3. Штурм ворожої Ратуші
+                        if (targetHex.type === 'core' && targetHex.owner !== currentUsername) {
+                            const attacker = { ...unit };
+                            let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
+
+                            coreHp -= attacker.dmg;
+                            attacker.hp -= 30;
+
+                            if (coreHp <= 0) {
+                                updates[dstPath] = {
+                                    owner: currentUsername,
+                                    color: h.color,
+                                    type: 'purchased',
+                                    isPurchased: true,
+                                    unit: stopTravel(attacker)
+                                };
+                                updates[`${srcPath}/unit`] = null;
+
+                                // Безкоштовна «стартова» земля навколо знищеної Ратуші знову стає нічиєю
+                                const loser = targetHex.owner;
+                                Object.keys(hexWorldData).forEach(k => {
+                                    const x = hexWorldData[k];
+                                    if (x && x.owner === loser && x.type === 'starter' && !x.unit && !touched.has(k)) {
+                                        updates[`world_hexes/${k}`] = null;
+                                        touched.add(k);
+                                    }
+                                });
+                                messages.push("💥 Ратушу ворога повністю зруйновано!");
+                            } else if (attacker.hp <= 0) {
+                                updates[`${srcPath}/unit`] = null;
+                                updates[`${dstPath}/hp`] = coreHp;
+                            } else {
+                                attacker.state = 'fighting';
+                                attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                                updates[`${srcPath}/unit`] = attacker;
+                                updates[`${dstPath}/hp`] = coreHp;
+                            }
+                            return;
+                        }
+
+                        // 4. Звичайне пересування — змінюємо ТІЛЬКИ воїна, сам гекс (рівень ратуші, HP, будівлі) не чіпаємо
+                        const moved = stopTravel(unit);
+                        if (targetHex.type === 'barbarian_camp') {
+                            // табір без охоронця — просто займаємо
+                            updates[dstPath] = {
+                                owner: currentUsername,
+                                color: h.color,
+                                type: 'purchased',
+                                isPurchased: true,
+                                unit: moved
+                            };
+                        } else {
+                            updates[`${dstPath}/unit`] = moved;
+                        }
+                        updates[`${srcPath}/unit`] = null;
+                    });
+
+                    if (goldBonus) updates[`users/${currentUsername}/gold`] = userGold + goldBonus;
+                    if (Object.keys(updates).length === 0) return;
+
                     await update(ref(db), updates);
+                    messages.forEach(m => alert(m));
+                } catch (err) {
+                    console.error('Помилка ігрового циклу:', err);
+                } finally {
+                    gameLoopBusy = false;
                 }
             }, 3000);
         }
@@ -940,12 +1006,16 @@
         }
 
         function setupViewportControls() {
+            if (viewportReady) return;   // не вішаємо обробники повторно після перелогіну
+            viewportReady = true;
+
             const viewport = document.getElementById('hex-grid-viewport');
+            const clampScale = (s) => Math.min(Math.max(0.15, s), 2.5);
 
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const zoomFactor = e.deltaY < 0 ? 1.04 : 0.96;
-                const newScale = Math.min(Math.max(0.15, scale * zoomFactor), 2.5);
+                const newScale = clampScale(scale * zoomFactor);
 
                 const rect = viewport.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
@@ -958,26 +1028,76 @@
                 updateTransform();
             }, { passive: false });
 
-            viewport.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                isClick = true;
-                dragStartX = e.clientX - panX;
-                dragStartY = e.clientY - panY;
+            // Pointer Events: працюють і для миші, і для пальця (перетягування + щипок для зуму)
+            const pointers = new Map();
+            let pinchStartDist = 0;
+            let pinchStartScale = 1;
+
+            viewport.addEventListener('pointerdown', (e) => {
+                pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (pointers.size === 1) {
+                    isDragging = true;
+                    isClick = true;
+                    dragStartX = e.clientX - panX;
+                    dragStartY = e.clientY - panY;
+                } else if (pointers.size === 2) {
+                    isDragging = false;
+                    isClick = false;
+                    const [a, b] = [...pointers.values()];
+                    pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y);
+                    pinchStartScale = scale;
+                }
             });
 
-            window.addEventListener('mousemove', (e) => {
+            window.addEventListener('pointermove', (e) => {
+                if (!pointers.has(e.pointerId)) return;
+                pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+                if (pointers.size === 2) {
+                    if (pinchStartDist <= 0) return;
+                    const [a, b] = [...pointers.values()];
+                    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+                    const rect = viewport.getBoundingClientRect();
+                    const mx = (a.x + b.x) / 2 - rect.left;
+                    const my = (a.y + b.y) / 2 - rect.top;
+                    const newScale = clampScale(pinchStartScale * dist / pinchStartDist);
+
+                    panX = mx - (mx - panX) * (newScale / scale);
+                    panY = my - (my - panY) * (newScale / scale);
+                    scale = newScale;
+                    updateTransform();
+                    return;
+                }
+
                 if (!isDragging) return;
                 const dx = e.clientX - panX - dragStartX;
                 const dy = e.clientY - panY - dragStartY;
-                
-                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isClick = false;
+                if (Math.abs(dx) > 6 || Math.abs(dy) > 6) isClick = false;
 
                 panX = e.clientX - dragStartX;
                 panY = e.clientY - dragStartY;
                 updateTransform();
             });
 
-            window.addEventListener('mouseup', () => { isDragging = false; });
+            const endPointer = (e) => {
+                pointers.delete(e.pointerId);
+                if (pointers.size === 0) {
+                    isDragging = false;
+                } else if (pointers.size === 1) {
+                    // після щипка продовжуємо тягнути одним пальцем без «стрибка»
+                    const p = [...pointers.values()][0];
+                    dragStartX = p.x - panX;
+                    dragStartY = p.y - panY;
+                    isDragging = true;
+                    isClick = false;
+                }
+            };
+            window.addEventListener('pointerup', endPointer);
+            window.addEventListener('pointercancel', endPointer);
+
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && isSelectingMoveTarget) cancelMoveMode();
+            });
         }
 
         function getNeighbors(r, c) {
@@ -1022,69 +1142,135 @@
             return true;
         }
 
-function handleHexClick(r, c) {
+        function isMyUnit(hex) {
+            return !!(hex && hex.unit && hex.unit.owner === currentUsername);
+        }
+
+        // Куди воїн може піти за 1 крок: на свою/ворожу землю, у табір варварів. Не можна: у прірву,
+        // на нічию землю (спершу її треба купити) і на гекс зі своїм іншим воїном.
+        function getMoveTargets(r, c) {
+            return getNeighbors(r, c).filter(n => {
+                const h = hexWorldData[n.key];
+                if (!h) return false;
+                if (h.type === 'chasm') return false;
+                if (isMyUnit(h)) return false;
+                return true;
+            });
+        }
+
+        function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
-            const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
+            const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
 
-            // Якщо ми зараз обираємо куди походити воїном
+            // Режим пересування воїна
             if (isSelectingMoveTarget) {
-                if (movingUnitCoords) {
-                    const { r: sr, c: sc } = movingUnitCoords;
-                    const neighbors = getNeighbors(sr, sc);
-                    
-                    // Перевіряємо чи клікнули на сусідню зелену клітинку
-                    if (neighbors.some(n => n.r === r && n.c === c)) {
-                        if (hexInfo && hexInfo.type === 'chasm') {
-                            alert("Не можна йти у прірву без мосту!");
-                            return;
-                        }
-                        executeUnitMove(sr, sc, r, c);
-                        return;
-                    } else {
-                        alert("Оберіть сусідню зелену клітинку для ходу!");
-                        return;
-                    }
-                }
-            }
+                if (!movingUnitCoords) { cancelMoveMode(); return; }
+                const { r: sr, c: sc } = movingUnitCoords;
 
-            // Якщо клікнули на свого вільного воїна — одразу активуємо рух
-            if (hexInfo && hexInfo.unit && hexInfo.unit.owner === currentUsername && hexInfo.unit.state === 'idle') {
-                startMoveUnit(r, c);
+                // Клік по самому воїну — скасувати вибір цілі
+                if (sr === r && sc === c) { cancelMoveMode(); return; }
+
+                const isValidMove = getMoveTargets(sr, sc).some(n => n.r === r && n.c === c);
+                if (!isValidMove) {
+                    alert("Йти можна лише на підсвічені зелені сусідні гекси (1 крок)!");
+                    return;
+                }
+
+                executeUnitMove(sr, sc, r, c);
                 return;
             }
 
-            if (!userHasBase) {
-                if (hexInfo && hexInfo.type === 'chasm') { alert('Не можна будувати базу у прірві!'); return; }
+            // Клітинка з вашим воїном: 1-й клік — меню воїна, 2-й клік по тій самій клітинці — меню самої клітинки
+            if (isMyUnit(hexInfo)) {
+                if (activeSelection && activeSelection.key === key && activeSelection.layer === 'unit') {
+                    openCellForHex(r, c, hexInfo);
+                } else {
+                    openUnitModal(r, c, hexInfo);
+                }
+                return;
+            }
+            activeSelection = null;
+
+            // Якщо клітинка належить гравцю
+            if (hexInfo && hexInfo.owner === currentUsername) {
+                openCellForHex(r, c, hexInfo);
+                return;
+            }
+
+            // Табір варварів
+            if (hexInfo && hexInfo.type === 'barbarian_camp') {
+                openTerritoryModal(r, c, hexInfo);
+                return;
+            }
+
+            // Чужа територія
+            if (hexInfo && hexInfo.owner && hexInfo.owner !== currentUsername && hexInfo.type !== 'chasm') {
+                alert(`Ця територія належить володарю: ${hexInfo.owner}`);
+                return;
+            }
+
+            // Заснування бази
+            if (!userHasBaseOnMap) {
+                if (hexInfo && hexInfo.type === 'chasm') {
+                    alert('Не можна засновувати базу всередині прірви!');
+                    return;
+                }
+                if (!checkDistanceValid(r, c)) {
+                    alert('Занадто близько до території іншого гравця!');
+                    return;
+                }
                 selectedHexCoords = { r, c };
                 openBaseModal();
                 return;
             }
 
+            // Побудова мосту через прірву
             if (hexInfo && hexInfo.type === 'chasm') {
+                if (!isBridgeAccessible(r, c)) {
+                    alert('Занадто далеко від вашої території!');
+                    return;
+                }
                 selectedHexCoords = { r, c };
                 openBridgeModal(r, c);
                 return;
             }
 
-            if (hexInfo && hexInfo.owner === currentUsername) {
-                if (hexInfo.type === 'core') openTownHallModal(hexInfo);
-                else openTerritoryModal(r, c, hexInfo);
-                return;
-            }
-
+            // Купівля нейтральної землі
             const neighbors = getNeighbors(r, c);
-            if (!neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm')) {
-                alert('Можна взаємодіяти лише з прилеглими землями!');
+            const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
+
+            if (!isAdjacentToMyTerritory) {
+                alert('Ви можете взаємодіяти лише з територіями, що межують з вашими землями!');
                 return;
             }
 
             selectedHexCoords = { r, c };
             openTerritoryModal(r, c, hexInfo || null);
         }
+
+        // Відкриває меню САМОЇ клітинки (ратуша / територія), навіть якщо на ній стоїть воїн
+        function openCellForHex(r, c, hexInfo) {
+            activeSelection = { key: `${r}_${c}`, layer: 'cell' };
+            if (hexInfo && hexInfo.owner === currentUsername) {
+                if (hexInfo.type === 'core') openTownHallModal(hexInfo, r, c);
+                else openTerritoryModal(r, c, hexInfo);
+            } else {
+                hideAllModals();
+                alert(`Ваш воїн стоїть на чужій території. Власник: ${hexInfo && hexInfo.owner ? hexInfo.owner : '—'}`);
+            }
+        }
+
         // ==========================================
-        // МОДАЛЬНІ ВІКНА ТА ДІЇ (БЕЗКОШТОВНО ДЛЯ ADMIN)
+        // МОДАЛЬНІ ВІКНА ТА ДІЇ
         // ==========================================
+
+        function hideAllModals() {
+            ['base-modal', 'townhall-modal', 'territory-modal', 'unit-modal'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+        }
 
         function openBaseModal() {
             const takenColors = new Set();
@@ -1148,7 +1334,7 @@ function handleHexClick(r, c) {
             };
 
             neighbors.forEach(n => {
-                if (!hexWorldData[n.key] || hexWorldData[n.key].type === 'starter') {
+                if (!hexWorldData[n.key]) {
                     updates[`world_hexes/${n.key}`] = {
                         owner: currentUsername,
                         color: selectedColor,
@@ -1167,7 +1353,8 @@ function handleHexClick(r, c) {
             }
         }
 
-        function openTownHallModal(coreHex) {
+        function openTownHallModal(coreHex, r, c) {
+            hideAllModals();
             const modal = document.getElementById('townhall-modal');
             const infoContainer = document.getElementById('townhall-info');
             const actionBtnsContainer = document.getElementById('townhall-action-btns');
@@ -1177,7 +1364,7 @@ function handleHexClick(r, c) {
 
             let costText = userTownHallLevel === 1 ? "14 золота" : (userTownHallLevel === 2 ? "42 золота" : "—");
             let canUpgrade = userTownHallLevel < 3;
-            let totalInc = isAdmin() ? "∞" : calculateEffectiveIncome(currentUsername, hexWorldData);
+            let totalInc = calculateEffectiveIncome(currentUsername, hexWorldData);
 
             infoContainer.innerHTML = `
                 <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
@@ -1186,7 +1373,11 @@ function handleHexClick(r, c) {
                 <div><b>Чистий підсумковий дохід:</b> <span style="color: #fbbf24; font-weight: bold;">+${totalInc} золота/хв</span></div>
             `;
 
-            let btnsHtml = `<button class="btn-recruit" onclick="recruitClubman()">🪵 Найми воїна (15 💰, -1 утр)</button>`;
+            let btnsHtml = '';
+            if (isMyUnit(coreHex) && r !== undefined) {
+                btnsHtml += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
+            }
+            btnsHtml += `<button class="btn-recruit" onclick="recruitClubman()">🪵 Найми воїна (15 💰, -1 утр)</button>`;
             
             if (currentHp < maxHp) {
                 btnsHtml += `<button class="btn-repair" onclick="repairTownHall()">🛠️ Відремонтувати Ратушу (15 💰)</button>`;
@@ -1202,10 +1393,11 @@ function handleHexClick(r, c) {
 
         window.closeTownHallModal = function() {
             document.getElementById('townhall-modal').style.display = 'none';
+            activeSelection = null;
         }
 
         window.repairTownHall = async function() {
-            if (!isAdmin() && userGold < 15) {
+            if (userGold < 15) {
                 alert("Недостатньо золота для ремонту! Потрібно 15 золота.");
                 return;
             }
@@ -1219,7 +1411,7 @@ function handleHexClick(r, c) {
 
             const updates = {};
             updates[`world_hexes/${coreKey}/hp`] = 200;
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 15;
+            updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1233,7 +1425,7 @@ function handleHexClick(r, c) {
 
         window.upgradeTownHall = async function() {
             let cost = userTownHallLevel === 1 ? 14 : (userTownHallLevel === 2 ? 42 : 0);
-            if (!isAdmin() && userGold < cost) {
+            if (userGold < cost) {
                 alert(`Недостатньо золота! Потрібно ${cost} золота.`);
                 return;
             }
@@ -1247,7 +1439,7 @@ function handleHexClick(r, c) {
                 });
 
                 const updates = {};
-                if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - cost;
+                updates[`users/${currentUsername}/gold`] = userGold - cost;
                 updates[`users/${currentUsername}/townHallLevel`] = userTownHallLevel + 1;
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
                 if (coreHexKey) {
@@ -1263,7 +1455,7 @@ function handleHexClick(r, c) {
         }
 
         window.recruitClubman = async function() {
-            if (!isAdmin() && userGold < 15) {
+            if (userGold < 15) {
                 alert("Недостатньо золота! Потрібно 15 золота.");
                 return;
             }
@@ -1297,7 +1489,7 @@ function handleHexClick(r, c) {
                 dmg: 25,
                 state: 'idle'
             };
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 15;
+            updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1310,6 +1502,7 @@ function handleHexClick(r, c) {
         }
 
         function openBridgeModal(r, c) {
+            hideAllModals();
             const modal = document.getElementById('territory-modal');
             const title = document.getElementById('territory-title');
             const cardContainer = document.getElementById('territory-card-container');
@@ -1328,7 +1521,7 @@ function handleHexClick(r, c) {
         }
 
         window.buildBridge = async function(r, c) {
-            if (!isAdmin() && userGold < 30) {
+            if (userGold < 30) {
                 alert("Недостатньо золота! Потрібно 30 золота.");
                 return;
             }
@@ -1346,7 +1539,7 @@ function handleHexClick(r, c) {
                 type: 'bridge',
                 isPurchased: true
             };
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 30;
+            updates[`users/${currentUsername}/gold`] = userGold - 30;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1359,6 +1552,7 @@ function handleHexClick(r, c) {
         }
 
         function openTerritoryModal(r, c, hexInfo) {
+            hideAllModals();
             const modal = document.getElementById('territory-modal');
             const title = document.getElementById('territory-title');
             const cardContainer = document.getElementById('territory-card-container');
@@ -1377,12 +1571,14 @@ function handleHexClick(r, c) {
                         💰 <b>Скарб у таборі:</b> ${hexInfo.reward || 100} золота.<br>
                     </div>
                 `;
+                cardContainer.innerHTML = cardHtml;
                 buttonsContainer.innerHTML = `<button class="btn-demolish" onclick="closeTerritoryModal()">Закрити</button>`;
                 modal.style.display = 'block';
                 return;
             }
 
-            if (!hexInfo || hexInfo.type === 'starter' || !hexInfo.owner) {
+            // Купувати можна тільки нічию землю. «Стартові» гекси навколо ратуші вже ваші й безкоштовні.
+            if (!hexInfo || !hexInfo.owner) {
                 title.innerText = "🌍 Придбати гекс";
                 cardHtml = `
                     <div class="info-card">
@@ -1393,39 +1589,27 @@ function handleHexClick(r, c) {
                 `;
                 htmlContent = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
             } else {
-                let unitInfoHtml = '';
-                if (hexInfo.unit && hexInfo.unit.owner === currentUsername) {
-                    const u = hexInfo.unit;
-                    unitInfoHtml = `
-                        <div style="margin-top: 8px; border-top: 1px solid #334155; padding-top: 6px;">
-                            <b>🛡️ Ваш воїн:</b><br>
-                            • HP: ${u.hp} / ${u.maxHp}<br>
-                            • Статус: ${u.state === 'moving' ? '🚶 Рухається...' : (u.state === 'fighting' ? '⚔️ У бою!' : '🟢 Готовий')}<br>
-                        </div>
-                    `;
-                }
+                const hasMyUnit = isMyUnit(hexInfo);
+                const isStarter = hexInfo.type === 'starter';
 
                 title.innerText = hexInfo.type === 'bridge' ? "🌉 Дерев'яний міст" : "🏗️ Управління гексом";
                 cardHtml = `
                     <div class="info-card">
                         ${hexInfo.type === 'bridge' ? '<b>Це інженерний міст.</b><br><br>' : ''}
+                        ${isStarter ? '<span class="good">Земля навколо ратуші — безкоштовна, без утримання.</span><br><br>' : ''}
                         <b>Будівлі:</b><br>
                         🌾 Ферма (10 💰) | 🛞🌀 Вітряк (20 💰)
-                        ${unitInfoHtml}
                     </div>
                 `;
 
                 let actionBtns = '';
-                if (hexInfo.unit && hexInfo.unit.owner === currentUsername && hexInfo.unit.state === 'idle') {
-                    actionBtns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна (1 хв)</button>`;
-                    if (hexInfo.unit.hp < hexInfo.unit.maxHp) {
-                        actionBtns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати воїна (10 💰)</button>`;
-                    }
+                if (hasMyUnit) {
+                    actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
                 }
 
                 if (hexInfo.type === 'farm' || hexInfo.type === 'mill') {
                     actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести будівлю (5 💰)</button>`;
-                } else if (!hexInfo.unit && hexInfo.type !== 'bridge') {
+                } else if (hexInfo.type !== 'bridge') {
                     actionBtns += `
                         <button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (10 💰)</button>
                         <button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🛞🌀 Побудувати Вітряк (20 💰)</button>
@@ -1442,15 +1626,100 @@ function handleHexClick(r, c) {
         window.closeTerritoryModal = function() {
             document.getElementById('territory-modal').style.display = 'none';
             selectedHexCoords = null;
+            activeSelection = null;
+        }
+
+        // ---------- Меню воїна ----------
+
+        function openUnitModal(r, c, hexInfo) {
+            hideAllModals();
+            activeSelection = { key: `${r}_${c}`, layer: 'unit' };
+
+            const u = hexInfo.unit;
+            const stateText = u.state === 'moving' ? '🚶 Рухається...' : (u.state === 'fighting' ? '⚔️ У бою!' : '🟢 Готовий');
+
+            document.getElementById('unit-card').innerHTML = `
+                <div class="info-card">
+                    ❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>
+                    ⚔️ <b>Урон:</b> ${u.dmg}<br>
+                    <b>Статус:</b> ${stateText}<br>
+                    <span style="opacity: 0.7;">Утримання: -1 💰/хв</span>
+                </div>
+                <div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>
+            `;
+
+            let btns = '';
+            if (u.state === 'idle') {
+                btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна (1 хв)</button>`;
+                if (u.hp < u.maxHp) {
+                    btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати воїна (10 💰)</button>`;
+                }
+            } else if (u.state === 'fighting') {
+                btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">🏃 Відступити</button>`;
+            } else if (u.state === 'moving') {
+                btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">↩️ Скасувати рух</button>`;
+            }
+            btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
+
+            document.getElementById('unit-buttons').innerHTML = btns;
+            document.getElementById('unit-modal').style.display = 'block';
+        }
+
+        window.closeUnitModal = function() {
+            document.getElementById('unit-modal').style.display = 'none';
+            activeSelection = null;
+        }
+
+        // Оновлює відкрите меню воїна, коли дані з сервера змінились (HP, статус, воїн пішов)
+        function refreshUnitModal() {
+            const modal = document.getElementById('unit-modal');
+            if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
+            const [r, c] = activeSelection.key.split('_').map(Number);
+            const h = hexWorldData[activeSelection.key];
+            if (isMyUnit(h)) {
+                openUnitModal(r, c, h);
+            } else {
+                modal.style.display = 'none';
+                activeSelection = null;
+            }
+        }
+
+        window.switchToCell = function(r, c) {
+            const h = hexWorldData[`${r}_${c}`];
+            if (h) openCellForHex(r, c, h);
+        }
+
+        window.switchToUnit = function(r, c) {
+            const h = hexWorldData[`${r}_${c}`];
+            if (isMyUnit(h)) openUnitModal(r, c, h);
+        }
+
+        window.retreatUnit = async function(r, c) {
+            const key = `${r}_${c}`;
+            const h = hexWorldData[key];
+            if (!isMyUnit(h)) return;
+
+            try {
+                await update(ref(db), { [`world_hexes/${key}/unit`]: stopTravel(h.unit) });
+                closeUnitModal();
+            } catch (err) {
+                alert("Помилка: " + err.message);
+            }
         }
 
         window.buyTerritory = async function(r, c) {
-            if (!isAdmin() && userGold < 10) {
+            if (userGold < 10) {
                 alert("Недостатньо золота! Потрібно 10 золота.");
                 return;
             }
 
             const key = `${r}_${c}`;
+            if (hexWorldData[key]) {
+                alert("Цю клітинку вже не можна купити — вона зайнята.");
+                closeTerritoryModal();
+                return;
+            }
+
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => {
                 if (h.owner === currentUsername && h.color) myColor = h.color;
@@ -1463,7 +1732,7 @@ function handleHexClick(r, c) {
                 type: 'purchased',
                 isPurchased: true
             };
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 10;
+            updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1476,19 +1745,24 @@ function handleHexClick(r, c) {
         }
 
         window.startMoveUnit = function(r, c) {
-            closeTerritoryModal();
+            closeUnitModal();
+
+            const targets = getMoveTargets(r, c);
+            if (targets.length === 0) {
+                alert("Воїну нікуди йти: поруч немає ні вашої землі, ні ворогів. Спершу купіть сусідній гекс.");
+                return;
+            }
+
             isSelectingMoveTarget = true;
             movingUnitCoords = { r, c };
 
-            const neighbors = getNeighbors(r, c);
-            neighbors.forEach(n => {
+            // Підсвічуємо лише ті гекси, куди справді можна піти
+            targets.forEach(n => {
                 const polygon = document.getElementById(`hex-${n.r}-${n.c}`);
-                if (polygon) {
-                    polygon.classList.add('target-highlight');
-                }
+                if (polygon) polygon.classList.add('target-highlight');
             });
 
-            alert("🟢 Клікніть на підсвічений зелений гекс поруч, щоб відправити воїна!");
+            document.getElementById('move-banner').style.display = 'flex';
         }
 
         function clearMoveHighlights() {
@@ -1497,20 +1771,29 @@ function handleHexClick(r, c) {
             });
         }
 
-        async function executeUnitMove(sr, sc, tr, tc) {
+        window.cancelMoveMode = function() {
             isSelectingMoveTarget = false;
+            movingUnitCoords = null;
             clearMoveHighlights();
+            document.getElementById('move-banner').style.display = 'none';
+            renderWorldData();   // повертаємо справжні кольори гексів
+        }
+
+        async function executeUnitMove(sr, sc, tr, tc) {
+            cancelMoveMode();
 
             const sourceKey = `${sr}_${sc}`;
             const targetKey = `${tr}_${tc}`;
 
             const sourceHex = hexWorldData[sourceKey];
-            if (!sourceHex || !sourceHex.unit) return;
+            if (!isMyUnit(sourceHex) || sourceHex.unit.state !== 'idle') return;
 
-            const unit = sourceHex.unit;
-            unit.state = 'moving';
-            unit.targetKey = targetKey;
-            unit.arrivalTime = Date.now() + 60000;
+            const unit = {
+                ...sourceHex.unit,
+                state: 'moving',
+                targetKey: targetKey,
+                arrivalTime: Date.now() + 60000
+            };
 
             const updates = {};
             updates[`world_hexes/${sourceKey}/unit`] = unit;
@@ -1518,7 +1801,6 @@ function handleHexClick(r, c) {
 
             try {
                 await update(ref(db), updates);
-                movingUnitCoords = null;
                 alert("Воїн вирушив у путь! Час прибуття: 1 хвилина.");
             } catch (err) {
                 alert("Помилка переміщення: " + err.message);
@@ -1526,25 +1808,23 @@ function handleHexClick(r, c) {
         }
 
         window.healUnit = async function(r, c) {
-            if (!isAdmin() && userGold < 10) {
+            if (userGold < 10) {
                 alert("Недостатньо золота! Потрібно 10 золота.");
                 return;
             }
 
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
-            if (!hex || !hex.unit) return;
-
-            hex.unit.hp = hex.unit.maxHp;
+            if (!isMyUnit(hex)) return;
 
             const updates = {};
-            updates[`world_hexes/${key}/unit`] = hex.unit;
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 10;
+            updates[`world_hexes/${key}/unit`] = { ...hex.unit, hp: hex.unit.maxHp };
+            updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
                 await update(ref(db), updates);
-                closeTerritoryModal();
+                closeUnitModal();
                 alert("Воїна повністю вилікувано!");
             } catch (err) {
                 alert("Помилка лікування: " + err.message);
@@ -1553,7 +1833,7 @@ function handleHexClick(r, c) {
 
         window.buildBuilding = async function(r, c, type) {
             const cost = type === 'farm' ? 10 : 20; 
-            if (!isAdmin() && userGold < cost) {
+            if (userGold < cost) {
                 alert(`Недостатньо золота! Потрібно ${cost} золота.`);
                 return;
             }
@@ -1575,7 +1855,7 @@ function handleHexClick(r, c) {
                 isPurchased: wasPurchased,
                 unit: currentHex ? currentHex.unit : null
             };
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - cost;
+            updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1588,7 +1868,7 @@ function handleHexClick(r, c) {
         }
 
         window.demolishBuilding = async function(r, c) {
-            if (!isAdmin() && userGold < 5) {
+            if (userGold < 5) {
                 alert("Недостатньо золота для знесення! Потрібно 5 золота.");
                 return;
             }
@@ -1608,7 +1888,7 @@ function handleHexClick(r, c) {
                 isPurchased: wasPurchased,
                 unit: hexInfo.unit || null
             };
-            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 5;
+            updates[`users/${currentUsername}/gold`] = userGold - 5;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1621,22 +1901,25 @@ function handleHexClick(r, c) {
         }
 
         function listenToWorldData() {
+            if (unsubWorld) unsubWorld();
             const worldRef = ref(db, 'world_hexes');
-            onValue(worldRef, (snapshot) => {
+            unsubWorld = onValue(worldRef, (snapshot) => {
                 hexWorldData = snapshot.exists() ? snapshot.val() : {};
                 renderWorldData();
                 updateIncomeDisplay();
+                refreshUnitModal();
             });
         }
 
         // ==========================================
-        // ВЕКТОРНИЙ РЕНДЕРИНГ
+        // ОНОВЛЕНИЙ ВЕКТОРНИЙ РЕНДЕРИНГ
         // ==========================================
 
         function renderBridgeVector(svg, center) {
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "map-icon");
 
+            // Головні дерев'яні балки мосту
             const b1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
             b1.setAttribute("x1", center.x - 14); b1.setAttribute("y1", center.y - 7);
             b1.setAttribute("x2", center.x + 14); b1.setAttribute("y2", center.y - 7);
@@ -1647,6 +1930,7 @@ function handleHexClick(r, c) {
             b2.setAttribute("x2", center.x + 14); b2.setAttribute("y2", center.y + 7);
             b2.setAttribute("stroke", "#d97706"); b2.setAttribute("stroke-width", "3");
 
+            // Поперечні дошки
             for (let dx = -10; dx <= 10; dx += 5) {
                 const plank = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 plank.setAttribute("x1", center.x + dx); plank.setAttribute("y1", center.y - 8);
@@ -1660,42 +1944,46 @@ function handleHexClick(r, c) {
             svg.appendChild(g);
         }
 
-        function renderClubmanVector(svg, center, color, hp, maxHp) {
-            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            g.setAttribute("class", "map-icon");
+        function svgEl(tag, attrs) {
+            const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+            for (const k in attrs) el.setAttribute(k, attrs[k]);
+            return el;
+        }
 
-            const handle = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            handle.setAttribute("x1", center.x - 6); handle.setAttribute("y1", center.y + 10);
-            handle.setAttribute("x2", center.x + 6); handle.setAttribute("y2", center.y - 4);
-            handle.setAttribute("stroke", color); handle.setAttribute("stroke-width", "4");
-            handle.setAttribute("stroke-linecap", "round");
-            g.appendChild(handle);
+        // Воїн: темний круглий значок з білою обводкою (видно на будь-якому кольорі гекса),
+        // всередині дубина в кольорі гравця і смужка HP.
+        // Обводка: біла — готовий, фіолетова пунктирна — рухається, червона — у бою.
+        function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
+            const k = r / 15;
+            const ringColor = unit.state === 'fighting' ? '#ef4444' : (unit.state === 'moving' ? '#a78bfa' : '#ffffff');
+            const g = svgEl("g", { class: "unit-badge" });
 
-            const head = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            head.setAttribute("cx", center.x + 8); head.setAttribute("cy", center.y - 7);
-            head.setAttribute("r", "5");
-            head.setAttribute("fill", color);
-            head.setAttribute("stroke", "#ffffff");
-            head.setAttribute("stroke-width", "1");
-            g.appendChild(head);
+            g.appendChild(svgEl("circle", {
+                cx: cx, cy: cy, r: r,
+                fill: isBarbarian ? '#450a0a' : '#0f172a',
+                stroke: ringColor,
+                'stroke-width': 2.5 * k,
+                'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none'
+            }));
 
-            const barW = 20;
-            const hpPercent = Math.max(0, Math.min(1, hp / maxHp));
-            const barBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            barBg.setAttribute("x", center.x - barW / 2);
-            barBg.setAttribute("y", center.y + 13);
-            barBg.setAttribute("width", barW);
-            barBg.setAttribute("height", 3);
-            barBg.setAttribute("fill", "#0f172a");
-            g.appendChild(barBg);
+            g.appendChild(svgEl("line", {
+                x1: cx - 6 * k, y1: cy + 5 * k, x2: cx + 4 * k, y2: cy - 6 * k,
+                stroke: '#f8fafc', 'stroke-width': 4 * k, 'stroke-linecap': 'round'
+            }));
+            g.appendChild(svgEl("circle", {
+                cx: cx + 5.5 * k, cy: cy - 7 * k, r: 4.5 * k,
+                fill: teamColor, stroke: '#f8fafc', 'stroke-width': 1.5 * k
+            }));
 
-            const barFill = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            barFill.setAttribute("x", center.x - barW / 2);
-            barFill.setAttribute("y", center.y + 13);
-            barFill.setAttribute("width", barW * hpPercent);
-            barFill.setAttribute("height", 3);
-            barFill.setAttribute("fill", hpPercent > 0.5 ? "#10b981" : "#ef4444");
-            g.appendChild(barFill);
+            const maxHp = unit.maxHp || 100;
+            const pct = Math.max(0, Math.min(1, (unit.hp || 0) / maxHp));
+            const barW = 18 * k, barH = 3 * k;
+            const bx = cx - barW / 2, by = cy + 8 * k;
+            g.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, fill: '#475569' }));
+            g.appendChild(svgEl("rect", {
+                x: bx, y: by, width: Math.max(0.1, barW * pct), height: barH, rx: barH / 2,
+                fill: pct > 0.5 ? '#10b981' : (pct > 0.25 ? '#f59e0b' : '#ef4444')
+            }));
 
             svg.appendChild(g);
         }
@@ -1705,7 +1993,7 @@ function handleHexClick(r, c) {
             g.setAttribute("class", "map-icon");
 
             const tent = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-            tent.setAttribute("points", `${center.x},${center.y - 10} ${center.x - 12},${center.y + 8} ${center.x + 12},${center.y + 8}`);
+            tent.setAttribute("points", `${center.x - 4},${center.y - 12} ${center.x - 16},${center.y + 6} ${center.x + 8},${center.y + 6}`);
             tent.setAttribute("fill", "#dc2626");
             tent.setAttribute("stroke", "#030712");
             tent.setAttribute("stroke-width", "1.5");
@@ -1716,8 +2004,8 @@ function handleHexClick(r, c) {
 
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
-            
-            document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text').forEach(el => el.remove());
+
+            document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
 
             document.querySelectorAll('polygon.hex').forEach(el => {
                 if (!el.classList.contains('target-highlight')) {
@@ -1727,78 +2015,86 @@ function handleHexClick(r, c) {
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
             });
 
+            const unitQueue = [];
+            const labelQueue = [];
+
+            const addEmoji = (x, y, emoji) => {
+                const t = svgEl("text", { x: x, y: y, class: "map-icon" });
+                t.textContent = emoji;
+                svg.appendChild(t);
+            };
+
             Object.keys(hexWorldData).forEach(key => {
                 const hexData = hexWorldData[key];
+                if (!hexData) return;
+
                 const [r, c] = key.split('_');
                 const polygon = document.getElementById(`hex-${r}-${c}`);
+                if (!polygon) return;
 
-                if (polygon) {
-                    if (hexData.type === 'chasm') {
-                        polygon.classList.add('chasm-hex');
-                    } else if (hexData.type === 'barbarian_camp') {
-                        polygon.style.fill = '#450a0a';
-                        polygon.style.stroke = '#dc2626';
-                        const center = hexToPixel(parseInt(r), parseInt(c));
-                        renderBarbarianCampVector(svg, center);
+                const center = hexToPixel(parseInt(r), parseInt(c));
+                const hasUnit = !!hexData.unit;
 
-                        if (hexData.unit) {
-                            renderClubmanVector(svg, {x: center.x, y: center.y - 4}, "#7f1d1d", hexData.unit.hp, hexData.unit.maxHp);
-                        }
-                    } else {
-                        if (!polygon.classList.contains('target-highlight')) {
-                            polygon.style.fill = hexData.color;
-                            polygon.style.stroke = hexData.color;
-                        }
+                if (hexData.type === 'chasm') {
+                    polygon.classList.add('chasm-hex');
+                    return;
+                }
 
-                        const center = hexToPixel(parseInt(r), parseInt(c));
+                if (hexData.type === 'barbarian_camp') {
+                    polygon.style.fill = '#450a0a';
+                    polygon.style.stroke = '#dc2626';
+                    renderBarbarianCampVector(svg, center);
+                    if (hasUnit) unitQueue.push({ center, unit: hexData.unit, color: '#dc2626', barbarian: true, big: false });
+                    return;
+                }
 
-                        if (hexData.type === 'core') {
-                            polygon.classList.add('occupied-core');
+                if (!polygon.classList.contains('target-highlight')) {
+                    polygon.style.fill = hexData.color;
+                    polygon.style.stroke = hexData.color;
+                }
 
-                            const castleText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                            castleText.setAttribute("x", center.x);
-                            castleText.setAttribute("y", center.y - 4);
-                            castleText.setAttribute("class", "map-icon");
-                            castleText.textContent = "🏰";
-                            svg.appendChild(castleText);
+                let plain = false;
 
-                            const lvl = hexData.level || 1;
-                            renderLabel(svg, center, `👑 ${hexData.owner} [Lvl ${lvl}]`);
+                if (hexData.type === 'core') {
+                    polygon.classList.add('occupied-core');
+                    addEmoji(hasUnit ? center.x - 5 : center.x, hasUnit ? center.y - 8 : center.y - 4, "🏰");
+                    labelQueue.push({ center, text: `👑 ${hexData.owner} [Lvl ${hexData.level || 1}]` });
 
-                        } else if (hexData.type === 'bridge') {
-                            polygon.classList.add('bridge-hex');
-                            renderBridgeVector(svg, center);
+                } else if (hexData.type === 'bridge') {
+                    polygon.classList.add('bridge-hex');
+                    renderBridgeVector(svg, center);
 
-                        } else if (hexData.type === 'farm') {
-                            polygon.classList.add('occupied-border');
-                            const farmText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                            farmText.setAttribute("x", center.x);
-                            farmText.setAttribute("y", center.y - 5);
-                            farmText.setAttribute("class", "map-icon");
-                            farmText.textContent = "🌾";
-                            svg.appendChild(farmText);
+                } else if (hexData.type === 'farm') {
+                    polygon.classList.add('occupied-border');
+                    addEmoji(hasUnit ? center.x - 5 : center.x, hasUnit ? center.y - 8 : center.y - 5, "🌾");
 
-                        } else if (hexData.type === 'mill') {
-                            polygon.classList.add('occupied-border');
-                            const millText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                            millText.setAttribute("x", center.x);
-                            millText.setAttribute("y", center.y - 5);
-                            millText.setAttribute("class", "map-icon");
-                            millText.textContent = "🛞🌀";
-                            svg.appendChild(millText);
+                } else if (hexData.type === 'mill') {
+                    polygon.classList.add('occupied-border');
+                    addEmoji(hasUnit ? center.x - 5 : center.x, hasUnit ? center.y - 8 : center.y - 5, "🛞🌀");
 
-                        } else {
-                            polygon.classList.add('occupied-border');
-                        }
+                } else {
+                    polygon.classList.add('occupied-border');
+                    plain = true;
+                }
 
-                        if (hexData.unit) {
-                            let unitColor = hexData.color || '#38bdf8';
-                            if (hexData.unit.type === 'barbarian') unitColor = '#991b1b';
-                            renderClubmanVector(svg, {x: center.x, y: center.y + (hexData.type === 'farm' || hexData.type === 'mill' ? 4 : 0)}, unitColor, hexData.unit.hp, hexData.unit.maxHp);
-                        }
-                    }
+                if (hasUnit) {
+                    const isBarb = hexData.unit.type === 'barbarian';
+                    unitQueue.push({
+                        center,
+                        unit: hexData.unit,
+                        color: isBarb ? '#dc2626' : (hexData.color || '#38bdf8'),
+                        barbarian: isBarb,
+                        big: plain
+                    });
                 }
             });
+
+            // Воїни малюються поверх усього; на порожньому гексі — великий значок, на гексі з будівлею — менший у куті
+            unitQueue.forEach(u => {
+                if (u.big) renderUnitBadge(svg, u.center.x, u.center.y, 15, u.unit, u.color, u.barbarian);
+                else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
+            });
+            labelQueue.forEach(l => renderLabel(svg, l.center, l.text));
         }
 
         function renderLabel(svg, center, labelContent) {
