@@ -3,51 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.15</title>
+    <title>HexPolitics v5.16</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
     ============================================
-
-    ПОТОЧНА ВЕРСІЯ: v5.15
-
-    КОНТЕКСТ ПРОЄКТУ:
-    - Браузерна гра на HTML + SVG + Firebase RTDB
-    - Авторизація: логін + пароль (без Anonymous Auth)
-    - Карта: 60×60 гексів, HEX_RADIUS = 26
-    - Стиль графіки: SVG-вектори, cartoon-ish, вид спереду
-    - Firebase проєкт: kovel-game
+    ПОТОЧНА ВЕРСІЯ: v5.16
 
     ВЖЕ ЗРОБЛЕНО:
     - v5.9:  будівництво навколо ратуші
-    - v5.10: офлайн-дохід (lastOnline + beforeunload + visibilitychange)
-    - v5.11: SVG-графіка — ратуша, ферма, вітряк
+    - v5.10: офлайн-дохід
+    - v5.11: SVG графіка (ратуша, ферма, вітряк)
     - v5.12: статичний прапор
-    - v5.13: фікс вітряка (розділено SVG-transform і CSS-animation)
-    - v5.14: система варварів (25 таборів, 3 рівні, регенерація, респавн)
-    - v5.15: рух воїнів по шляху (BFS, 1 гекс/хв), вибір будь-якого гекса, SVG-воїн з дубиною
-
-    ПЛАНУЄТЬСЯ:
-    - v5.16: прірва з камінням, міст з перилами
+    - v5.13: фікс вітряка
+    - v5.14: варвари (25 таборів, 3 рівні)
+    - v5.15: рух по шляху (BFS), SVG-воїн з дубиною
+    - v5.16: стрілки маршруту (зелена/синя) + фікс офлайн-руху
 
     КЛЮЧОВІ КОНСТАНТИ:
-    - FIGHT_ROUND_MS = 5000 (5 сек на раунд бою)
-    - MOVE_STEP_MS = 60000 (1 гекс за хвилину)
+    - FIGHT_ROUND_MS = 5000
+    - MOVE_STEP_MS = 60000
     - GRID_ROWS = 60, GRID_COLS = 60
-    - Дохід: базовий 1/хв + ферми +1 + вітряк бонус - утримання
-    - Купівля гекса: 10 золота, утримання -2/хв
-    - Найм воїна: 15 золота, утримання -1/хв
     ============================================
     -->
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
 
-        #update-loader {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #0f172a; display: flex; justify-content: center; align-items: center; z-index: 2000;
-            transition: opacity 0.5s ease;
-        }
+        #update-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; display: flex; justify-content: center; align-items: center; z-index: 2000; transition: opacity 0.5s ease; }
         .loader-content { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px; }
         .spinner { width: 50px; height: 50px; border: 5px solid #334155; border-top: 5px solid #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -67,35 +50,21 @@
 
         #hex-grid-viewport { width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative; touch-action: none; }
         #hex-grid-viewport:active { cursor: grabbing; }
-
         #hex-map-container { transform-origin: 0 0; position: absolute; top: 0; left: 0; will-change: transform; }
-
         #hex-svg { display: block; background: #0d1b2a; }
 
         polygon.hex { stroke: #1b263b; stroke-width: 1.5; fill: #1b263b; fill-opacity: 0.3; transition: fill-opacity 0.2s ease, stroke 0.2s ease; cursor: pointer; }
         polygon.hex:hover { stroke: #38bdf8; stroke-width: 2.5; fill-opacity: 0.6; }
-
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
         polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
-
-        polygon.hex.target-highlight {
-            stroke: #10b981 !important;
-            stroke-width: 3.5 !important;
-            fill: #10b981 !important;
-            fill-opacity: 0.45 !important;
-            animation: pulse-green 1.2s infinite alternate;
-        }
+        polygon.hex.target-highlight { stroke: #10b981 !important; stroke-width: 3.5 !important; fill: #10b981 !important; fill-opacity: 0.45 !important; animation: pulse-green 1.2s infinite alternate; }
         @keyframes pulse-green { 0% { fill-opacity: 0.25; stroke-width: 2.5; } 100% { fill-opacity: 0.55; stroke-width: 4; } }
 
         .map-icon { font-size: 16px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
 
-        .mill-blades {
-            transform-box: fill-box;
-            transform-origin: 50% 50%;
-            animation: millSpin 4s linear infinite;
-        }
+        .mill-blades { transform-box: fill-box; transform-origin: 50% 50%; animation: millSpin 4s linear infinite; }
         @keyframes millSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
         .owner-label-bg { fill: rgba(15, 23, 42, 0.85); rx: 6px; ry: 6px; stroke: rgba(255, 255, 255, 0.4); stroke-width: 1; pointer-events: none; }
@@ -143,6 +112,13 @@
 
         .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
 
+        /* Стрілки маршруту воїна */
+        .route-arrow-current { stroke: #10b981; stroke-width: 3; fill: none; stroke-linecap: round; stroke-dasharray: 6 3; animation: dashMove 1s linear infinite; pointer-events: none; filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.8)); }
+        .route-arrow-final { stroke: #3b82f6; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-dasharray: 8 4; animation: dashMove 1.5s linear infinite; pointer-events: none; opacity: 0.75; filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.7)); }
+        .route-arrow-head-current { fill: #10b981; pointer-events: none; filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.9)); }
+        .route-arrow-head-final { fill: #3b82f6; pointer-events: none; opacity: 0.85; filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.8)); }
+        @keyframes dashMove { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -18; } }
+
         #move-banner { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px; z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%; }
         #move-banner button { padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
     </style>
@@ -152,8 +128,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.15</h2>
-            <p id="loader-desc">Рух по шляху, SVG-воїн з дубиною...</p>
+            <h2 id="loader-status">HexPolitics v5.16</h2>
+            <p id="loader-desc">Стрілки маршруту + фікс офлайн-руху...</p>
         </div>
     </div>
 
@@ -265,7 +241,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.15";
+        const CURRENT_VERSION = "5.16";
 
         let mode = "login";
         let currentUsername = "";
@@ -311,34 +287,26 @@
 
         async function saveLastOnline() {
             if (!currentUsername) return;
-            try {
-                await update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() });
-            } catch (e) {}
+            try { await update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {}
         }
 
         window.addEventListener('load', () => {
             setTimeout(() => { hideLoader(); }, 800);
             setInterval(checkAutoUpdate, 15000);
             window.addEventListener('beforeunload', () => {
-                if (currentUsername) {
-                    try { update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {}
-                }
+                if (currentUsername) { try { update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {} }
             });
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') saveLastOnline();
             });
         });
 
-        function hideLoader() {
-            const loader = document.getElementById('update-loader');
-            loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 500);
-        }
+        function hideLoader() { const loader = document.getElementById('update-loader'); loader.style.opacity = '0'; setTimeout(() => loader.style.display = 'none', 500); }
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.15";
-            document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.16";
+            document.getElementById('loader-desc').innerText = "Оновлення коду...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -348,10 +316,7 @@
             .then(response => response.text())
             .then(html => {
                 const match = html.match(/const CURRENT_VERSION = "([^"]+)";/);
-                if (match && match[1] && match[1] !== CURRENT_VERSION) {
-                    showUpdateScreen();
-                    setTimeout(() => { window.location.reload(true); }, 2000);
-                }
+                if (match && match[1] && match[1] !== CURRENT_VERSION) { showUpdateScreen(); setTimeout(() => { window.location.reload(true); }, 2000); }
             })
             .catch(err => {});
         }
@@ -387,7 +352,6 @@
         window.handleAuth = async function() {
             const user = document.getElementById('username').value.trim();
             const pass = document.getElementById('password').value.trim();
-
             if(!user || !pass) { alert('Заповніть усі поля!'); return; }
             const dbRef = ref(db);
 
@@ -438,27 +402,19 @@
                     alert('Пароль успішно змінено!');
                     switchAuthMode('login');
                 }
-            } catch (error) {
-                alert('Помилка авторизації: ' + error.message);
-            }
+            } catch (error) { alert('Помилка авторизації: ' + error.message); }
         }
 
         window.logout = async function() {
-            if (currentUsername) {
-                try { await update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {}
-            }
+            if (currentUsername) { try { await update(ref(db, `users/${currentUsername}`), { lastOnline: Date.now() }); } catch (e) {} }
             if (incomeInterval) clearInterval(incomeInterval);
             if (gameLoopInterval) clearInterval(gameLoopInterval);
             if (respawnInterval) clearInterval(respawnInterval);
             incomeInterval = null; gameLoopInterval = null; respawnInterval = null;
             if (unsubWorld) { unsubWorld(); unsubWorld = null; }
             if (unsubUser) { unsubUser(); unsubUser = null; }
-            cancelMoveMode();
-            hideAllModals();
-            activeSelection = null;
-            selectedHexCoords = null;
-            hexWorldData = {};
-            currentUsername = "";
+            cancelMoveMode(); hideAllModals();
+            activeSelection = null; selectedHexCoords = null; hexWorldData = {}; currentUsername = "";
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('username').value = '';
@@ -468,11 +424,7 @@
 
         // ===== ЕКОНОМІКА =====
         function calculateRawIncome(username, worldHexes) {
-            let baseLevel = 1;
-            let totalUpkeep = 0;
-            let farmsCount = 0;
-            let millsBonus = 0;
-
+            let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
                 if (h.owner === username) {
                     if (h.type === 'core') baseLevel = h.level || 1;
@@ -481,33 +433,22 @@
                 }
                 if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) totalUpkeep += 1;
             });
-
             let baseIncome = getIncomeByLevel(baseLevel) + farmsCount;
-
             Object.keys(worldHexes).forEach(key => {
                 const h = worldHexes[key];
                 if (h.owner === username && h.type === 'mill') {
                     const [r, c] = key.split('_').map(Number);
-                    const neighbors = getNeighbors(r, c);
-                    neighbors.forEach(n => {
+                    getNeighbors(r, c).forEach(n => {
                         const nKey = `${n.r}_${n.c}`;
                         if (worldHexes[nKey] && worldHexes[nKey].owner === username && worldHexes[nKey].type === 'farm') millsBonus += 1;
                     });
                 }
             });
-
             return (baseIncome + millsBonus) - totalUpkeep;
         }
 
-        function calculateEffectiveIncome(username, worldHexes) {
-            return Math.max(1, calculateRawIncome(username, worldHexes));
-        }
-
-        function getIncomeByLevel(level) {
-            if (level === 2) return 2;
-            if (level === 3) return 3;
-            return 1;
-        }
+        function calculateEffectiveIncome(username, worldHexes) { return Math.max(1, calculateRawIncome(username, worldHexes)); }
+        function getIncomeByLevel(level) { if (level === 2) return 2; if (level === 3) return 3; return 1; }
 
         async function processOfflineProgress(username, userData, worldHexes) {
             const now = Date.now();
@@ -515,7 +456,6 @@
             const diffMinutes = (now - lastTime) / 60000;
             let currentGold = userData.gold || 0;
             let earnedGold = 0;
-
             if (diffMinutes > 0.2) {
                 const hasBase = Object.values(worldHexes).some(h => h.owner === username && h.type === 'core');
                 if (hasBase) {
@@ -524,9 +464,7 @@
                     currentGold += earnedGold;
                 }
             }
-
             await update(ref(db, `users/${username}`), { gold: currentGold, lastOnline: now });
-
             if (earnedGold >= 0.5) {
                 const mins = Math.floor(diffMinutes);
                 const timeText = mins >= 60 ? `${Math.floor(mins/60)} год ${mins%60} хв` : `${mins} хв`;
@@ -534,7 +472,7 @@
             }
         }
 
-        // ===== ГЕНЕРАЦІЯ КАРТИ =====
+        // ===== ВАРВАРИ =====
         function makeBarbarianUnit(level) {
             const cfg = BARBARIAN_LEVELS[level];
             return { type: 'barbarian', level, hp: cfg.hp, maxHp: cfg.hp, dmg: cfg.dmg, lastCombat: 0 };
@@ -562,8 +500,7 @@
                 for (let r = 0; r < GRID_ROWS; r++) {
                     for (let c = 0; c < GRID_COLS; c++) {
                         const key = `${r}_${c}`;
-                        const neighbors = getNeighbors(r, c);
-                        let chasmNeighbors = neighbors.filter(n => mapData[n.key] && mapData[n.key].type === 'chasm').length;
+                        const chasmNeighbors = getNeighbors(r, c).filter(n => mapData[n.key] && mapData[n.key].type === 'chasm').length;
                         if (chasmNeighbors >= 3) newMap[key] = { type: 'chasm' };
                         else if (chasmNeighbors <= 1) delete newMap[key];
                     }
@@ -598,34 +535,26 @@
                     const rr = Math.floor(Math.random() * GRID_ROWS);
                     const rc = Math.floor(Math.random() * GRID_COLS);
                     const key = `${rr}_${rc}`;
-                    if (!world[key] && !updates[`world_hexes/${key}`]) {
-                        updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel());
-                        added++;
-                    }
+                    if (!world[key] && !updates[`world_hexes/${key}`]) { updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel()); added++; }
                 }
                 if (added > 0) { await update(ref(db), updates); console.log(`🐗 Респавн: +${added} таборів`); }
-            } catch (err) { console.error('Помилка респавну:', err); }
+            } catch (err) { console.error(err); }
         }
 
-        function startRespawnLoop() {
-            if (respawnInterval) clearInterval(respawnInterval);
-            respawnInterval = setInterval(tryRespawnBarbarians, RESPAWN_CHECK_MS);
-        }
+        function startRespawnLoop() { if (respawnInterval) clearInterval(respawnInterval); respawnInterval = setInterval(tryRespawnBarbarians, RESPAWN_CHECK_MS); }
 
         window.triggerAdminWipe = async function() {
-            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту, згенерує новий ландшафт з прірвами (27%), 25 таборів варварів (3 рівні), та скине золото гравців.");
+            const confirmWipe = confirm("⚠️ ВАЙП СЕЗОНУ HexPolitics\n\nЦе повністю очистить карту та скине золото гравців.");
             if (!confirmWipe) return;
             try {
-                const newMap = generateInitialMap();
-                await set(ref(db, 'world_hexes'), newMap);
+                await set(ref(db, 'world_hexes'), generateInitialMap());
                 const usersSnapshot = await get(ref(db, 'users'));
                 if (usersSnapshot.exists()) {
-                    const usersData = usersSnapshot.val();
                     const updates = {};
-                    Object.keys(usersData).forEach(u => { updates[`users/${u}/gold`] = 0; updates[`users/${u}/townHallLevel`] = 1; });
+                    Object.keys(usersSnapshot.val()).forEach(u => { updates[`users/${u}/gold`] = 0; updates[`users/${u}/townHallLevel`] = 1; });
                     await update(ref(db), updates);
                 }
-                alert("💥 Сезон та ландшафт успішно перезапущено!");
+                alert("💥 Сезон перезапущено!");
             } catch (err) { alert("Помилка вайпу: " + err.message); }
         }
 
@@ -654,18 +583,16 @@
         function startIncomeLoop() {
             if (incomeInterval) clearInterval(incomeInterval);
             incomeInterval = setInterval(async () => {
-                const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
-                if (userHasBase) {
+                if (Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core')) {
                     try {
                         const userRef = ref(db, `users/${currentUsername}`);
                         const snapshot = await get(userRef);
                         if (snapshot.exists()) {
-                            const currentData = snapshot.val();
-                            const currentG = currentData.gold || 0;
+                            const currentG = snapshot.val().gold || 0;
                             const incomePerMin = calculateEffectiveIncome(currentUsername, hexWorldData);
                             await update(userRef, { gold: currentG + incomePerMin / 3, lastOnline: Date.now() });
                         }
-                    } catch (err) { console.error('Помилка доходу:', err); }
+                    } catch (err) { console.error(err); }
                 }
             }, 20000);
         }
@@ -676,17 +603,14 @@
             let count = 0;
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
-                if (!h || h.type !== 'barbarian_camp' || !h.unit) return;
-                if (h.unit.type !== 'barbarian') return;
+                if (!h || h.type !== 'barbarian_camp' || !h.unit || h.unit.type !== 'barbarian') return;
                 const lastCombat = h.unit.lastCombat || 0;
                 if ((now - lastCombat) > BARBARIAN_REGEN_MS && h.unit.hp < h.unit.maxHp) {
                     updates[`world_hexes/${key}/unit/hp`] = h.unit.maxHp;
                     count++;
                 }
             });
-            if (count > 0) {
-                try { await update(ref(db), updates); console.log(`💚 Регенерація: ${count} варварів`); } catch (err) { console.error(err); }
-            }
+            if (count > 0) { try { await update(ref(db), updates); } catch (err) { console.error(err); } }
         }
 
         // ===== БІЙ ТА РУХ =====
@@ -703,12 +627,11 @@
             const visited = new Set([startKey]);
             const queue = [{ r: startR, c: startC, path: [] }];
             let iterations = 0;
-            const MAX_ITER = 5000;
+            const MAX_ITER = 8000;
 
             while (queue.length > 0 && iterations++ < MAX_ITER) {
                 const { r, c, path } = queue.shift();
-                const neighbors = getNeighbors(r, c);
-                for (const n of neighbors) {
+                for (const n of getNeighbors(r, c)) {
                     const key = n.key;
                     if (visited.has(key)) continue;
                     const h = hexWorldData[key];
@@ -723,11 +646,10 @@
             return null;
         }
 
-        function continuePathAfterCombat(winner, updates, newHexKey) {
+        function continuePathAfterCombat(winner, updates, newHexKey, isOffline) {
             const path = winner.path || [];
             const nextIndex = (winner.pathIndex || 0) + 1;
             const newUnitPath = `world_hexes/${newHexKey}/unit`;
-
             if (nextIndex >= path.length) {
                 updates[newUnitPath] = stopTravel(winner);
             } else {
@@ -736,12 +658,12 @@
                     state: 'moving',
                     pathIndex: nextIndex,
                     targetKey: path[nextIndex],
-                    arrivalTime: Date.now() + MOVE_STEP_MS
+                    arrivalTime: isOffline ? (winner.arrivalTime + MOVE_STEP_MS) : (Date.now() + MOVE_STEP_MS)
                 };
             }
         }
 
-        async function processUnits(now) {
+        async function processUnits(now, isOffline = false) {
             const updates = {};
             const messages = [];
             const touched = new Set();
@@ -750,7 +672,6 @@
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
                 if (!h || !h.unit || h.unit.owner !== currentUsername) return;
-
                 const unit = h.unit;
                 if (unit.state !== 'moving' && unit.state !== 'fighting') return;
                 if (!unit.arrivalTime || now < unit.arrivalTime) return;
@@ -761,20 +682,15 @@
                 const targetHex = hexWorldData[targetKey];
                 const targetUnit = targetHex ? targetHex.unit : null;
 
-                // ===== БІЙ =====
+                // БІЙ
                 if (unit.state === 'fighting') {
                     if (touched.has(targetKey)) return;
                     touched.add(key); touched.add(targetKey);
-
-                    if (!targetHex || !targetUnit) {
-                        updates[`${srcPath}/unit`] = stopTravel(unit);
-                        return;
-                    }
+                    if (!targetHex || !targetUnit) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
                     const attacker = { ...unit };
                     const defender = { ...targetUnit };
                     const isCamp = targetHex.type === 'barbarian_camp';
-
                     defender.hp -= attacker.dmg;
                     attacker.hp -= defender.dmg;
                     if (isCamp) defender.lastCombat = now;
@@ -788,45 +704,37 @@
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
-                            updates[`world_hexes/${targetKey}`] = {
-                                owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner
-                            };
+                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner };
                             updates[`${srcPath}/unit`] = null;
-                            messages.push(`🎉 Табір варварів зачищено! +${reward} золота`);
-                            continuePathAfterCombat(winner, updates, targetKey);
+                            messages.push(`🎉 Табір зачищено! +${reward} золота`);
+                            continuePathAfterCombat(winner, updates, targetKey, isOffline);
                         } else {
                             updates[`world_hexes/${targetKey}/unit`] = winner;
                             updates[`${srcPath}/unit`] = null;
-                            continuePathAfterCombat(winner, updates, targetKey);
+                            continuePathAfterCombat(winner, updates, targetKey, isOffline);
                         }
                     } else if (attacker.hp <= 0) {
                         updates[`${srcPath}/unit`] = null;
                         updates[`world_hexes/${targetKey}/unit`] = defender;
                     } else {
                         attacker.state = 'fighting';
-                        attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                        attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
                         updates[`${srcPath}/unit`] = attacker;
                         updates[`world_hexes/${targetKey}/unit`] = defender;
                     }
                     return;
                 }
 
-                // ===== РУХ =====
+                // РУХ
                 if (unit.state === 'moving') {
-                    if (!targetHex || targetHex.type === 'chasm') {
-                        updates[`${srcPath}/unit`] = stopTravel(unit);
-                        return;
-                    }
+                    if (!targetHex || targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
-                    // Ворожий воїн на цілі — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
-
                         const attacker = { ...unit };
                         const defender = { ...targetUnit };
                         const isCamp = targetHex.type === 'barbarian_camp';
-
                         defender.hp -= attacker.dmg;
                         attacker.hp -= defender.dmg;
                         if (isCamp) defender.lastCombat = now;
@@ -840,49 +748,38 @@
                             if (isCamp) {
                                 const reward = targetHex.reward || 100;
                                 goldBonus += reward;
-                                updates[`world_hexes/${targetKey}`] = {
-                                    owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner
-                                };
+                                updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: winner };
                                 updates[`${srcPath}/unit`] = null;
-                                messages.push(`🎉 Табір варварів зачищено! +${reward} золота`);
-                                continuePathAfterCombat(winner, updates, targetKey);
+                                messages.push(`🎉 Табір зачищено! +${reward} золота`);
+                                continuePathAfterCombat(winner, updates, targetKey, isOffline);
                             } else {
                                 updates[`world_hexes/${targetKey}/unit`] = winner;
                                 updates[`${srcPath}/unit`] = null;
-                                continuePathAfterCombat(winner, updates, targetKey);
+                                continuePathAfterCombat(winner, updates, targetKey, isOffline);
                             }
                         } else if (attacker.hp <= 0) {
                             updates[`${srcPath}/unit`] = null;
                             updates[`world_hexes/${targetKey}/unit`] = defender;
                         } else {
                             attacker.state = 'fighting';
-                            attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                            attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
                             updates[`${srcPath}/unit`] = attacker;
                             updates[`world_hexes/${targetKey}/unit`] = defender;
                         }
                         return;
                     }
 
-                    // Свій воїн на цілі — стоїмо
-                    if (targetUnit && targetUnit.owner === currentUsername) {
-                        updates[`${srcPath}/unit`] = stopTravel(unit);
-                        return;
-                    }
+                    if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
-                    // Ворожа ратуша — штурм
                     if (targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
-
                         const attacker = { ...unit };
                         let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
                         coreHp -= attacker.dmg;
                         attacker.hp -= 30;
-
                         if (coreHp <= 0) {
-                            updates[`world_hexes/${targetKey}`] = {
-                                owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: stopTravel(attacker)
-                            };
+                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: h.color, type: 'starter', isPurchased: false, unit: stopTravel(attacker) };
                             updates[`${srcPath}/unit`] = null;
                             messages.push("💥 Ратушу ворога зруйновано!");
                         } else if (attacker.hp <= 0) {
@@ -890,33 +787,28 @@
                             updates[`world_hexes/${targetKey}/hp`] = coreHp;
                         } else {
                             attacker.state = 'fighting';
-                            attacker.arrivalTime = now + FIGHT_ROUND_MS;
+                            attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
                             updates[`${srcPath}/unit`] = attacker;
                             updates[`world_hexes/${targetKey}/hp`] = coreHp;
                         }
                         return;
                     }
 
-                    // Звичайний крок
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
+                    const existingHexData = { ...targetHex };
+                    delete existingHexData.unit;
 
                     if (nextIndex >= path.length) {
-                        const stop = stopTravel(moved);
-                        const existingHexData = { ...targetHex };
-                        delete existingHexData.unit;
-                        updates[`world_hexes/${targetKey}`] = { ...existingHexData, unit: stop };
-                        updates[`${srcPath}/unit`] = null;
+                        updates[`world_hexes/${targetKey}`] = { ...existingHexData, unit: stopTravel(moved) };
                     } else {
                         moved.pathIndex = nextIndex;
                         moved.targetKey = path[nextIndex];
-                        moved.arrivalTime = now + MOVE_STEP_MS;
-                        const existingHexData = { ...targetHex };
-                        delete existingHexData.unit;
+                        moved.arrivalTime = isOffline ? (unit.arrivalTime + MOVE_STEP_MS) : (now + MOVE_STEP_MS);
                         updates[`world_hexes/${targetKey}`] = { ...existingHexData, unit: moved };
-                        updates[`${srcPath}/unit`] = null;
                     }
+                    updates[`${srcPath}/unit`] = null;
                     touched.add(key); touched.add(targetKey);
                     return;
                 }
@@ -938,7 +830,7 @@
                 gameLoopBusy = true;
                 try {
                     await tryRegenerateBarbarians();
-                    const res = await processUnits(Date.now());
+                    const res = await processUnits(Date.now(), false);
                     res.messages.forEach(m => alert(m));
                 } catch (err) { console.error('Помилка ігрового циклу:', err); }
                 finally { gameLoopBusy = false; }
@@ -947,7 +839,7 @@
 
         async function catchUpOffline() {
             const report = [];
-            for (let i = 0; i < 500; i++) {
+            for (let i = 0; i < 3000; i++) {
                 const realNow = Date.now();
                 let next = null;
                 Object.values(hexWorldData).forEach(h => {
@@ -958,7 +850,7 @@
                     next = next === null ? u.arrivalTime : Math.min(next, u.arrivalTime);
                 });
                 if (next === null) break;
-                const res = await processUnits(next);
+                const res = await processUnits(next, true);
                 report.push(...res.messages);
                 if (!res.changed) break;
                 const snap = await get(child(ref(db), 'world_hexes'));
@@ -975,13 +867,11 @@
             const height = GRID_ROWS * HEX_RADIUS * 1.5 + HEX_RADIUS * 2;
             svg.setAttribute('width', width);
             svg.setAttribute('height', height);
-
             for (let r = 0; r < GRID_ROWS; r++) {
                 for (let c = 0; c < GRID_COLS; c++) {
                     const center = hexToPixel(r, c);
-                    const points = getHexPoints(center.x, center.y, HEX_RADIUS);
                     const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-                    polygon.setAttribute("points", points);
+                    polygon.setAttribute("points", getHexPoints(center.x, center.y, HEX_RADIUS));
                     polygon.setAttribute("class", "hex");
                     polygon.setAttribute("id", `hex-${r}-${c}`);
                     polygon.addEventListener('click', () => { if (isClick) handleHexClick(r, c); });
@@ -992,26 +882,20 @@
         }
 
         function hexToPixel(r, c) {
-            const x = HEX_RADIUS * Math.sqrt(3) * (c + 0.5 * (r & 1)) + HEX_RADIUS;
-            const y = HEX_RADIUS * 1.5 * r + HEX_RADIUS;
-            return { x, y };
+            return { x: HEX_RADIUS * Math.sqrt(3) * (c + 0.5 * (r & 1)) + HEX_RADIUS, y: HEX_RADIUS * 1.5 * r + HEX_RADIUS };
         }
 
         function getHexPoints(centerX, centerY, radius) {
             let points = [];
             for (let i = 0; i < 6; i++) {
-                const angleDegree = 60 * i - 30;
-                const angleRad = Math.PI / 180 * angleDegree;
-                const x = centerX + radius * Math.cos(angleRad);
-                const y = centerY + radius * Math.sin(angleRad);
-                points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+                const angleRad = Math.PI / 180 * (60 * i - 30);
+                points.push(`${(centerX + radius * Math.cos(angleRad)).toFixed(1)},${(centerY + radius * Math.sin(angleRad)).toFixed(1)}`);
             }
             return points.join(" ");
         }
 
         function updateTransform() {
-            const container = document.getElementById('hex-map-container');
-            container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            document.getElementById('hex-map-container').style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
         }
 
         window.zoomIn = function() {
@@ -1020,8 +904,7 @@
             const newScale = Math.min(2.5, scale + 0.25);
             panX = cx - (cx - panX) * (newScale / scale);
             panY = cy - (cy - panY) * (newScale / scale);
-            scale = newScale;
-            updateTransform();
+            scale = newScale; updateTransform();
         }
 
         window.zoomOut = function() {
@@ -1030,8 +913,7 @@
             const newScale = Math.max(0.15, scale - 0.25);
             panX = cx - (cx - panX) * (newScale / scale);
             panY = cy - (cy - panY) * (newScale / scale);
-            scale = newScale;
-            updateTransform();
+            scale = newScale; updateTransform();
         }
 
         window.resetView = function() {
@@ -1051,15 +933,12 @@
 
             viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                const zoomFactor = e.deltaY < 0 ? 1.04 : 0.96;
-                const newScale = clampScale(scale * zoomFactor);
+                const newScale = clampScale(scale * (e.deltaY < 0 ? 1.04 : 0.96));
                 const rect = viewport.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+                const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
                 panX = mouseX - (mouseX - panX) * (newScale / scale);
                 panY = mouseY - (mouseY - panY) * (newScale / scale);
-                scale = newScale;
-                updateTransform();
+                scale = newScale; updateTransform();
             }, { passive: false });
 
             const pointers = new Map();
@@ -1067,10 +946,8 @@
 
             viewport.addEventListener('pointerdown', (e) => {
                 pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-                if (pointers.size === 1) {
-                    isDragging = true; isClick = true;
-                    dragStartX = e.clientX - panX; dragStartY = e.clientY - panY;
-                } else if (pointers.size === 2) {
+                if (pointers.size === 1) { isDragging = true; isClick = true; dragStartX = e.clientX - panX; dragStartY = e.clientY - panY; }
+                else if (pointers.size === 2) {
                     isDragging = false; isClick = false;
                     const [a, b] = [...pointers.values()];
                     pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y);
@@ -1086,27 +963,23 @@
                     const [a, b] = [...pointers.values()];
                     const dist = Math.hypot(a.x - b.x, a.y - b.y);
                     const rect = viewport.getBoundingClientRect();
-                    const mx = (a.x + b.x) / 2 - rect.left;
-                    const my = (a.y + b.y) / 2 - rect.top;
+                    const mx = (a.x + b.x) / 2 - rect.left, my = (a.y + b.y) / 2 - rect.top;
                     const newScale = clampScale(pinchStartScale * dist / pinchStartDist);
                     panX = mx - (mx - panX) * (newScale / scale);
                     panY = my - (my - panY) * (newScale / scale);
-                    scale = newScale;
-                    updateTransform();
+                    scale = newScale; updateTransform();
                     return;
                 }
                 if (!isDragging) return;
-                const dx = e.clientX - panX - dragStartX;
-                const dy = e.clientY - panY - dragStartY;
+                const dx = e.clientX - panX - dragStartX, dy = e.clientY - panY - dragStartY;
                 if (Math.abs(dx) > 6 || Math.abs(dy) > 6) isClick = false;
-                panX = e.clientX - dragStartX;
-                panY = e.clientY - dragStartY;
+                panX = e.clientX - dragStartX; panY = e.clientY - dragStartY;
                 updateTransform();
             });
 
             const endPointer = (e) => {
                 pointers.delete(e.pointerId);
-                if (pointers.size === 0) { isDragging = false; }
+                if (pointers.size === 0) isDragging = false;
                 else if (pointers.size === 1) {
                     const p = [...pointers.values()][0];
                     dragStartX = p.x - panX; dragStartY = p.y - panY;
@@ -1115,9 +988,7 @@
             };
             window.addEventListener('pointerup', endPointer);
             window.addEventListener('pointercancel', endPointer);
-            window.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && isSelectingMoveTarget) cancelMoveMode();
-            });
+            window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isSelectingMoveTarget) cancelMoveMode(); });
         }
 
         function getNeighbors(r, c) {
@@ -1136,36 +1007,20 @@
         }
 
         function isBridgeAccessible(targetR, targetC) {
-            const neighbors = getNeighbors(targetR, targetC);
-            for (let n of neighbors) {
-                const h = hexWorldData[n.key];
-                if (h && h.owner === currentUsername && h.type !== 'chasm') return true;
-            }
-            return false;
+            return getNeighbors(targetR, targetC).some(n => { const h = hexWorldData[n.key]; return h && h.owner === currentUsername && h.type !== 'chasm'; });
         }
 
         function checkDistanceValid(targetR, targetC) {
             const targetKey = `${targetR}_${targetC}`;
             const hex = hexWorldData[targetKey];
             if (hex && hex.type !== 'starter') return false;
-            const neighbors1 = getNeighbors(targetR, targetC);
-            for (let n1 of neighbors1) {
-                if (hexWorldData[n1.key] && hexWorldData[n1.key].type !== 'chasm' && hexWorldData[n1.key].type !== 'starter') return false;
-            }
-            return true;
+            return getNeighbors(targetR, targetC).every(n1 => !hexWorldData[n1.key] || hexWorldData[n1.key].type === 'chasm' || hexWorldData[n1.key].type === 'starter');
         }
 
-        function isMyUnit(hex) {
-            return !!(hex && hex.unit && hex.unit.owner === currentUsername);
-        }
+        function isMyUnit(hex) { return !!(hex && hex.unit && hex.unit.owner === currentUsername); }
 
         function getMoveTargets(r, c) {
-            return getNeighbors(r, c).filter(n => {
-                const h = hexWorldData[n.key];
-                if (!h) return false;
-                if (h.type === 'chasm') return false;
-                return true;
-            });
+            return getNeighbors(r, c).filter(n => { const h = hexWorldData[n.key]; if (!h) return false; if (h.type === 'chasm') return false; return true; });
         }
 
         function handleHexClick(r, c) {
@@ -1177,11 +1032,9 @@
                 if (!movingUnitCoords) { cancelMoveMode(); return; }
                 const { r: sr, c: sc } = movingUnitCoords;
                 if (sr === r && sc === c) { cancelMoveMode(); return; }
-
                 const targetHex = hexWorldData[`${r}_${c}`];
                 if (targetHex && targetHex.type === 'chasm') { alert("Не можна ходити в прірву!"); return; }
                 if (isMyUnit(targetHex)) { alert("Там уже стоїть ваш воїн!"); return; }
-
                 const path = findPath(sr, sc, r, c);
                 if (!path || path.length === 0) { alert("Шлях не знайдено!"); return; }
                 executeUnitMove(sr, sc, r, c, path);
@@ -1223,8 +1076,7 @@
                 return;
             }
 
-            const neighbors = getNeighbors(r, c);
-            const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
+            const isAdjacentToMyTerritory = getNeighbors(r, c).some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
             if (!isAdjacentToMyTerritory) { alert('Ви можете взаємодіяти лише з територіями, що межують з вашими землями!'); return; }
             selectedHexCoords = { r, c };
             openTerritoryModal(r, c, hexInfo || null);
@@ -1276,19 +1128,13 @@
             if (!selectedHexCoords || !selectedColor) return;
             const { r, c } = selectedHexCoords;
             const coreKey = `${r}_${c}`;
-            const neighbors = getNeighbors(r, c);
             const updates = {};
             updates[`world_hexes/${coreKey}`] = { owner: currentUsername, color: selectedColor, type: 'core', level: 1, hp: 200, maxHp: 200, isPurchased: false };
-            neighbors.forEach(n => {
-                if (!hexWorldData[n.key]) {
-                    updates[`world_hexes/${n.key}`] = { owner: currentUsername, color: selectedColor, type: 'starter', isPurchased: false };
-                }
+            getNeighbors(r, c).forEach(n => {
+                if (!hexWorldData[n.key]) updates[`world_hexes/${n.key}`] = { owner: currentUsername, color: selectedColor, type: 'starter', isPurchased: false };
             });
-            try {
-                updates[`users/${currentUsername}/lastOnline`] = Date.now();
-                await update(ref(db), updates);
-                closeBaseModal();
-            } catch (err) { alert('Помилка при збереженні бази: ' + err.message); }
+            try { updates[`users/${currentUsername}/lastOnline`] = Date.now(); await update(ref(db), updates); closeBaseModal(); }
+            catch (err) { alert('Помилка: ' + err.message); }
         }
 
         function openTownHallModal(coreHex, r, c) {
@@ -1301,18 +1147,16 @@
             let costText = userTownHallLevel === 1 ? "14 золота" : (userTownHallLevel === 2 ? "42 золота" : "—");
             let canUpgrade = userTownHallLevel < 3;
             let totalInc = calculateEffectiveIncome(currentUsername, hexWorldData);
-
             infoContainer.innerHTML = `
                 <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
-                <div><b>Міцність фортеці (HP):</b> <span style="color: ${currentHp < 100 ? '#ef4444' : '#34d399'}; font-weight: bold;">${currentHp} / ${maxHp}</span></div>
-                <div><b>Атака гарнізону:</b> 🛡️ 30 DMG (авто-захист)</div>
-                <div><b>Чистий підсумковий дохід:</b> <span style="color: #fbbf24; font-weight: bold;">+${totalInc} золота/хв</span></div>
+                <div><b>Міцність (HP):</b> <span style="color: ${currentHp < 100 ? '#ef4444' : '#34d399'}; font-weight: bold;">${currentHp} / ${maxHp}</span></div>
+                <div><b>Чистий дохід:</b> <span style="color: #fbbf24; font-weight: bold;">+${totalInc} золота/хв</span></div>
             `;
             let btnsHtml = '';
             if (isMyUnit(coreHex) && r !== undefined) btnsHtml += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
             btnsHtml += `<button class="btn-recruit" onclick="recruitClubman()">🪵 Найми воїна (15 💰, -1 утр)</button>`;
-            if (currentHp < maxHp) btnsHtml += `<button class="btn-repair" onclick="repairTownHall()">🛠️ Відремонтувати Ратушу (15 💰)</button>`;
-            if (canUpgrade) btnsHtml += `<button class="btn-confirm" onclick="upgradeTownHall()">Прокачати ратушу (${costText})</button>`;
+            if (currentHp < maxHp) btnsHtml += `<button class="btn-repair" onclick="repairTownHall()">🛠️ Відремонтувати (15 💰)</button>`;
+            if (canUpgrade) btnsHtml += `<button class="btn-confirm" onclick="upgradeTownHall()">Прокачати (${costText})</button>`;
             actionBtnsContainer.innerHTML = btnsHtml;
             modal.style.display = 'block';
         }
@@ -1320,7 +1164,7 @@
         window.closeTownHallModal = function() { document.getElementById('townhall-modal').style.display = 'none'; activeSelection = null; }
 
         window.repairTownHall = async function() {
-            if (userGold < 15) { alert("Недостатньо золота для ремонту! Потрібно 15 золота."); return; }
+            if (userGold < 15) { alert("Недостатньо золота!"); return; }
             let coreKey = null;
             Object.keys(hexWorldData).forEach(k => { if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') coreKey = k; });
             if (!coreKey) return;
@@ -1328,13 +1172,12 @@
             updates[`world_hexes/${coreKey}/hp`] = 200;
             updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); alert("Ратушу відремонтовано!"); closeTownHallModal(); }
-            catch (err) { alert("Помилка ремонту: " + err.message); }
+            try { await update(ref(db), updates); alert("Ратушу відремонтовано!"); closeTownHallModal(); } catch (err) { alert(err.message); }
         }
 
         window.upgradeTownHall = async function() {
             let cost = userTownHallLevel === 1 ? 14 : (userTownHallLevel === 2 ? 42 : 0);
-            if (userGold < cost) { alert(`Недостатньо золота! Потрібно ${cost} золота.`); return; }
+            if (userGold < cost) { alert(`Потрібно ${cost} золота.`); return; }
             try {
                 let coreHexKey = null;
                 Object.keys(hexWorldData).forEach(k => { if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') coreHexKey = k; });
@@ -1346,49 +1189,43 @@
                 await update(ref(db), updates);
                 alert(`Ратушу покращено до Рівня ${userTownHallLevel + 1}!`);
                 closeTownHallModal();
-            } catch (err) { alert('Помилка при покращенні: ' + err.message); }
+            } catch (err) { alert(err.message); }
         }
 
         window.recruitClubman = async function() {
-            if (userGold < 15) { alert("Недостатньо золота! Потрібно 15 золота."); return; }
+            if (userGold < 15) { alert("Недостатньо золота!"); return; }
             let coreKey = null, coreHex = null;
             Object.keys(hexWorldData).forEach(k => {
                 const h = hexWorldData[k];
                 if (h.owner === currentUsername && h.type === 'core') { coreKey = k; coreHex = h; }
             });
             if (!coreKey || !coreHex) { alert("Ратушу не знайдено!"); return; }
-            if (coreHex.unit) { alert("На Ратуші вже стоїть воїн! Спочатку перемістіть його."); return; }
+            if (coreHex.unit) { alert("На Ратуші вже стоїть воїн!"); return; }
             const updates = {};
             updates[`world_hexes/${coreKey}/unit`] = { type: 'clubman', owner: currentUsername, hp: 100, maxHp: 100, dmg: 25, state: 'idle' };
             updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTownHallModal(); alert("Воїна з дубиною найнято!"); }
-            catch (err) { alert("Помилка найму: " + err.message); }
+            try { await update(ref(db), updates); closeTownHallModal(); alert("Воїна найнято!"); } catch (err) { alert(err.message); }
         }
 
         function openBridgeModal(r, c) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
-            const title = document.getElementById('territory-title');
-            const cardContainer = document.getElementById('territory-card-container');
-            const buttonsContainer = document.getElementById('territory-buttons');
-            title.innerText = "🌉 Побудувати міст";
-            cardContainer.innerHTML = `<div class="info-card"><b>Переправа через ущелину:</b><br>💰 <b>Ціна мосту:</b> 30 золота<br><span class="bad">⚠️ Утримання: -2 золота/хв</span>.<br></div>`;
-            buttonsContainer.innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати міст (30 💰)</button>`;
+            document.getElementById('territory-title').innerText = "🌉 Побудувати міст";
+            document.getElementById('territory-card-container').innerHTML = `<div class="info-card"><b>Переправа:</b><br>💰 30 золота<br><span class="bad">-2 золота/хв</span><br></div>`;
+            document.getElementById('territory-buttons').innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати (30 💰)</button>`;
             modal.style.display = 'block';
         }
 
         window.buildBridge = async function(r, c) {
-            if (userGold < 30) { alert("Недостатньо золота! Потрібно 30 золота."); return; }
-            const key = `${r}_${c}`;
+            if (userGold < 30) { alert("Потрібно 30 золота."); return; }
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const updates = {};
-            updates[`world_hexes/${key}`] = { owner: currentUsername, color: myColor, type: 'bridge', isPurchased: true };
+            updates[`world_hexes/${r}_${c}`] = { owner: currentUsername, color: myColor, type: 'bridge', isPurchased: true };
             updates[`users/${currentUsername}/gold`] = userGold - 30;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); }
-            catch (err) { alert("Помилка будівництва мосту: " + err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
         function openTerritoryModal(r, c, hexInfo) {
@@ -1405,12 +1242,8 @@
                 const cfg = BARBARIAN_LEVELS[level] || BARBARIAN_LEVELS.weak;
                 const curHp = hexInfo.unit ? Math.round(hexInfo.unit.hp) : cfg.hp;
                 const curDmg = hexInfo.unit ? hexInfo.unit.dmg : cfg.dmg;
-                const lastCombat = (hexInfo.unit && hexInfo.unit.lastCombat) || 0;
-                const timeSince = lastCombat ? Math.floor((Date.now() - lastCombat) / 1000) : -1;
-                const regenInfo = timeSince >= 0 && curHp < cfg.hp
-                    ? `<br><span class="warn">💚 Регенерація через ${Math.max(0, Math.ceil((BARBARIAN_REGEN_MS - timeSince*1000)/1000))} сек</span>` : '';
-                title.innerText = `⛺ Табір варварів (${levelNames[level]})`;
-                cardHtml = `<div class="info-card"><b>Увага, дика територія!</b><br>Тип варвара: <b>${levelNames[level]}</b><br>❤️ <b>HP:</b> ${curHp} / ${cfg.hp}<br>⚔️ <b>Урон:</b> ${curDmg}<br>💰 <b>Скарб:</b> ${hexInfo.reward || 100} золота<br>${regenInfo}<br><br><span class="good">✅ Завойована земля стане безкоштовною</span></div>`;
+                title.innerText = `⛺ Табір (${levelNames[level]})`;
+                cardHtml = `<div class="info-card"><b>Дика територія</b><br>Тип: <b>${levelNames[level]}</b><br>❤️ ${curHp} / ${cfg.hp}<br>⚔️ ${curDmg}<br>💰 Скарб: ${hexInfo.reward || 100}<br><span class="good">Завойована земля стане безкоштовною</span></div>`;
                 cardContainer.innerHTML = cardHtml;
                 buttonsContainer.innerHTML = `<button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>`;
                 modal.style.display = 'block';
@@ -1419,11 +1252,9 @@
 
             if (!hexInfo || !hexInfo.owner) {
                 title.innerText = "🌍 Придбати гекс";
-                cardHtml = `<div class="info-card"><b>Купівля нової території:</b><br>💰 <b>Ціна:</b> 10 золота<br><span class="bad">⚠️ Утримання: -2 золота/хв</span><br></div>`;
-                actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити гекс (10 💰)</button>`;
-                cardContainer.innerHTML = cardHtml;
-                buttonsContainer.innerHTML = actionBtns;
-                modal.style.display = 'block';
+                cardHtml = `<div class="info-card"><b>Купівля:</b><br>💰 10 золота<br><span class="bad">-2 золота/хв</span><br></div>`;
+                actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити (10 💰)</button>`;
+                cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
                 return;
             }
 
@@ -1433,18 +1264,19 @@
             const isMill = hexInfo.type === 'mill';
             const isPurchased = hexInfo.type === 'purchased';
             const hasMyUnitHere = isMyUnit(hexInfo);
-
-            title.innerText = isBridge ? "🌉 Дерев'яний міст" : "🏗️ Управління гексом";
-            cardHtml = `<div class="info-card">${isBridge ? '<b>Це інженерний міст.</b><br><br>' : ''}${isStarter ? '<span class="good">Земля безкоштовна.</span><br><br>' : ''}${isPurchased ? '<span class="warn">Куплена земля (-2 💰/хв).</span><br><br>' : ''}${isFarm ? '<b>🌾 Тут стоїть Ферма (+1 💰/хв).</b><br><br>' : ''}${isMill ? '<b>🛞🌀 Тут стоїть Вітряк.</b><br><br>' : ''}<b>Будівлі:</b><br>🌾 Ферма (10 💰) | 🛞🌀 Вітряк (20 💰)</div>`;
+            title.innerText = isBridge ? "🌉 Міст" : "🏗️ Управління";
+            cardHtml = `<div class="info-card">${isStarter ? '<span class="good">Безкоштовна земля.</span><br><br>' : ''}${isPurchased ? '<span class="warn">Куплена (-2 💰/хв).</span><br><br>' : ''}${isFarm ? '<b>🌾 Ферма (+1 💰/хв).</b><br><br>' : ''}${isMill ? '<b>🛞🌀 Вітряк.</b><br><br>' : ''}<b>Будівлі:</b><br>🌾 (10 💰) | 🛞🌀 (20 💰)</div>`;
             if (hasMyUnitHere) actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
-            if (isFarm || isMill) actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести будівлю (5 💰)</button>`;
-            else if (!isBridge) actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Побудувати Ферму (10 💰)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🛞🌀 Побудувати Вітряк (20 💰)</button>`;
-            cardContainer.innerHTML = cardHtml;
-            buttonsContainer.innerHTML = actionBtns;
-            modal.style.display = 'block';
+            if (isFarm || isMill) actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести (5 💰)</button>`;
+            else if (!isBridge) actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Ферма (10 💰)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🛞🌀 Вітряк (20 💰)</button>`;
+            cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
         }
 
-        window.closeTerritoryModal = function() { document.getElementById('territory-modal').style.display = 'none'; selectedHexCoords = null; activeSelection = null; }
+        window.closeTerritoryModal = function() {
+            document.getElementById('territory-modal').style.display = 'none';
+            selectedHexCoords = null;
+            activeSelection = null;
+        }
 
         function openUnitModal(r, c, hexInfo) {
             hideAllModals();
@@ -1455,36 +1287,52 @@
                 const totalSteps = (u.path || []).length;
                 const currentStep = (u.pathIndex || 0) + 1;
                 stateText = `🚶 Рухається (${currentStep}/${totalSteps} крок)`;
-            } else if (u.state === 'fighting') {
-                stateText = '⚔️ У бою!';
-            }
-            document.getElementById('unit-card').innerHTML = `
-                <div class="info-card">❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>⚔️ <b>Урон:</b> ${u.dmg}<br><b>Статус:</b> ${stateText}<br><span style="opacity: 0.7;">Утримання: -1 💰/хв</span></div>
-                <div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>
-            `;
+            } else if (u.state === 'fighting') stateText = '⚔️ У бою!';
+
+            document.getElementById('unit-card').innerHTML = `<div class="info-card">❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>⚔️ <b>Урон:</b> ${u.dmg}<br><b>Статус:</b> ${stateText}<br><span style="opacity: 0.7;">Утримання: -1 💰/хв</span></div><div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>`;
+
             let btns = '';
             if (u.state === 'idle') {
                 btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна</button>`;
-                if (u.hp < u.maxHp) btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати воїна (10 💰)</button>`;
-            } else if (u.state === 'fighting') {
-                btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">🏃 Відступити</button>`;
-            } else if (u.state === 'moving') {
-                btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">↩️ Скасувати рух</button>`;
-            }
+                if (u.hp < u.maxHp) btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати (10 💰)</button>`;
+            } else if (u.state === 'fighting') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">🏃 Відступити</button>`;
+            else if (u.state === 'moving') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">↩️ Скасувати рух</button>`;
             btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
+
+            // Стрілки маршруту
+            if (u.state === 'moving') {
+                renderWorldData();
+                const svg = document.getElementById('hex-svg');
+                renderUnitRouteArrows(svg, u, `${r}_${c}`);
+            }
         }
 
-        window.closeUnitModal = function() { document.getElementById('unit-modal').style.display = 'none'; activeSelection = null; }
+        window.closeUnitModal = function() {
+            document.getElementById('unit-modal').style.display = 'none';
+            activeSelection = null;
+            document.querySelectorAll('.route-arrows').forEach(el => el.remove());
+            document.querySelectorAll('polygon.hex.target-highlight').forEach(el => el.classList.remove('target-highlight'));
+            renderWorldData();
+        }
 
         function refreshUnitModal() {
             const modal = document.getElementById('unit-modal');
             if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
             const [r, c] = activeSelection.key.split('_').map(Number);
             const h = hexWorldData[activeSelection.key];
-            if (isMyUnit(h)) openUnitModal(r, c, h);
-            else { modal.style.display = 'none'; activeSelection = null; }
+            if (isMyUnit(h)) {
+                openUnitModal(r, c, h);
+                if (h.unit.state === 'moving') {
+                    document.querySelectorAll('.route-arrows').forEach(el => el.remove());
+                    const svg = document.getElementById('hex-svg');
+                    renderUnitRouteArrows(svg, h.unit, activeSelection.key);
+                }
+            } else {
+                modal.style.display = 'none';
+                activeSelection = null;
+            }
         }
 
         window.switchToCell = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (h) openCellForHex(r, c, h); }
@@ -1494,22 +1342,20 @@
             const key = `${r}_${c}`;
             const h = hexWorldData[key];
             if (!isMyUnit(h)) return;
-            try { await update(ref(db), { [`world_hexes/${key}/unit`]: stopTravel(h.unit) }); closeUnitModal(); }
-            catch (err) { alert("Помилка: " + err.message); }
+            try { await update(ref(db), { [`world_hexes/${key}/unit`]: stopTravel(h.unit) }); closeUnitModal(); } catch (err) { alert(err.message); }
         }
 
         window.buyTerritory = async function(r, c) {
-            if (userGold < 10) { alert("Недостатньо золота! Потрібно 10 золота."); return; }
+            if (userGold < 10) { alert("Потрібно 10 золота."); return; }
             const key = `${r}_${c}`;
-            if (hexWorldData[key]) { alert("Цю клітинку вже не можна купити."); closeTerritoryModal(); return; }
+            if (hexWorldData[key]) { alert("Зайнято."); closeTerritoryModal(); return; }
             let myColor = "#3b82f6";
             Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const updates = {};
             updates[`world_hexes/${key}`] = { owner: currentUsername, color: myColor, type: 'purchased', isPurchased: true };
             updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("Територію придбано!"); }
-            catch (err) { alert("Помилка купівлі: " + err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("Придбано!"); } catch (err) { alert(err.message); }
         }
 
         window.startMoveUnit = function(r, c) {
@@ -1531,27 +1377,15 @@
             const sourceKey = `${sr}_${sc}`;
             const sourceHex = hexWorldData[sourceKey];
             if (!isMyUnit(sourceHex) || sourceHex.unit.state !== 'idle') return;
-            const now = Date.now();
-            const unit = {
-                ...sourceHex.unit,
-                state: 'moving',
-                path: path,
-                pathIndex: 0,
-                targetKey: path[0],
-                arrivalTime: now + MOVE_STEP_MS,
-                finalTargetKey: `${tr}_${tc}`
-            };
+            const unit = { ...sourceHex.unit, state: 'moving', path: path, pathIndex: 0, targetKey: path[0], arrivalTime: Date.now() + MOVE_STEP_MS, finalTargetKey: `${tr}_${tc}` };
             const updates = {};
             updates[`world_hexes/${sourceKey}/unit`] = unit;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try {
-                await update(ref(db), updates);
-                alert(`Воїн вирушив у путь! Кроків: ${path.length}. Час: ${path.length} хв.`);
-            } catch (err) { alert("Помилка переміщення: " + err.message); }
+            try { await update(ref(db), updates); alert(`Воїн вирушив! Кроків: ${path.length}. Час: ${path.length} хв.`); } catch (err) { alert(err.message); }
         }
 
         window.healUnit = async function(r, c) {
-            if (userGold < 10) { alert("Недостатньо золота! Потрібно 10 золота."); return; }
+            if (userGold < 10) { alert("Потрібно 10 золота."); return; }
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
             if (!isMyUnit(hex)) return;
@@ -1559,29 +1393,27 @@
             updates[`world_hexes/${key}/unit`] = { ...hex.unit, hp: hex.unit.maxHp };
             updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeUnitModal(); alert("Воїна вилікувано!"); }
-            catch (err) { alert("Помилка лікування: " + err.message); }
+            try { await update(ref(db), updates); closeUnitModal(); alert("Вилікувано!"); } catch (err) { alert(err.message); }
         }
 
         window.buildBuilding = async function(r, c, type) {
             const cost = type === 'farm' ? 10 : 20;
-            if (userGold < cost) { alert(`Недостатньо золота! Потрібно ${cost} золота.`); return; }
+            if (userGold < cost) { alert(`Потрібно ${cost} золота.`); return; }
             const key = `${r}_${c}`;
             const currentHex = hexWorldData[key];
             if (!currentHex || currentHex.owner !== currentUsername) { alert("Це не ваш гекс!"); closeTerritoryModal(); return; }
             let myColor = currentHex.color || "#3b82f6";
-            if (!currentHex.color) { Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; }); }
+            if (!currentHex.color) Object.values(hexWorldData).forEach(h => { if (h.owner === currentUsername && h.color) myColor = h.color; });
             const wasPurchased = currentHex.isPurchased === true || currentHex.type === 'purchased';
             const updates = {};
             updates[`world_hexes/${key}`] = { owner: currentUsername, color: myColor, type: type, isPurchased: wasPurchased, unit: currentHex.unit || null };
             updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert(type === 'farm' ? "🌾 Ферму зведено!" : "🛞🌀 Вітряк зведено!"); }
-            catch (err) { alert("Помилка будівництва: " + err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert(type === 'farm' ? "🌾 Ферму зведено!" : "🛞🌀 Вітряк зведено!"); } catch (err) { alert(err.message); }
         }
 
         window.demolishBuilding = async function(r, c) {
-            if (userGold < 5) { alert("Недостатньо золота для знесення! Потрібно 5 золота."); return; }
+            if (userGold < 5) { alert("Потрібно 5 золота."); return; }
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             if (!hexInfo || hexInfo.owner !== currentUsername) return;
@@ -1591,14 +1423,12 @@
             updates[`world_hexes/${key}`] = { owner: hexInfo.owner, color: hexInfo.color, type: restoredType, isPurchased: wasPurchased, unit: hexInfo.unit || null };
             updates[`users/${currentUsername}/gold`] = userGold - 5;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("🔨 Будівлю знесено!"); }
-            catch (err) { alert("Помилка знесення: " + err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("🔨 Знесено!"); } catch (err) { alert(err.message); }
         }
 
         function listenToWorldData() {
             if (unsubWorld) unsubWorld();
-            const worldRef = ref(db, 'world_hexes');
-            unsubWorld = onValue(worldRef, (snapshot) => {
+            unsubWorld = onValue(ref(db, 'world_hexes'), (snapshot) => {
                 hexWorldData = snapshot.exists() ? snapshot.val() : {};
                 renderWorldData();
                 updateIncomeDisplay();
@@ -1618,11 +1448,7 @@
             const cx = center.x, cy = center.y;
             g.appendChild(svgEl("ellipse", { cx: cx, cy: cy + 14, rx: 22, ry: 6, fill: "rgba(0,0,0,0.45)" }));
             g.appendChild(svgEl("rect", { x: cx - 18, y: cy - 4, width: 36, height: 18, fill: "#475569", stroke: "#1e293b", "stroke-width": 1.5, rx: 2 }));
-            for (let i = 0; i < 6; i++) {
-                const bx = cx - 16 + (i * 6) % 30;
-                const by = cy + 1 + Math.floor(i / 5) * 5;
-                g.appendChild(svgEl("rect", { x: bx, y: by, width: 4, height: 3, fill: "#334155", opacity: "0.6" }));
-            }
+            for (let i = 0; i < 6; i++) g.appendChild(svgEl("rect", { x: cx - 16 + (i * 6) % 30, y: cy + 1 + Math.floor(i / 5) * 5, width: 4, height: 3, fill: "#334155", opacity: "0.6" }));
             g.appendChild(svgEl("rect", { x: cx - 8, y: cy - 16, width: 16, height: 14, fill: "#64748b", stroke: "#1e293b", "stroke-width": 1.5 }));
             for (let i = 0; i < 4; i++) g.appendChild(svgEl("rect", { x: cx - 8 + i * 4.5, y: cy - 19, width: 2.5, height: 3, fill: "#64748b", stroke: "#1e293b", "stroke-width": 1 }));
             g.appendChild(svgEl("rect", { x: cx - 20, y: cy - 10, width: 10, height: 10, fill: "#64748b", stroke: "#1e293b", "stroke-width": 1.5 }));
@@ -1637,11 +1463,7 @@
             g.appendChild(svgEl("line", { x1: cx, y1: cy - 19, x2: cx, y2: cy - 30, stroke: "#94a3b8", "stroke-width": 1.5 }));
             g.appendChild(svgEl("path", { d: `M ${cx} ${cy - 30} L ${cx + 11} ${cy - 28} L ${cx} ${cy - 23} Z`, fill: teamColor, stroke: "rgba(0,0,0,0.4)", "stroke-width": 0.8 }));
             g.appendChild(svgEl("circle", { cx: cx + 5, cy: cy - 27.5, r: 1.2, fill: "rgba(255,255,255,0.85)" }));
-            if (level >= 2) {
-                const crown = svgEl("text", { x: cx + 14, y: cy - 22, "font-size": "9", "text-anchor": "middle", fill: "#fbbf24" });
-                crown.textContent = "👑";
-                g.appendChild(crown);
-            }
+            if (level >= 2) { const crown = svgEl("text", { x: cx + 14, y: cy - 22, "font-size": "9", "text-anchor": "middle", fill: "#fbbf24" }); crown.textContent = "👑"; g.appendChild(crown); }
             svg.appendChild(g);
         }
 
@@ -1671,46 +1493,23 @@
             g.appendChild(svgEl("path", { d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`, fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round" }));
             g.appendChild(svgEl("rect", { x: cx - 3, y: cy + 4, width: 6, height: 8, fill: "#78350f", stroke: "#451a03", "stroke-width": 1, rx: 0.5 }));
             g.appendChild(svgEl("circle", { cx: cx, cy: cy - 1, r: 2, fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8 }));
-
-            const bladesPositioner = svgEl("g", {});
-            bladesPositioner.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
+            const pos = svgEl("g", {}); pos.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
             const bladesGroup = svgEl("g", { class: "mill-blades" });
-            const bladeColor = "#fef3c7", bladeStroke = "#78350f";
-
-            const b1 = svgEl("g", {});
-            b1.appendChild(svgEl("rect", { x: -1.5, y: -18, width: 3, height: 18, fill: bladeColor, stroke: bladeStroke, "stroke-width": 1 }));
-            for (let i = 0; i < 4; i++) b1.appendChild(svgEl("line", { x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4, stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5" }));
-            bladesGroup.appendChild(b1);
-
-            const b2 = svgEl("g", {});
-            b2.appendChild(svgEl("rect", { x: -1.5, y: 0, width: 3, height: 18, fill: bladeColor, stroke: bladeStroke, "stroke-width": 1 }));
-            for (let i = 0; i < 4; i++) b2.appendChild(svgEl("line", { x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4, stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5" }));
-            bladesGroup.appendChild(b2);
-
-            const b3 = svgEl("g", {});
-            b3.appendChild(svgEl("rect", { x: -18, y: -1.5, width: 18, height: 3, fill: bladeColor, stroke: bladeStroke, "stroke-width": 1 }));
-            for (let i = 0; i < 4; i++) b3.appendChild(svgEl("line", { x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5, stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5" }));
-            bladesGroup.appendChild(b3);
-
-            const b4 = svgEl("g", {});
-            b4.appendChild(svgEl("rect", { x: 0, y: -1.5, width: 18, height: 3, fill: bladeColor, stroke: bladeStroke, "stroke-width": 1 }));
-            for (let i = 0; i < 4; i++) b4.appendChild(svgEl("line", { x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5, stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5" }));
-            bladesGroup.appendChild(b4);
-
+            const bC = "#fef3c7", bS = "#78350f";
+            const makeBlade = (x, y, w, h) => { const b = svgEl("g", {}); b.appendChild(svgEl("rect", { x, y, width: w, height: h, fill: bC, stroke: bS, "stroke-width": 1 })); return b; };
+            const b1 = makeBlade(-1.5, -18, 3, 18); for (let i = 0; i < 4; i++) b1.appendChild(svgEl("line", { x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4, stroke: bS, "stroke-width": 0.4, opacity: "0.5" })); bladesGroup.appendChild(b1);
+            const b2 = makeBlade(-1.5, 0, 3, 18); for (let i = 0; i < 4; i++) b2.appendChild(svgEl("line", { x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4, stroke: bS, "stroke-width": 0.4, opacity: "0.5" })); bladesGroup.appendChild(b2);
+            const b3 = makeBlade(-18, -1.5, 18, 3); for (let i = 0; i < 4; i++) b3.appendChild(svgEl("line", { x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5, stroke: bS, "stroke-width": 0.4, opacity: "0.5" })); bladesGroup.appendChild(b3);
+            const b4 = makeBlade(0, -1.5, 18, 3); for (let i = 0; i < 4; i++) b4.appendChild(svgEl("line", { x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5, stroke: bS, "stroke-width": 0.4, opacity: "0.5" })); bladesGroup.appendChild(b4);
             bladesGroup.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 2.5, fill: "#78350f", stroke: "#451a03", "stroke-width": 1 }));
-            bladesPositioner.appendChild(bladesGroup);
-            g.appendChild(bladesPositioner);
+            pos.appendChild(bladesGroup); g.appendChild(pos);
             svg.appendChild(g);
         }
 
         function renderBarbarianCampVector(svg, center, level) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
-            const colors = {
-                weak:   { tent: "#22c55e", dark: "#052e16", flag: "#16a34a" },
-                medium: { tent: "#f59e0b", dark: "#451a03", flag: "#d97706" },
-                strong: { tent: "#dc2626", dark: "#450a0a", flag: "#b91c1c" }
-            };
+            const colors = { weak: { tent: "#22c55e", dark: "#052e16", flag: "#16a34a" }, medium: { tent: "#f59e0b", dark: "#451a03", flag: "#d97706" }, strong: { tent: "#dc2626", dark: "#450a0a", flag: "#b91c1c" } };
             const c = colors[level] || colors.weak;
             g.appendChild(svgEl("ellipse", { cx: cx, cy: cy + 8, rx: 15, ry: 4, fill: "rgba(0,0,0,0.5)" }));
             g.appendChild(svgEl("polygon", { points: `${cx - 4},${cy - 12} ${cx - 16},${cy + 6} ${cx + 8},${cy + 6}`, fill: c.tent, stroke: c.dark, "stroke-width": 1.5 }));
@@ -1726,47 +1525,79 @@
 
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
-            const b1 = svgEl("line", { x1: center.x - 14, y1: center.y - 7, x2: center.x + 14, y2: center.y - 7, stroke: "#d97706", "stroke-width": "3" });
-            const b2 = svgEl("line", { x1: center.x - 14, y1: center.y + 7, x2: center.x + 14, y2: center.y + 7, stroke: "#d97706", "stroke-width": "3" });
+            g.appendChild(svgEl("line", { x1: center.x - 14, y1: center.y - 7, x2: center.x + 14, y2: center.y - 7, stroke: "#d97706", "stroke-width": "3" }));
+            g.appendChild(svgEl("line", { x1: center.x - 14, y1: center.y + 7, x2: center.x + 14, y2: center.y + 7, stroke: "#d97706", "stroke-width": "3" }));
             for (let dx = -10; dx <= 10; dx += 5) g.appendChild(svgEl("line", { x1: center.x + dx, y1: center.y - 8, x2: center.x + dx, y2: center.y + 8, stroke: "#f59e0b", "stroke-width": "2" }));
-            g.appendChild(b1);
-            g.appendChild(b2);
             svg.appendChild(g);
+        }
+
+        // Стрілки маршруту воїна
+        function renderUnitRouteArrows(svg, unit, currentKey) {
+            if (!unit || unit.state !== 'moving') return;
+            if (!unit.path || !Array.isArray(unit.path)) return;
+            const currentIdx = unit.pathIndex || 0;
+            const remainingPath = unit.path.slice(currentIdx);
+            if (remainingPath.length === 0) return;
+
+            const [cr, cc] = currentKey.split('_').map(Number);
+            const currentCenter = hexToPixel(cr, cc);
+            const nextKey = remainingPath[0];
+            const [nr, nc] = nextKey.split('_').map(Number);
+            const nextCenter = hexToPixel(nr, nc);
+
+            const g1 = svgEl("g", { class: "route-arrows" });
+            g1.appendChild(svgEl("line", { x1: currentCenter.x, y1: currentCenter.y, x2: nextCenter.x, y2: nextCenter.y, class: "route-arrow-current" }));
+
+            const angle1 = Math.atan2(nextCenter.y - currentCenter.y, nextCenter.x - currentCenter.x);
+            const headLen = 9, headAngle = Math.PI / 6;
+            g1.appendChild(svgEl("polygon", {
+                points: `${nextCenter.x},${nextCenter.y} ${nextCenter.x - headLen * Math.cos(angle1 - headAngle)},${nextCenter.y - headLen * Math.sin(angle1 - headAngle)} ${nextCenter.x - headLen * Math.cos(angle1 + headAngle)},${nextCenter.y - headLen * Math.sin(angle1 + headAngle)}`,
+                class: "route-arrow-head-current"
+            }));
+            svg.appendChild(g1);
+
+            if (remainingPath.length > 1) {
+                const g2 = svgEl("g", { class: "route-arrows" });
+                for (let i = 1; i < remainingPath.length; i++) {
+                    const [pr, pc] = remainingPath[i - 1].split('_').map(Number);
+                    const [tr, tc] = remainingPath[i].split('_').map(Number);
+                    const pC = hexToPixel(pr, pc), tC = hexToPixel(tr, tc);
+                    g2.appendChild(svgEl("line", { x1: pC.x, y1: pC.y, x2: tC.x, y2: tC.y, class: "route-arrow-final" }));
+                }
+                const finalKey = remainingPath[remainingPath.length - 1];
+                const preFinalKey = remainingPath[remainingPath.length - 2];
+                const [fr, fc] = finalKey.split('_').map(Number);
+                const [pfr, pfc] = preFinalKey.split('_').map(Number);
+                const fC = hexToPixel(fr, fc), pfC = hexToPixel(pfr, pfc);
+                const angle2 = Math.atan2(fC.y - pfC.y, fC.x - pfC.x);
+                g2.appendChild(svgEl("polygon", {
+                    points: `${fC.x},${fC.y} ${fC.x - headLen * Math.cos(angle2 - headAngle)},${fC.y - headLen * Math.sin(angle2 - headAngle)} ${fC.x - headLen * Math.cos(angle2 + headAngle)},${fC.y - headLen * Math.sin(angle2 + headAngle)}`,
+                    class: "route-arrow-head-final"
+                }));
+                svg.appendChild(g2);
+
+                const finalPoly = document.getElementById(`hex-${fr}-${fc}`);
+                if (finalPoly) finalPoly.classList.add('target-highlight');
+            }
         }
 
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
             const ringColor = unit.state === 'fighting' ? '#ef4444' : (unit.state === 'moving' ? '#a78bfa' : '#ffffff');
             const g = svgEl("g", { class: "unit-badge" });
-
-            g.appendChild(svgEl("circle", {
-                cx: cx, cy: cy, r: r,
-                fill: isBarbarian ? '#450a0a' : '#0f172a',
-                stroke: ringColor,
-                'stroke-width': 2.5 * k,
-                'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none'
-            }));
+            g.appendChild(svgEl("circle", { cx: cx, cy: cy, r: r, fill: isBarbarian ? '#450a0a' : '#0f172a', stroke: ringColor, 'stroke-width': 2.5 * k, 'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none' }));
 
             const s = k;
-            // Ноги
             g.appendChild(svgEl("line", { x1: cx - 2 * s, y1: cy + 4 * s, x2: cx - 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
             g.appendChild(svgEl("line", { x1: cx + 2 * s, y1: cy + 4 * s, x2: cx + 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
-            // Тулуб
             g.appendChild(svgEl("rect", { x: cx - 4 * s, y: cy - 3 * s, width: 8 * s, height: 8 * s, fill: teamColor, stroke: '#0f172a', 'stroke-width': 1 * s, rx: 1.5 * s }));
-            // Пояс
             g.appendChild(svgEl("rect", { x: cx - 4 * s, y: cy + 3 * s, width: 8 * s, height: 1.5 * s, fill: '#0f172a' }));
-            // Голова
             g.appendChild(svgEl("circle", { cx: cx, cy: cy - 7 * s, r: 3.5 * s, fill: '#fde68a', stroke: '#0f172a', 'stroke-width': 0.9 * s }));
-            // Шолом
             g.appendChild(svgEl("path", { d: `M ${cx - 4 * s} ${cy - 7 * s} Q ${cx} ${cy - 12 * s} ${cx + 4 * s} ${cy - 7 * s} Z`, fill: '#64748b', stroke: '#0f172a', 'stroke-width': 0.9 * s }));
-            // Око
             g.appendChild(svgEl("circle", { cx: cx + 1 * s, cy: cy - 6.5 * s, r: 0.7 * s, fill: '#0f172a' }));
-            // Рука
             g.appendChild(svgEl("line", { x1: cx + 3 * s, y1: cy - 1 * s, x2: cx + 6 * s, y2: cy - 6 * s, stroke: teamColor, 'stroke-width': 1.8 * s, 'stroke-linecap': 'round' }));
-            // Дубина
             g.appendChild(svgEl("line", { x1: cx + 5 * s, y1: cy - 4 * s, x2: cx + 10 * s, y2: cy - 11 * s, stroke: '#6b3410', 'stroke-width': 1.8 * s, 'stroke-linecap': 'round' }));
             g.appendChild(svgEl("ellipse", { cx: cx + 11 * s, cy: cy - 12 * s, rx: 2.5 * s, ry: 3 * s, fill: '#8b4513', stroke: '#4a2008', 'stroke-width': 0.7 * s }));
-            // Шипи
             g.appendChild(svgEl("polygon", { points: `${cx + 9.5 * s},${cy - 14 * s} ${cx + 8.5 * s},${cy - 16 * s} ${cx + 11 * s},${cy - 15 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
             g.appendChild(svgEl("polygon", { points: `${cx + 13 * s},${cy - 14 * s} ${cx + 14.5 * s},${cy - 16 * s} ${cx + 12 * s},${cy - 15 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
             g.appendChild(svgEl("polygon", { points: `${cx + 11.5 * s},${cy - 9.5 * s} ${cx + 12 * s},${cy - 7.5 * s} ${cx + 13 * s},${cy - 10 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
@@ -1783,13 +1614,12 @@
             const bx = cx - barW / 2, by = cy + 11 * k;
             g.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, fill: '#475569' }));
             g.appendChild(svgEl("rect", { x: bx, y: by, width: Math.max(0.1, barW * pct), height: barH, rx: barH / 2, fill: pct > 0.5 ? '#10b981' : (pct > 0.25 ? '#f59e0b' : '#ef4444') }));
-
             svg.appendChild(g);
         }
 
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
-            document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
+            document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge, .route-arrows').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
                 if (!el.classList.contains('target-highlight')) { el.style.fill = '#1b263b'; el.style.stroke = '#1b263b'; }
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
@@ -1830,27 +1660,14 @@
                     polygon.classList.add('occupied-core');
                     renderTownHallVector(svg, center, hexData.color || '#3b82f6', hexData.level || 1);
                     labelQueue.push({ center, text: `👑 ${hexData.owner} [Lvl ${hexData.level || 1}]` });
-                } else if (hexData.type === 'bridge') {
-                    polygon.classList.add('bridge-hex');
-                    renderBridgeVector(svg, center);
-                } else if (hexData.type === 'farm') {
-                    polygon.classList.add('occupied-border');
-                    renderFarmVector(svg, center);
-                } else if (hexData.type === 'mill') {
-                    polygon.classList.add('occupied-border');
-                    renderMillVector(svg, center);
-                } else {
-                    polygon.classList.add('occupied-border');
-                    plain = true;
-                }
+                } else if (hexData.type === 'bridge') { polygon.classList.add('bridge-hex'); renderBridgeVector(svg, center); }
+                else if (hexData.type === 'farm') { polygon.classList.add('occupied-border'); renderFarmVector(svg, center); }
+                else if (hexData.type === 'mill') { polygon.classList.add('occupied-border'); renderMillVector(svg, center); }
+                else { polygon.classList.add('occupied-border'); plain = true; }
 
                 if (hasUnit) {
                     const isBarb = hexData.unit.type === 'barbarian';
-                    unitQueue.push({
-                        center, unit: hexData.unit,
-                        color: isBarb ? '#dc2626' : (hexData.color || '#38bdf8'),
-                        barbarian: isBarb, big: plain
-                    });
+                    unitQueue.push({ center, unit: hexData.unit, color: isBarb ? '#dc2626' : (hexData.color || '#38bdf8'), barbarian: isBarb, big: plain });
                 }
             });
 
