@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.27</title>
+    <title>HexPolitics v5.28</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.27
+    ПОТОЧНА ВЕРСІЯ: v5.28
 
     ВИПРАВЛЕНО:
-    - v5.27: фікс Firebase conflict (ancestor of another path) при вбивстві варвара.
-             Тепер у гілці isCamp наступний крок обчислюється заздалегідь, без
-             виклику continuePathAfterCombat.
+    - v5.27: фікс Firebase conflict при вбивстві варвара
+    - v5.28: рамка воїна — темніший колір гравця (замість білого/фіолетового)
+             У бою рамка залишається червоною (сигнал небезпеки).
     ============================================
     -->
     <style>
@@ -138,8 +138,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.27</h2>
-            <p id="loader-desc">Фікс Firebase конфлікту...</p>
+            <h2 id="loader-status">HexPolitics v5.28</h2>
+            <p id="loader-desc">Рамка воїна в колір гравця...</p>
         </div>
     </div>
 
@@ -268,7 +268,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.27";
+        const CURRENT_VERSION = "5.28";
 
         let mode = "login";
         let currentUsername = "";
@@ -356,7 +356,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.27"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.28"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -667,7 +667,6 @@
             return null;
         }
 
-        // Обчислює фінальний стан воїна після бою і повертає його для запису в unit-поле гекса
         function computeUnitAfterCombat(winner, isOffline) {
             const path = winner.path || [];
             const nextIndex = (winner.pathIndex || 0) + 1;
@@ -736,7 +735,6 @@
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
-                            // ФІКС: обчислюємо наступний крок заздалегідь і записуємо ОДИН раз — цілий гекс
                             const finalUnit = computeUnitAfterCombat(winner, isOffline);
                             updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: finalUnit };
                             updates[`${srcPath}/unit`] = null;
@@ -780,7 +778,6 @@
                             if (isCamp) {
                                 const reward = targetHex.reward || 100;
                                 goldBonus += reward;
-                                // ФІКС: те саме — обчислюємо заздалегідь, записуємо цілий гекс ОДИН раз
                                 const finalUnit = computeUnitAfterCombat(winner, isOffline);
                                 updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: finalUnit };
                                 updates[`${srcPath}/unit`] = null;
@@ -1727,10 +1724,25 @@
             document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
         }
 
+        // Затемнює колір #RRGGBB. factor=0.6 → на 40% темніше.
+        function darkenColor(hex, factor = 0.6) {
+            if (!hex || typeof hex !== 'string') return null;
+            let h = hex.replace('#', '');
+            if (h.length === 3) h = h.split('').map(c => c + c).join('');
+            if (h.length !== 6) return null;
+            const num = parseInt(h, 16);
+            if (isNaN(num)) return null;
+            const r = Math.round(((num >> 16) & 255) * factor);
+            const g = Math.round(((num >> 8) & 255) * factor);
+            const b = Math.round((num & 255) * factor);
+            return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
             const s = k;
-            const ringColor = unit.state === 'fighting' ? '#ef4444' : (unit.state === 'moving' ? '#a78bfa' : '#ffffff');
+            const darkenedTeamColor = darkenColor(teamColor, 0.6) || '#1e293b';
+            const ringColor = unit.state === 'fighting' ? '#ef4444' : darkenedTeamColor;
             const g = svgEl("g", { class: "unit-badge" });
             const unitBgColor = isBarbarian ? '#450a0a' : (teamColor || '#0f172a');
             g.appendChild(svgEl("circle", { cx, cy, r, fill: unitBgColor, stroke: ringColor, 'stroke-width': 2.5 * k, 'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none' }));
