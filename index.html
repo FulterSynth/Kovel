@@ -3,18 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.23</title>
+    <title>HexPolitics v5.24</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.23
+    ПОТОЧНА ВЕРСІЯ: v5.24
 
-    ГОЛОВНЕ В ЦІЙ ВЕРСІЇ:
-    - ПРИБРАНО стрілки маршруту, підсвічування цілі — зайве
-    - ПРОСТИЙ рух: воїн іде по гексах, 1 гекс/хв
-    - Свій воїн на шляху → обхід (BFS)
-    - Ворожий воїн / табір на шляху → бій
-    - Дійшов до цілі → стає, або б'ється якщо там ворог
+    ВЖЕ ЗРОБЛЕНО:
+    - v5.9-v5.22: авторизація, економіка, варвари, будівлі, SVG, рух по гексах
+    - v5.23: спроба крапок маршруту (була зламана)
+    - v5.24: виправлено 4 помилки + крапки маршруту
 
     КЛЮЧОВІ КОНСТАНТИ:
     - FIGHT_ROUND_MS = 5000
@@ -104,27 +102,11 @@
         .info-card .warn { color: #fbbf24; font-weight: bold; }
 
         .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
-        
+
         /* Крапки маршруту воїна */
-.route-dot-next {
-    fill: #10b981;
-    stroke: #ffffff;
-    stroke-width: 2;
-    pointer-events: none;
-    animation: dotPulse 1.2s ease-in-out infinite;
-    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.9));
-}
-.route-dot-path {
-    fill: #3b82f6;
-    stroke: #ffffff;
-    stroke-width: 1.5;
-    pointer-events: none;
-    opacity: 0.8;
-}
-@keyframes dotPulse {
-    0%, 100% { r: 6; }
-    50% { r: 8; }
-}
+        .route-dot-next { fill: #10b981; stroke: #ffffff; stroke-width: 2; pointer-events: none; animation: dotPulse 1.2s ease-in-out infinite; filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.9)); }
+        .route-dot-path { fill: #3b82f6; stroke: #ffffff; stroke-width: 1.5; pointer-events: none; opacity: 0.8; }
+        @keyframes dotPulse { 0%, 100% { r: 6; } 50% { r: 8; } }
 
         .battle-hp-bar-bg { fill: rgba(15, 23, 42, 0.9); stroke: #0f172a; stroke-width: 1; pointer-events: none; }
         .battle-hp-bar-fill { pointer-events: none; }
@@ -139,8 +121,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.23</h2>
-            <p id="loader-desc">Простий рух по гексах...</p>
+            <h2 id="loader-status">HexPolitics v5.24</h2>
+            <p id="loader-desc">Виправлено помилки + крапки маршруту...</p>
         </div>
     </div>
 
@@ -252,7 +234,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.23";
+        const CURRENT_VERSION = "5.24";
 
         let mode = "login";
         let currentUsername = "";
@@ -340,7 +322,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.23"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.24"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -618,7 +600,6 @@
             return u;
         }
 
-        // BFS: шукає шлях, обходячи своїх воїнів та прірву
         function findPath(startR, startC, targetR, targetC) {
             const startKey = `${startR}_${startC}`;
             const targetKey = `${targetR}_${targetC}`;
@@ -634,9 +615,7 @@
                     const key = n.key;
                     if (visited.has(key)) continue;
                     const h = hexWorldData[key];
-                    // Прірва — не ходимо
                     if (h && h.type === 'chasm') continue;
-                    // Свій воїн на шляху — обходимо (крім фінальної цілі)
                     if (key !== targetKey && isMyUnit(h)) continue;
                     visited.add(key);
                     const newPath = [...path, key];
@@ -683,7 +662,6 @@
                 const targetHex = hexWorldData[targetKey];
                 const targetUnit = targetHex ? targetHex.unit : null;
 
-                // ===== БІЙ =====
                 if (unit.state === 'fighting') {
                     if (touched.has(targetKey)) return;
                     touched.add(key); touched.add(targetKey);
@@ -726,13 +704,9 @@
                     return;
                 }
 
-                // ===== РУХ =====
                 if (unit.state === 'moving') {
-                    // Прірва в цілі — зупиняємось
                     if (targetHex && targetHex.type === 'chasm') { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
-                    // Якщо цільового гекса НЕМАЄ в базі (порожній) — це ОК, йдемо далі
 
-                    // Ворожий воїн / табір на цілі — бій
                     if (targetUnit && targetUnit.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -773,10 +747,8 @@
                         return;
                     }
 
-                    // Свій воїн на цілі — стоїмо (не можна двох на одному гексі)
                     if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
-                    // Ворожа ратуша — штурм
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -800,7 +772,6 @@
                         return;
                     }
 
-                    // Звичайний крок — на будь-який гекс (в т.ч. порожній)
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
@@ -1022,7 +993,6 @@
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
 
-            // ===== РЕЖИМ РУХУ =====
             if (isSelectingMoveTarget) {
                 if (!movingUnitCoords) { cancelMoveMode(); return; }
                 const { r: sr, c: sc } = movingUnitCoords;
@@ -1035,7 +1005,6 @@
                 executeUnitMove(sr, sc, r, c, path);
                 return;
             }
-            // ===== КІНЕЦЬ РЕЖИМУ РУХУ =====
 
             if (isMyUnit(hexInfo)) {
                 if (activeSelection && activeSelection.key === key && activeSelection.layer === 'unit') openCellForHex(r, c, hexInfo);
@@ -1295,52 +1264,53 @@
             btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
-                // Показуємо крапки маршруту для рухомого воїна
-    clearRouteDots();
-    if (u.state === 'moving') {
-        const svg = document.getElementById('hex-svg');
-        setTimeout(() => renderUnitRouteDots(svg, u, `${r}_${c}`), 30);
-    }
+
+            clearRouteDots();
+            if (u.state === 'moving') {
+                const svg = document.getElementById('hex-svg');
+                setTimeout(() => renderUnitRouteDots(svg, u, `${r}_${c}`), 30);
+            }
         }
 
         window.closeUnitModal = function() {
-    document.getElementById('unit-modal').style.display = 'none';
-    activeSelection = null;
-    clearRouteDots();
-    renderWorldData();
-}
-       
+            document.getElementById('unit-modal').style.display = 'none';
+            activeSelection = null;
+            clearRouteDots();
+            renderWorldData();
+        }
+
+        function refreshUnitModal() {
+            const modal = document.getElementById('unit-modal');
+            if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
+
+            let found = null;
+            if (activeSelection.unitId) {
+                found = findMyUnitById(activeSelection.unitId);
+            }
+            if (!found) {
+                const h = hexWorldData[activeSelection.key];
+                if (isMyUnit(h)) found = { key: activeSelection.key, hex: h };
+            }
+
+            if (found) {
+                activeSelection.key = found.key;
+                const [r, c] = found.key.split('_').map(Number);
+                openUnitModal(r, c, found.hex);
+                clearRouteDots();
+                if (found.hex.unit.state === 'moving') {
+                    const svg = document.getElementById('hex-svg');
+                    setTimeout(() => renderUnitRouteDots(svg, found.hex.unit, found.key), 30);
+                }
+            } else {
+                modal.style.display = 'none';
+                activeSelection = null;
+                clearRouteDots();
+            }
+        }
 
         window.switchToCell = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (h) openCellForHex(r, c, h); }
-        windowfunction refreshUnitModal() {
-    const modal = document.getElementById('unit-modal');
-    if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
+        window.switchToUnit = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (isMyUnit(h)) openUnitModal(r, c, h); }
 
-    let found = null;
-    if (activeSelection.unitId) {
-        found = findMyUnitById(activeSelection.unitId);
-    }
-    if (!found) {
-        const h = hexWorldData[activeSelection.key];
-        if (isMyUnit(h)) found = { key: activeSelection.key, hex: h };
-    }
-
-    if (found) {
-        activeSelection.key = found.key;
-        const [r, c] = found.key.split('_').map(Number);
-        openUnitModal(r, c, found.hex);
-        // Оновлюємо крапки
-        clearRouteDots();
-        if (found.hex.unit.state === 'moving') {
-            const svg = document.getElementById('hex-svg');
-            setTimeout(() => renderUnitRouteDots(svg, found.hex.unit, found.key), 30);
-        }
-    } else {
-        modal.style.display = 'none';
-        activeSelection = null;
-        clearRouteDots();
-    }
-}
         window.retreatUnit = async function(r, c) {
             const key = `${r}_${c}`;
             const h = hexWorldData[key];
@@ -1591,48 +1561,34 @@
             svg.appendChild(hpText);
         }
 
-    svg.appendChfunction renderUnitBadgeild(g);
-}
+        function renderUnitRouteDots(svg, unit, currentKey) {
+            if (!unit || unit.state !== 'moving') return;
+            if (!unit.path || !Array.isArray(unit.path)) return;
 
-function clearRouteDots() {
-    document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
-}
-        // Малює крапки маршруту для рухомого воїна
-function renderUnitRouteDots(svg, unit, currentKey) {
-    if (!unit || unit.state !== 'moving') return;
-    if (!unit.path || !Array.isArray(unit.path)) return;
+            const currentIdx = unit.pathIndex || 0;
+            const remainingPath = unit.path.slice(currentIdx);
+            if (remainingPath.length === 0) return;
 
-    const currentIdx = unit.pathIndex || 0;
-    const remainingPath = unit.path.slice(currentIdx);
-    if (remainingPath.length === 0) return;
+            const g = svgEl("g", { class: "route-dots-group" });
 
-    const g = svgEl("g", { class: "route-dots-group" });
+            remainingPath.forEach((key, i) => {
+                const [r, c] = key.split('_').map(Number);
+                const center = hexToPixel(r, c);
 
-    remainingPath.forEach((key, i) => {
-        const [r, c] = key.split('_').map(Number);
-        const center = hexToPixel(r, c);
+                if (i === 0) {
+                    g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 7, class: "route-dot-next" }));
+                } else {
+                    g.appendChild(svgEl("circle", { cx: center.x, cy: center.y, r: 4, class: "route-dot-path" }));
+                }
+            });
 
-        if (i === 0) {
-            // Наступний крок — зелена пульсуюча
-            g.appendChild(svgEl("circle", {
-                cx: center.x, cy: center.y, r: 7,
-                class: "route-dot-next"
-            }));
-        } else {
-            // Решта шляху — сині менші
-            g.appendChild(svgEl("circle", {
-                cx: center.x, cy: center.y, r: 4,
-                class: "route-dot-path"
-            }));
+            svg.appendChild(g);
         }
-    });
 
-    svg.appendChild(g);
-}
+        function clearRouteDots() {
+            document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
+        }
 
-function clearRouteDots() {
-    document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
-}
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
             const ringColor = unit.state === 'fighting' ? '#ef4444' : (unit.state === 'moving' ? '#a78bfa' : '#ffffff');
@@ -1669,7 +1625,7 @@ function clearRouteDots() {
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
-            document.querySelectorAll('.route-dots-group').forEach(el => el.remove()); document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
+            document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
