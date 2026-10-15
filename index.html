@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.26</title>
+    <title>HexPolitics v5.27</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.26
+    ПОТОЧНА ВЕРСІЯ: v5.27
 
-    ВИПРАВЛЕНО В ЦІЙ ВЕРСІЇ:
-    - renderUnitBadge: прибрано дублікат circle, відновлено const s = k
-    - clearRouteDots: прибрано дублікат функції
-    - renderWorldData: більше НЕ стирає крапки маршруту
-    - listenToWorldData: перемальовує крапки після кожного рендеру
+    ВИПРАВЛЕНО:
+    - v5.27: фікс Firebase conflict (ancestor of another path) при вбивстві варвара.
+             Тепер у гілці isCamp наступний крок обчислюється заздалегідь, без
+             виклику continuePathAfterCombat.
     ============================================
     -->
     <style>
@@ -110,7 +109,6 @@
         #move-banner { display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: rgba(16, 185, 129, 0.96); color: #fff; padding: 8px 12px; border-radius: 10px; z-index: 600; font-size: 12px; font-weight: bold; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.45); width: max-content; max-width: 92%; }
         #move-banner button { padding: 4px 10px; border-radius: 6px; border: none; background: #064e3b; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
 
-        /* ===== ЧАТ ===== */
         #chat-button { position: fixed; left: 15px; bottom: 25px; width: 50px; height: 50px; background: rgba(59, 130, 246, 0.95); border: 2px solid #1e40af; color: #fff; border-radius: 50%; font-size: 24px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 600; transition: transform 0.2s, background 0.2s; }
         #chat-button:hover { background: #2563eb; transform: scale(1.05); }
         #chat-button .unread-badge { position: absolute; top: -4px; right: -4px; background: #ef4444; color: #fff; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 1px 6px; min-width: 18px; text-align: center; display: none; }
@@ -140,8 +138,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.26</h2>
-            <p id="loader-desc">Виправлено renderUnitBadge, крапки маршруту...</p>
+            <h2 id="loader-status">HexPolitics v5.27</h2>
+            <p id="loader-desc">Фікс Firebase конфлікту...</p>
         </div>
     </div>
 
@@ -270,7 +268,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.26";
+        const CURRENT_VERSION = "5.27";
 
         let mode = "login";
         let currentUsername = "";
@@ -358,7 +356,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.26"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.27"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -669,6 +667,18 @@
             return null;
         }
 
+        // Обчислює фінальний стан воїна після бою і повертає його для запису в unit-поле гекса
+        function computeUnitAfterCombat(winner, isOffline) {
+            const path = winner.path || [];
+            const nextIndex = (winner.pathIndex || 0) + 1;
+            if (nextIndex >= path.length) return stopTravel(winner);
+            const next = { ...winner, state: 'moving' };
+            next.pathIndex = nextIndex;
+            next.targetKey = path[nextIndex];
+            next.arrivalTime = isOffline ? (winner.arrivalTime + MOVE_STEP_MS) : (Date.now() + MOVE_STEP_MS);
+            return next;
+        }
+
         function continuePathAfterCombat(winner, updates, newHexKey, isOffline) {
             const path = winner.path || [];
             const nextIndex = (winner.pathIndex || 0) + 1;
@@ -726,10 +736,11 @@
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
-                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: winner };
+                            // ФІКС: обчислюємо наступний крок заздалегідь і записуємо ОДИН раз — цілий гекс
+                            const finalUnit = computeUnitAfterCombat(winner, isOffline);
+                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: finalUnit };
                             updates[`${srcPath}/unit`] = null;
                             messages.push(`🎉 Табір зачищено! +${reward} золота`);
-                            continuePathAfterCombat(winner, updates, targetKey, isOffline);
                         } else {
                             updates[`world_hexes/${targetKey}/unit`] = winner;
                             updates[`${srcPath}/unit`] = null;
@@ -769,10 +780,11 @@
                             if (isCamp) {
                                 const reward = targetHex.reward || 100;
                                 goldBonus += reward;
-                                updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: winner };
+                                // ФІКС: те саме — обчислюємо заздалегідь, записуємо цілий гекс ОДИН раз
+                                const finalUnit = computeUnitAfterCombat(winner, isOffline);
+                                updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: finalUnit };
                                 updates[`${srcPath}/unit`] = null;
                                 messages.push(`🎉 Табір зачищено! +${reward} золота`);
-                                continuePathAfterCombat(winner, updates, targetKey, isOffline);
                             } else {
                                 updates[`world_hexes/${targetKey}/unit`] = winner;
                                 updates[`${srcPath}/unit`] = null;
@@ -1753,7 +1765,6 @@
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
-            // УВАГА: НЕ стираємо .route-dots-group тут — це робить clearRouteDots явно
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
