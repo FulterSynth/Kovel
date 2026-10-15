@@ -2170,114 +2170,119 @@
         // ==========================================
         // 🛞🌀 ВІТРЯК — з анімованими крилами
         // ==========================================
-        function renderMillVector(svg, center) {
-            const g = svgEl("g", { class: "map-icon" });
-            const cx = center.x;
-            const cy = center.y;
+function renderMillVector(svg, center) {
+    const g = svgEl("g", { class: "map-icon" });
+    const cx = center.x;
+    const cy = center.y;
 
-            g.appendChild(svgEl("ellipse", {
-                cx: cx, cy: cy + 14, rx: 15, ry: 5,
-                fill: "rgba(0,0,0,0.4)"
-            }));
+    g.appendChild(svgEl("ellipse", {
+        cx: cx, cy: cy + 14, rx: 15, ry: 5,
+        fill: "rgba(0,0,0,0.4)"
+    }));
 
-            // Основа вітряка
-            g.appendChild(svgEl("path", {
-                d: `M ${cx - 9} ${cy + 12} L ${cx - 6} ${cy - 4} L ${cx + 6} ${cy - 4} L ${cx + 9} ${cy + 12} Z`,
-                fill: "#f5f5f4", stroke: "#78350f", "stroke-width": 1.5, "stroke-linejoin": "round"
-            }));
+    // Основа вітряка
+    g.appendChild(svgEl("path", {
+        d: `M ${cx - 9} ${cy + 12} L ${cx - 6} ${cy - 4} L ${cx + 6} ${cy - 4} L ${cx + 9} ${cy + 12} Z`,
+        fill: "#f5f5f4", stroke: "#78350f", "stroke-width": 1.5, "stroke-linejoin": "round"
+    }));
 
-            // Дах
-            g.appendChild(svgEl("path", {
-                d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`,
-                fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
-            }));
+    // Дах
+    g.appendChild(svgEl("path", {
+        d: `M ${cx - 8} ${cy - 4} L ${cx} ${cy - 12} L ${cx + 8} ${cy - 4} Z`,
+        fill: "#dc2626", stroke: "#7f1d1d", "stroke-width": 1.5, "stroke-linejoin": "round"
+    }));
 
-            // Двері
-            g.appendChild(svgEl("rect", {
-                x: cx - 3, y: cy + 4, width: 6, height: 8,
-                fill: "#78350f", stroke: "#451a03", "stroke-width": 1, rx: 0.5
-            }));
+    // Двері
+    g.appendChild(svgEl("rect", {
+        x: cx - 3, y: cy + 4, width: 6, height: 8,
+        fill: "#78350f", stroke: "#451a03", "stroke-width": 1, rx: 0.5
+    }));
 
-            // Вікно
-            g.appendChild(svgEl("circle", {
-                cx: cx, cy: cy - 1, r: 2,
-                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
-            }));
+    // Вікно
+    g.appendChild(svgEl("circle", {
+        cx: cx, cy: cy - 1, r: 2,
+        fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
+    }));
 
-            // === КРИЛА (анімовані) ===
-            const bladesGroup = svgEl("g", { class: "mill-blades" });
-            bladesGroup.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
+    // === КРИЛА ===
+    // ВАЖЛИВО: позиціювання (translate) — на ЗОВНІШНІЙ групі через SVG-атрибут.
+    // Обертання — на ВНУТРІШНІЙ групі через CSS-клас mill-blades.
+    // Якщо змішати їх на одній групі — CSS затирає SVG transform і лопасті відлітають за екран.
+    const bladesPositioner = svgEl("g", {});
+    bladesPositioner.setAttribute("transform", `translate(${cx}, ${cy - 8})`);
 
-            const bladeColor = "#fef3c7";
-            const bladeStroke = "#78350f";
+    const bladesGroup = svgEl("g", { class: "mill-blades" });
 
-            // Крило 1 (верх)
-            const b1 = svgEl("g", {});
-            b1.appendChild(svgEl("rect", {
-                x: -1.5, y: -18, width: 3, height: 18,
-                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-            }));
-            for (let i = 0; i < 4; i++) {
-                b1.appendChild(svgEl("line", {
-                    x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4,
-                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-                }));
-            }
-            bladesGroup.appendChild(b1);
+    const bladeColor = "#fef3c7";
+    const bladeStroke = "#78350f";
 
-            // Крило 2 (низ)
-            const b2 = svgEl("g", {});
-            b2.appendChild(svgEl("rect", {
-                x: -1.5, y: 0, width: 3, height: 18,
-                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-            }));
-            for (let i = 0; i < 4; i++) {
-                b2.appendChild(svgEl("line", {
-                    x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4,
-                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-                }));
-            }
-            bladesGroup.appendChild(b2);
+    // Крило 1 (верх)
+    const b1 = svgEl("g", {});
+    b1.appendChild(svgEl("rect", {
+        x: -1.5, y: -18, width: 3, height: 18,
+        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+    }));
+    for (let i = 0; i < 4; i++) {
+        b1.appendChild(svgEl("line", {
+            x1: -1.5, y1: -16 + i * 4, x2: 1.5, y2: -16 + i * 4,
+            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+        }));
+    }
+    bladesGroup.appendChild(b1);
 
-            // Крило 3 (ліво)
-            const b3 = svgEl("g", {});
-            b3.appendChild(svgEl("rect", {
-                x: -18, y: -1.5, width: 18, height: 3,
-                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-            }));
-            for (let i = 0; i < 4; i++) {
-                b3.appendChild(svgEl("line", {
-                    x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5,
-                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-                }));
-            }
-            bladesGroup.appendChild(b3);
+    // Крило 2 (низ)
+    const b2 = svgEl("g", {});
+    b2.appendChild(svgEl("rect", {
+        x: -1.5, y: 0, width: 3, height: 18,
+        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+    }));
+    for (let i = 0; i < 4; i++) {
+        b2.appendChild(svgEl("line", {
+            x1: -1.5, y1: 2 + i * 4, x2: 1.5, y2: 2 + i * 4,
+            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+        }));
+    }
+    bladesGroup.appendChild(b2);
 
-            // Крило 4 (право)
-            const b4 = svgEl("g", {});
-            b4.appendChild(svgEl("rect", {
-                x: 0, y: -1.5, width: 18, height: 3,
-                fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
-            }));
-            for (let i = 0; i < 4; i++) {
-                b4.appendChild(svgEl("line", {
-                    x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5,
-                    stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
-                }));
-            }
-            bladesGroup.appendChild(b4);
+    // Крило 3 (ліво)
+    const b3 = svgEl("g", {});
+    b3.appendChild(svgEl("rect", {
+        x: -18, y: -1.5, width: 18, height: 3,
+        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+    }));
+    for (let i = 0; i < 4; i++) {
+        b3.appendChild(svgEl("line", {
+            x1: -16 + i * 4, y1: -1.5, x2: -16 + i * 4, y2: 1.5,
+            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+        }));
+    }
+    bladesGroup.appendChild(b3);
 
-            // Втулка
-            bladesGroup.appendChild(svgEl("circle", {
-                cx: 0, cy: 0, r: 2.5,
-                fill: "#78350f", stroke: "#451a03", "stroke-width": 1
-            }));
+    // Крило 4 (право)
+    const b4 = svgEl("g", {});
+    b4.appendChild(svgEl("rect", {
+        x: 0, y: -1.5, width: 18, height: 3,
+        fill: bladeColor, stroke: bladeStroke, "stroke-width": 1
+    }));
+    for (let i = 0; i < 4; i++) {
+        b4.appendChild(svgEl("line", {
+            x1: 2 + i * 4, y1: -1.5, x2: 2 + i * 4, y2: 1.5,
+            stroke: bladeStroke, "stroke-width": 0.4, opacity: "0.5"
+        }));
+    }
+    bladesGroup.appendChild(b4);
 
-            g.appendChild(bladesGroup);
+    // Втулка (центр)
+    bladesGroup.appendChild(svgEl("circle", {
+        cx: 0, cy: 0, r: 2.5,
+        fill: "#78350f", stroke: "#451a03", "stroke-width": 1
+    }));
 
-            svg.appendChild(g);
-        }
+    bladesPositioner.appendChild(bladesGroup);
+    g.appendChild(bladesPositioner);
 
+    svg.appendChild(g);
+}
         // ==========================================
         // ⛺ ТАБІР ВАРВАРІВ
         // ==========================================
