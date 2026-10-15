@@ -3,18 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.29.1</title>
+    <title>HexPolitics v5.30</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.29.1
+    ПОТОЧНА ВЕРСІЯ: v5.30
 
     НОВЕ:
-    - v5.29.1: фікс кольору воїна на нейтральній території
-               захоплення гексів через меню воїна (нічий — 10 золота, ворожий — безкоштовно)
-               ОКУПАЦІЯ: ворожий воїн/варвар на твоєму гексі (idle) блокує дохід
+    - v5.30: ЗОНА КОНТРОЛЮ (ЗК) — воїн і ратуша блокують захоплення
+             навколо них (6 сусідніх гексів)
+             Захоплення неможливе, якщо на гексі або ПОРУЧ стоїть
+             ворожий воїн/ратуша
+             При знищенні ратуші — 6 сусідніх гексів стають твоїми
+             Захоплення ЗБЕРІГАЄ тип гекса (ферма залишається фермою)
 
-    ФОРМАТ: файл розбито на 2 частини (Частина 1/2 — ця, Частина 2/2 — продовження)
+    ФОРМАТ: файл розбито на 3 частини
     ============================================
     -->
     <style>
@@ -50,6 +53,8 @@
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
         polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
+        /* Підсвічування зони контролю ворога */
+        polygon.hex.zoc-blocked { stroke: #ef4444 !important; stroke-width: 2 !important; stroke-dasharray: 4 2; }
 
         .map-icon { font-size: 16px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
         .mill-blades { transform-box: fill-box; transform-origin: 50% 50%; animation: millSpin 4s linear infinite; }
@@ -92,6 +97,7 @@
         .btn-repair { background: #0284c7; color: #fff; }
         .btn-capture { background: #10b981; color: #fff; }
         .btn-capture-enemy { background: #dc2626; color: #fff; }
+        .btn-disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
 
         .upgrade-info { background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
         .info-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: left; font-size: 12px; line-height: 1.4; }
@@ -142,8 +148,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.29.1</h2>
-            <p id="loader-desc">Захоплення гексів, окупація, фікс кольору...</p>
+            <h2 id="loader-status">HexPolitics v5.30</h2>
+            <p id="loader-desc">Зона контролю, знищення ратуші...</p>
         </div>
     </div>
 
@@ -272,7 +278,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.29.1";
+        const CURRENT_VERSION = "5.30";
 
         let mode = "login";
         let currentUsername = "";
@@ -360,7 +366,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.29.1"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -476,7 +482,6 @@
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
                 if (h.owner === username) {
-                    // ФІКС v5.29.1: якщо на гексі стоїть ВОРОЖИЙ воїн або варвар (idle) → гекс окуповано
                     const isOccupiedByEnemy = h.unit && 
                                               h.unit.owner !== username && 
                                               h.unit.state === 'idle';
@@ -485,7 +490,6 @@
                         if (h.type === 'core') baseLevel = h.level || 1;
                         if (h.type === 'farm') farmsCount += 1;
                     }
-                    // Утримання — все одно (гекс твій)
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') totalUpkeep += 2;
                 }
                 if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) totalUpkeep += 1;
@@ -707,7 +711,41 @@
             }
         }
 
-        async function processUnits(now, isOffline = false) {
+        // ===== ЗОНА КОНТРОЛЮ =====
+        // Повертає true, якщо гекс (r, c) знаходиться у зоні контролю будь-якого ВОРОЖОГО воїна/ратуші.
+        // "Ворожого" = owner !== currentUsername і owner !== '__barbarian__' (варвари не створюють ЗК).
+        // Свій власний воїн на цьому гексі — не заважає (бо він сам ЗК не створює проти себе).
+        function isHexInEnemyZOC(r, c) {
+            const targetKey = `${r}_${c}`;
+            const neighbors = getNeighbors(r, c);
+            const checkHexes = [{ key: targetKey, r, c }, ...neighbors];
+
+            for (const cell of checkHexes) {
+                const h = hexWorldData[cell.key];
+                if (!h) continue;
+                if (!h.unit) continue;
+                const unitOwner = h.unit.owner;
+                if (!unitOwner) continue;
+                if (unitOwner === currentUsername) continue;   // свій — не заважає
+                if (unitOwner === '__barbarian__') continue;   // варвар — не створює ЗК
+                return true;   // ворожий воїн знайдено (на гексі або поряд)
+            }
+
+            // Перевіряємо ворожі ратуші навколо (ратуша має ЗК радіус 1)
+            for (const cell of checkHexes) {
+                const h = hexWorldData[cell.key];
+                if (!h) continue;
+                if (h.type !== 'core') continue;
+                const hexOwner = h.owner;
+                if (!hexOwner) continue;
+                if (hexOwner === currentUsername) continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        // ===== МІСЦЕ ДЛЯ ЧАСТИНИ 2/3 =====        async function processUnits(now, isOffline = false) {
             const updates = {};
             const messages = [];
             const touched = new Set();
@@ -813,6 +851,7 @@
 
                     if (targetUnit && targetUnit.owner === currentUsername) { updates[`${srcPath}/unit`] = stopTravel(unit); return; }
 
+                    // === ЗНИЩЕННЯ РАТУШІ v5.30 ===
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
                         if (touched.has(targetKey)) return;
                         touched.add(key); touched.add(targetKey);
@@ -821,9 +860,40 @@
                         coreHp -= attacker.dmg;
                         attacker.hp -= 30;
                         if (coreHp <= 0) {
-                            updates[`world_hexes/${targetKey}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'starter', isPurchased: false, unit: stopTravel(attacker) };
+                            // Ратуша знищена: гекс + 6 сусідніх стають твоїми, ратуша зникає
+                            const loser = targetHex.owner;
+                            const myColor = getPlayerColor(currentUsername);
+                            updates[`world_hexes/${targetKey}`] = {
+                                owner: currentUsername,
+                                color: myColor,
+                                type: 'purchased',
+                                isPurchased: true,
+                                unit: stopTravel(attacker)
+                            };
+                            // Сусідні гекси (6 штук) — стають твоїми
+                            const neighbors = getNeighbors(parseInt(targetKey.split('_')[0]), parseInt(targetKey.split('_')[1]));
+                            neighbors.forEach(n => {
+                                const nHex = hexWorldData[n.key];
+                                if (!nHex) return;
+                                if (nHex.type === 'chasm') return;
+                                if (nHex.owner === currentUsername) return;   // вже твій — не чіпаємо
+                                // Стає твоїм
+                                const nUpdates = {
+                                    owner: currentUsername,
+                                    color: myColor,
+                                    type: nHex.type,           // зберігаємо тип (farm/mill/starter/purchased)
+                                    isPurchased: nHex.isPurchased || true,
+                                    unit: nHex.unit || null
+                                };
+                                // Якщо на сусідньому гексі стоїть чужий воїн — він залишається
+                                if (nHex.unit && nHex.unit.owner !== currentUsername) {
+                                    nUpdates.unit = nHex.unit;
+                                }
+                                updates[`world_hexes/${n.key}`] = nUpdates;
+                                touched.add(n.key);
+                            });
                             updates[`${srcPath}/unit`] = null;
-                            messages.push("💥 Ратушу ворога зруйновано!");
+                            messages.push("💥 Ратушу ворога знищено! Сусідні гекси переходять до тебе!");
                         } else if (attacker.hp <= 0) {
                             updates[`${srcPath}/unit`] = null;
                             updates[`world_hexes/${targetKey}/hp`] = coreHp;
@@ -1060,8 +1130,7 @@
             });
         }
 
-        // === МІСЦЕ ДЛЯ ЧАСТИНИ 2/2 ===
-                function handleHexClick(r, c) {
+        function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
@@ -1312,6 +1381,7 @@
             activeSelection = null;
         }
 
+        // ===== МЕНЮ ВОЇНА (v5.30: з перевіркою ЗК) =====
         function openUnitModal(r, c, hexInfo) {
             hideAllModals();
             const unitId = hexInfo.unit && hexInfo.unit.id ? hexInfo.unit.id : null;
@@ -1331,15 +1401,21 @@
                 btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна</button>`;
                 if (u.hp < u.maxHp) btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати (10 💰)</button>`;
 
-                // === НОВЕ v5.29.1: кнопки захоплення гекса ===
+                // === НОВЕ v5.30: кнопки захоплення з перевіркою ЗК ===
                 const hexOwner = hexInfo.owner;
                 const hexType = hexInfo.type;
                 if (hexOwner !== currentUsername) {
-                    if (!hexOwner) {
+                    // Перевірка зони контролю
+                    const blockedByZOC = isHexInEnemyZOC(r, c);
+
+                    if (blockedByZOC) {
+                        // Заблоковано ворожим воїном/ратушею поруч
+                        btns += `<button class="btn-disabled" disabled>🚫 Зона контролю ворога</button>`;
+                    } else if (!hexOwner) {
                         // Нічий гекс — платне захоплення
                         btns += `<button class="btn-capture" onclick="captureHex(${r}, ${c})">🌍 Захопити гекс (10 💰)</button>`;
-                    } else if (hexType !== 'barbarian_camp' && hexType !== 'core' && !hexInfo.unit) {
-                        // Ворожий гекс — безкоштовне відвоювання (немає ворожого воїна, не табір, не ратуша)
+                    } else if (hexType !== 'barbarian_camp' && hexType !== 'core' && !(hexInfo.unit && hexInfo.unit.owner !== currentUsername)) {
+                        // Ворожий гекс — безкоштовне відвоювання
                         btns += `<button class="btn-capture-enemy" onclick="captureHex(${r}, ${c})">⚔️ Відвоювати гекс</button>`;
                     }
                 }
@@ -1395,9 +1471,8 @@
         window.switchToCell = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (h) openCellForHex(r, c, h); }
         window.switchToUnit = function(r, c) { const h = hexWorldData[`${r}_${c}`]; if (isMyUnit(h)) openUnitModal(r, c, h); }
 
-        // === НОВЕ v5.29.1: захоплення гекса ===
-        // Нічий гекс → платиш 10 золота → гекс твій
-        // Ворожий гекс (без воїна, не табір, не ратуша) → безкоштовно → гекс твій
+        // ===== ЗАХОПЛЕННЯ ГЕКСА (v5.30: з перевіркою ЗК) =====
+        // Захоплення ЗБЕРІГАЄ тип гекса (farm залишається farm, mill залишається mill, тощо)
         window.captureHex = async function(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
@@ -1413,9 +1488,14 @@
                 return;
             }
 
-            // Перевіряємо, чи воїн дійсно стоїть на цьому гексі
             if (!isMyUnit(hexInfo)) {
                 alert("Тут немає вашого воїна!");
+                return;
+            }
+
+            // Перевірка ЗК — не можна захопити, якщо поруч ворог
+            if (isHexInEnemyZOC(r, c)) {
+                alert("Неможливо захопити: гекс у зоні контролю ворога! Прибери ворожого воїна або зруйнуй ратушу.");
                 return;
             }
 
@@ -1426,7 +1506,6 @@
                     return;
                 }
                 const updates = {};
-                // Зберігаємо воїна, який стоїть на гексі
                 updates[`world_hexes/${key}`] = {
                     owner: currentUsername,
                     color: getPlayerColor(currentUsername),
@@ -1464,12 +1543,14 @@
                     return;
                 }
 
+                // v5.30: ЗБЕРІГАЄМО тип гекса, змінюємо тільки власника і колір
                 const updates = {};
+                const preservedType = hexInfo.type;   // farm / mill / starter / purchased / bridge
                 updates[`world_hexes/${key}`] = {
                     owner: currentUsername,
                     color: getPlayerColor(currentUsername),
-                    type: 'purchased',
-                    isPurchased: true,
+                    type: preservedType,
+                    isPurchased: hexInfo.isPurchased || false,
                     unit: hexInfo.unit || null
                 };
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1686,7 +1767,9 @@
             });
         }
 
-        // ===== РЕНДЕРИНГ =====
+        // ===== МІСЦЕ ДЛЯ ЧАСТИНИ 3/3 =====
+
+                // ===== РЕНДЕРИНГ =====
         function svgEl(tag, attrs) {
             const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
             for (const k in attrs) el.setAttribute(k, attrs[k]);
@@ -1893,7 +1976,7 @@
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
-                el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex');
+                el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex', 'zoc-blocked');
             });
 
             const unitQueue = [];
@@ -1936,7 +2019,6 @@
 
                 if (hasUnit) {
                     const isBarb = hexData.unit.type === 'barbarian';
-                    // ФІКС v5.29.1: колір воїна — завжди від ВЛАСНИКА (не від гекса)
                     const unitColor = isBarb ? '#dc2626' : getPlayerColor(hexData.unit.owner);
                     unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: plain });
                 }
@@ -1946,6 +2028,23 @@
                 if (u.big) renderUnitBadge(svg, u.center.x, u.center.y, 15, u.unit, u.color, u.barbarian);
                 else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
             });
+
+            // v5.30: підсвічування зони контролю ворога — тільки коли відкрито меню воїна
+            if (activeSelection && activeSelection.layer === 'unit') {
+                const [ar, ac] = activeSelection.key.split('_').map(Number);
+                const myHex = hexWorldData[activeSelection.key];
+                if (isMyUnit(myHex) && myHex.unit.state === 'idle') {
+                    // Підсвітити всі гекси в ЗК (червона пунктирна рамка)
+                    Object.keys(hexWorldData).forEach(k => {
+                        const [kr, kc] = k.split('_').map(Number);
+                        const poly = document.getElementById(`hex-${kr}-${kc}`);
+                        if (!poly) return;
+                        if (isHexInEnemyZOC(kr, kc)) {
+                            poly.classList.add('zoc-blocked');
+                        }
+                    });
+                }
+            }
 
             renderBattleHPBars(svg);
 
