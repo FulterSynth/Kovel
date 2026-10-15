@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.7 (Fixed)</title>
+    <title>HexPolitics v5.8 (Admin Infinite Gold)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body, html { height: 100%; width: 100%; overflow: hidden; background: #0f172a; color: #fff; user-select: none; -webkit-user-select: none; }
@@ -75,7 +75,6 @@
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
         polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
 
-        /* Яскраве підсвічування цілей руху */
         polygon.hex.target-highlight {
             stroke: #10b981 !important;
             stroke-width: 3.5 !important;
@@ -88,7 +87,6 @@
             100% { fill-opacity: 0.55; stroke-width: 4; }
         }
 
-        /* Іконки на гексах */
         .map-icon {
             font-size: 16px;
             text-anchor: middle;
@@ -114,7 +112,6 @@
             letter-spacing: 0.5px;
         }
 
-        /* Верхня панель користувача */
         #user-bar {
             position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(30, 41, 59, 0.95);
             padding: 8px 12px; border-radius: 10px; border: 1px solid #334155;
@@ -138,7 +135,6 @@
 
         .btn-wipe { background: #b91c1c !important; border: 1px solid #f87171 !important; }
 
-        /* Кнопки Zoom */
         #zoom-controls {
             position: absolute; right: 15px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 500;
         }
@@ -150,7 +146,6 @@
         }
         .zoom-btn:hover { background: #3b82f6; }
 
-        /* Модальні вікна */
         .modal {
             display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px;
@@ -202,8 +197,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.7</h2>
-            <p id="loader-desc">Виправлення будівництва, підсвічування руху воїнів та текстури мосту...</p>
+            <h2 id="loader-status">HexPolitics v5.8</h2>
+            <p id="loader-desc">Активація безкінечного золота для адміністратора...</p>
         </div>
     </div>
 
@@ -306,7 +301,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin"; 
-        const CURRENT_VERSION = "5.7";
+        const CURRENT_VERSION = "5.8";
 
         let mode = "login";
         let currentUsername = "";
@@ -345,8 +340,8 @@
 
         function showUpdateScreen() {
             const loader = document.getElementById('update-loader');
-            document.getElementById('loader-status').innerText = "HexPolitics v5.7";
-            document.getElementById('loader-desc').innerText = "Оновлення коду та виправлення помилок...";
+            document.getElementById('loader-status').innerText = "HexPolitics v5.8";
+            document.getElementById('loader-desc').innerText = "Налаштування безкінечного золота для admin...";
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
@@ -412,7 +407,7 @@
                     }
                     await set(ref(db, 'users/' + user), { 
                         password: pass,
-                        gold: 0,
+                        gold: user.toLowerCase() === ADMIN_USERNAME.toLowerCase() ? 999999 : 0,
                         townHallLevel: 1,
                         lastOnline: Date.now()
                     });
@@ -429,6 +424,11 @@
                     currentUsername = user;
                     const userData = snapshot.val();
                     
+                    // Якщо це admin, автоматично встановлюємо безкінечне золото в базі
+                    if (currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+                        await update(ref(db, `users/${currentUsername}`), { gold: 999999 });
+                    }
+
                     const worldSnap = await get(child(dbRef, 'world_hexes'));
                     hexWorldData = worldSnap.exists() ? worldSnap.val() : {};
 
@@ -484,10 +484,16 @@
         }
 
         // ==========================================
-        // ЕКОНОМІКА ТА ОБРАХУНОК ДОХОДУ
+        // ЕКОНОМІКА ТА БЕЗКІНЕЧНЕ ЗОЛОТО ADMIN
         // ==========================================
 
+        function isAdmin() {
+            return currentUsername && currentUsername.toLowerCase() === ADMIN_USERNAME.toLowerCase();
+        }
+
         function calculateRawIncome(username, worldHexes) {
+            if (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) return 9999;
+            
             let baseLevel = 1;
             let totalUpkeep = 0; 
             let farmsCount = 0;
@@ -498,15 +504,12 @@
                     if (h.type === 'core') {
                         baseLevel = h.level || 1;
                     }
-                    
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') {
                         totalUpkeep += 2; 
                     }
-                    
                     if (h.type === 'farm') {
                         farmsCount += 1;
                     }
-
                     if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) {
                         totalUpkeep += 1;
                     }
@@ -533,6 +536,7 @@
         }
 
         function calculateEffectiveIncome(username, worldHexes) {
+            if (username && username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) return 9999;
             let raw = calculateRawIncome(username, worldHexes);
             return Math.max(1, raw);
         }
@@ -549,13 +553,13 @@
             const diffMinutes = (now - lastTime) / 60000;
 
             let currentGold = userData.gold || 0;
-
-            if (diffMinutes > 0.2) {
+            if (username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+                currentGold = 999999;
+            } else if (diffMinutes > 0.2) {
                 const hasBase = Object.values(worldHexes).some(h => h.owner === username && h.type === 'core');
                 if (hasBase) {
                     const incomePerMin = calculateEffectiveIncome(username, worldHexes);
-                    const earnedGold = diffMinutes * incomePerMin;
-                    currentGold += earnedGold;
+                    currentGold += (diffMinutes * incomePerMin);
                 }
             }
 
@@ -631,7 +635,7 @@
                     const usersData = usersSnapshot.val();
                     const updates = {};
                     Object.keys(usersData).forEach(u => {
-                        updates[`users/${u}/gold`] = 0;
+                        updates[`users/${u}/gold`] = (u.toLowerCase() === ADMIN_USERNAME.toLowerCase() ? 999999 : 0);
                         updates[`users/${u}/townHallLevel`] = 1;
                     });
                     await update(ref(db), updates);
@@ -644,6 +648,11 @@
         }
 
         function updateIncomeDisplay() {
+            if (isAdmin()) {
+                document.getElementById('user-gold-display').innerText = "∞ (999k)";
+                document.getElementById('income-speed-text').innerHTML = "(∞/хв)";
+                return;
+            }
             const raw = calculateRawIncome(currentUsername, hexWorldData);
             const effective = Math.max(1, raw);
             
@@ -659,9 +668,14 @@
             onValue(userRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
-                    userGold = data.gold || 0;
+                    userGold = isAdmin() ? 999999 : (data.gold || 0);
                     userTownHallLevel = data.townHallLevel || 1;
-                    document.getElementById('user-gold-display').innerText = Math.floor(userGold);
+                    
+                    if (isAdmin()) {
+                        document.getElementById('user-gold-display').innerText = "∞";
+                    } else {
+                        document.getElementById('user-gold-display').innerText = Math.floor(userGold);
+                    }
                     updateIncomeDisplay();
                 }
             });
@@ -671,6 +685,11 @@
             if (incomeInterval) clearInterval(incomeInterval);
             
             incomeInterval = setInterval(async () => {
+                if (isAdmin()) {
+                    await update(ref(db, `users/${currentUsername}`), { gold: 999999, lastOnline: Date.now() });
+                    return;
+                }
+
                 const userHasBase = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
                 if (userHasBase) {
                     try {
@@ -695,7 +714,7 @@
         }
 
         // ==========================================
-        // АВТОМАТИЧНИЙ БІЙ ТА РУХ ЮНІТІВ
+        // АВТОМАТИЧНИЙ БІЙ ТА РУХ
         // ==========================================
 
         function startGameLoop() {
@@ -747,7 +766,8 @@
 
                                     if (targetHex.type === 'barbarian_camp') {
                                         const reward = targetHex.reward || 100;
-                                        updates[`users/${currentUsername}/gold`] = userGold + reward;
+                                        const goldToAdd = isAdmin() ? 0 : reward;
+                                        updates[`users/${currentUsername}/gold`] = isAdmin() ? 999999 : (userGold + goldToAdd);
                                         updates[`world_hexes/${targetKey}`] = {
                                             owner: currentUsername,
                                             color: h.color,
@@ -755,7 +775,7 @@
                                             isPurchased: true,
                                             unit: attacker
                                         };
-                                        alert(`🎉 Ви зачистили табір варварів та здобули скарб: +${reward} золота!`);
+                                        alert(`🎉 Ви зачистили табір варварів та здобули скарб!`);
                                     }
                                 } else if (attacker.hp <= 0) {
                                     updates[`world_hexes/${key}/unit`] = null;
@@ -1007,7 +1027,6 @@
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h.owner === currentUsername && h.type === 'core');
 
-            // Режим пересування воїна
             if (isSelectingMoveTarget) {
                 if (movingUnitCoords) {
                     const { r: sr, c: sc } = movingUnitCoords;
@@ -1029,7 +1048,6 @@
                 return;
             }
 
-            // Якщо клітинка належить гравцю
             if (hexInfo && hexInfo.owner === currentUsername) {
                 if (hexInfo.type === 'core') {
                     openTownHallModal(hexInfo);
@@ -1039,19 +1057,16 @@
                 return;
             }
 
-            // Табір варварів
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
                 openTerritoryModal(r, c, hexInfo);
                 return;
             }
 
-            // Чужа територія
             if (hexInfo && hexInfo.owner && hexInfo.owner !== currentUsername && hexInfo.type !== 'chasm') {
                 alert(`Ця територія належить володарю: ${hexInfo.owner}`);
                 return;
             }
 
-            // Заснування бази
             if (!userHasBaseOnMap) {
                 if (hexInfo && hexInfo.type === 'chasm') {
                     alert('Не можна засновувати базу всередині прірви!');
@@ -1066,7 +1081,6 @@
                 return;
             }
 
-            // Побудова мосту через прірву
             if (hexInfo && hexInfo.type === 'chasm') {
                 if (!isBridgeAccessible(r, c)) {
                     alert('Занадто далеко від вашої території!');
@@ -1077,7 +1091,6 @@
                 return;
             }
 
-            // Купівля нейтральної землі
             const neighbors = getNeighbors(r, c);
             const isAdjacentToMyTerritory = neighbors.some(n => hexWorldData[n.key] && hexWorldData[n.key].owner === currentUsername && hexWorldData[n.key].type !== 'chasm');
 
@@ -1091,7 +1104,7 @@
         }
 
         // ==========================================
-        // МОДАЛЬНІ ВІКНА ТА ДІЇ
+        // МОДАЛЬНІ ВІКНА ТА ДІЇ (БЕЗКОШТОВНО ДЛЯ ADMIN)
         // ==========================================
 
         function openBaseModal() {
@@ -1185,7 +1198,7 @@
 
             let costText = userTownHallLevel === 1 ? "14 золота" : (userTownHallLevel === 2 ? "42 золота" : "—");
             let canUpgrade = userTownHallLevel < 3;
-            let totalInc = calculateEffectiveIncome(currentUsername, hexWorldData);
+            let totalInc = isAdmin() ? "∞" : calculateEffectiveIncome(currentUsername, hexWorldData);
 
             infoContainer.innerHTML = `
                 <div><b>Рівень ратуші:</b> ${userTownHallLevel}</div>
@@ -1213,7 +1226,7 @@
         }
 
         window.repairTownHall = async function() {
-            if (userGold < 15) {
+            if (!isAdmin() && userGold < 15) {
                 alert("Недостатньо золота для ремонту! Потрібно 15 золота.");
                 return;
             }
@@ -1227,7 +1240,7 @@
 
             const updates = {};
             updates[`world_hexes/${coreKey}/hp`] = 200;
-            updates[`users/${currentUsername}/gold`] = userGold - 15;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1241,7 +1254,7 @@
 
         window.upgradeTownHall = async function() {
             let cost = userTownHallLevel === 1 ? 14 : (userTownHallLevel === 2 ? 42 : 0);
-            if (userGold < cost) {
+            if (!isAdmin() && userGold < cost) {
                 alert(`Недостатньо золота! Потрібно ${cost} золота.`);
                 return;
             }
@@ -1255,7 +1268,7 @@
                 });
 
                 const updates = {};
-                updates[`users/${currentUsername}/gold`] = userGold - cost;
+                if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - cost;
                 updates[`users/${currentUsername}/townHallLevel`] = userTownHallLevel + 1;
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
                 if (coreHexKey) {
@@ -1271,7 +1284,7 @@
         }
 
         window.recruitClubman = async function() {
-            if (userGold < 15) {
+            if (!isAdmin() && userGold < 15) {
                 alert("Недостатньо золота! Потрібно 15 золота.");
                 return;
             }
@@ -1305,7 +1318,7 @@
                 dmg: 25,
                 state: 'idle'
             };
-            updates[`users/${currentUsername}/gold`] = userGold - 15;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1336,7 +1349,7 @@
         }
 
         window.buildBridge = async function(r, c) {
-            if (userGold < 30) {
+            if (!isAdmin() && userGold < 30) {
                 alert("Недостатньо золота! Потрібно 30 золота.");
                 return;
             }
@@ -1354,7 +1367,7 @@
                 type: 'bridge',
                 isPurchased: true
             };
-            updates[`users/${currentUsername}/gold`] = userGold - 30;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 30;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1453,7 +1466,7 @@
         }
 
         window.buyTerritory = async function(r, c) {
-            if (userGold < 10) {
+            if (!isAdmin() && userGold < 10) {
                 alert("Недостатньо золота! Потрібно 10 золота.");
                 return;
             }
@@ -1471,7 +1484,7 @@
                 type: 'purchased',
                 isPurchased: true
             };
-            updates[`users/${currentUsername}/gold`] = userGold - 10;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1488,7 +1501,6 @@
             isSelectingMoveTarget = true;
             movingUnitCoords = { r, c };
 
-            // Підсвічуємо всі доступні сусідні гекси зеленим
             const neighbors = getNeighbors(r, c);
             neighbors.forEach(n => {
                 const polygon = document.getElementById(`hex-${n.r}-${n.c}`);
@@ -1535,7 +1547,7 @@
         }
 
         window.healUnit = async function(r, c) {
-            if (userGold < 10) {
+            if (!isAdmin() && userGold < 10) {
                 alert("Недостатньо золота! Потрібно 10 золота.");
                 return;
             }
@@ -1548,7 +1560,7 @@
 
             const updates = {};
             updates[`world_hexes/${key}/unit`] = hex.unit;
-            updates[`users/${currentUsername}/gold`] = userGold - 10;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 10;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1562,7 +1574,7 @@
 
         window.buildBuilding = async function(r, c, type) {
             const cost = type === 'farm' ? 10 : 20; 
-            if (userGold < cost) {
+            if (!isAdmin() && userGold < cost) {
                 alert(`Недостатньо золота! Потрібно ${cost} золота.`);
                 return;
             }
@@ -1584,7 +1596,7 @@
                 isPurchased: wasPurchased,
                 unit: currentHex ? currentHex.unit : null
             };
-            updates[`users/${currentUsername}/gold`] = userGold - cost;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1597,7 +1609,7 @@
         }
 
         window.demolishBuilding = async function(r, c) {
-            if (userGold < 5) {
+            if (!isAdmin() && userGold < 5) {
                 alert("Недостатньо золота для знесення! Потрібно 5 золота.");
                 return;
             }
@@ -1617,7 +1629,7 @@
                 isPurchased: wasPurchased,
                 unit: hexInfo.unit || null
             };
-            updates[`users/${currentUsername}/gold`] = userGold - 5;
+            if (!isAdmin()) updates[`users/${currentUsername}/gold`] = userGold - 5;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
 
             try {
@@ -1639,14 +1651,13 @@
         }
 
         // ==========================================
-        // ОНОВЛЕНИЙ ВЕКТОРНИЙ РЕНДЕРИНГ
+        // ВЕКТОРНИЙ РЕНДЕРИНГ
         // ==========================================
 
         function renderBridgeVector(svg, center) {
             const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
             g.setAttribute("class", "map-icon");
 
-            // Головні дерев'яні балки мосту
             const b1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
             b1.setAttribute("x1", center.x - 14); b1.setAttribute("y1", center.y - 7);
             b1.setAttribute("x2", center.x + 14); b1.setAttribute("y2", center.y - 7);
@@ -1657,7 +1668,6 @@
             b2.setAttribute("x2", center.x + 14); b2.setAttribute("y2", center.y + 7);
             b2.setAttribute("stroke", "#d97706"); b2.setAttribute("stroke-width", "3");
 
-            // Поперечні дошки
             for (let dx = -10; dx <= 10; dx += 5) {
                 const plank = document.createElementNS("http://www.w3.org/2000/svg", "line");
                 plank.setAttribute("x1", center.x + dx); plank.setAttribute("y1", center.y - 8);
