@@ -1295,14 +1295,20 @@
             btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
+                // Показуємо крапки маршруту для рухомого воїна
+    clearRouteDots();
+    if (u.state === 'moving') {
+        const svg = document.getElementById('hex-svg');
+        setTimeout(() => renderUnitRouteDots(svg, u, `${r}_${c}`), 30);
+    }
         }
 
         window.closeUnitModal = function() {
-            document.getElementById('unit-modal').style.display = 'none';
-            activeSelection = null;
-            renderWorldData();
-        }
-
+    document.getElementById('unit-modal').style.display = 'none';
+    activeSelection = null;
+    clearRouteDots();
+    renderWorldData();
+}
         function refreshUnitModal() {
             const modal = document.getElementById('unit-modal');
             if (!modal || modal.style.display !== 'block' || !activeSelection || activeSelection.layer !== 'unit') return;
