@@ -3,26 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.12</title>
+    <title>HexPolitics v5.30.13</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.12
+    ПОТОЧНА ВЕРСІЯ: v5.30.13
 
     ЩО ЗМІНИЛОСЬ:
-    - v5.30.12: ДОГІН ЧУЖИХ ЮНІТІВ
-               * processUnits обробляє юнітів БУДЬ-ЯКОГО власника
-               * Догін руху + бою для чужих воїнів (1Б — за станом юніта)
-               * Золото зараховується ВЛАСНИКУ юніта (2А)
-               * Повідомлення — тільки про СВОЇХ (3А)
-               * Стан юніта (moving/idle/fighting) — це перевірка "чи вже оброблено"
-    - v5.30.11: НОВЕ МЕНЮ КЛІТИНКИ (дохід/утримання/баланс без емодзі)
+    - v5.30.13: ПРОДАЖ ЗЕМЛІ ТА ФІКСИ
+               * Продаж своїх пустих клітинок за 5 золота
+               * Навколо ратуші 6 гексів безкоштовні (утримання 0)
+               * Куплена земля завжди -2 (навіть з фермою)
+               * Фікс: офлайн-авторемонт чужих ратуш
+               * Фікс: утримання показується правильно
+    - v5.30.12: ДОГІН ЧУЖИХ ЮНІТІВ (рух + бій + золото власнику)
+    - v5.30.11: НОВЕ МЕНЮ КЛІТИНКИ
     - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ
-    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ (формат 2:30)
-    - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ (30 сек/крок)
-    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ (шкала HP, древня дубина)
-    - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ (атака на ратушу)
-    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ (сумарний урон, ліміт 6, обхід)
+    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ
+    - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ
+    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ
+    - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ
+    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ
     - v5.30.2: ВИПРАВЛЕНО помилку авторизації
 
     ФОРМАТ: файл розбито на 5 частин
@@ -108,6 +109,7 @@
         .btn-capture { background: #10b981; color: #fff; }
         .btn-capture-enemy { background: #dc2626; color: #fff; }
         .btn-attack-core { background: #b91c1c; color: #fff; border: 2px solid #f87171 !important; }
+        .btn-sell { background: #b45309; color: #fff; }
         .btn-disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
 
         .upgrade-info { background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #334155; text-align: left; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -164,8 +166,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.12</h2>
-            <p id="loader-desc">Догін чужих юнітів...</p>
+            <h2 id="loader-status">HexPolitics v5.30.13</h2>
+            <p id="loader-desc">Продаж землі та фікси...</p>
         </div>
     </div>
 
@@ -303,7 +305,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.12";
+        const CURRENT_VERSION = "5.30.13";
 
         let mode = "login";
         let currentUsername = "";
@@ -322,6 +324,7 @@
         const MOVE_STEP_MS = 60000;
         const MOVE_STEP_FAST_MS = 30000;
         const MAX_ATTACKERS = 6;
+        const SELL_TERRITORY_REWARD = 5;   // ===== НОВЕ 5.30.13: ціна продажу клітинки =====
 
         // ===== 5.30.10: лікування та авторемонт =====
         const HEAL_UNIT_COST = 20;
@@ -384,6 +387,23 @@
             return { newHp: newHp, newLastHealAt: now, changed: true };
         }
 
+        // ===== НОВЕ 5.30.13: чи гекс сусід МОЄЇ ратуші =====
+        // Використовується для безкоштовної землі навколо ратуші
+        function isAdjacentToMyCore(hexKey) {
+            const parts = hexKey.split('_');
+            const r = parseInt(parts[0]);
+            const c = parseInt(parts[1]);
+            if (isNaN(r) || isNaN(c)) return false;
+            const neighbors = getNeighbors(r, c);
+            for (const n of neighbors) {
+                const nh = hexWorldData[n.key];
+                if (nh && nh.type === 'core' && nh.owner === currentUsername) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // ===== 5.30.11: розбір доходу/утримання гекса =====
         function getHexIncomeBreakdown(hexInfo) {
             const result = { income: 0, upkeep: 0, balance: 0, description: '', extraLines: [] };
@@ -428,9 +448,7 @@
         let dragStartY = 0;
         let isClick = true;
 
-        // ===== НОВЕ 5.30.12: черга золота по власниках (2А) =====
-        // Ключ — username, значення — сума золота (може бути кілька надходжень для одного власника)
-        // Використовується всередині processUnits, щоб групувати goldBonus
+        // ===== 5.30.12: черга золота по власниках =====
         let pendingGoldByOwner = {};
 
         function generateUnitId() {
@@ -477,7 +495,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.12"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.13"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -591,9 +609,11 @@
 // ===== КІНЕЦЬ ЧАСТИНИ 1/5 =====
 
                                                 // ===== ЕКОНОМІКА =====
+        // ===== ОНОВЛЕНО 5.30.13: гекси навколо МОЄЇ ратуші не мають -2 =====
         function calculateRawIncome(username, worldHexes) {
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
-            Object.values(worldHexes).forEach(h => {
+            Object.keys(worldHexes).forEach(key => {
+                const h = worldHexes[key];
                 if (h.owner === username) {
                     const isOccupiedByEnemy = h.unit && 
                                               h.unit.owner !== username && 
@@ -603,7 +623,28 @@
                         if (h.type === 'core') baseLevel = h.level || 1;
                         if (h.type === 'farm') farmsCount += 1;
                     }
-                    if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') totalUpkeep += 2;
+                    // ===== 5.30.13: -2 тільки якщо це НЕ гекс навколо МОЄЇ ратуші =====
+                    if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') {
+                        // Перевірка: чи це сусід моєї ратуші?
+                        const [r, c] = key.split('_').map(Number);
+                        let isNearMyCore = false;
+                        if (!isNaN(r) && !isNaN(c)) {
+                            const neighbors = getNeighbors(r, c);
+                            for (const n of neighbors) {
+                                const nh = worldHexes[n.key];
+                                if (nh && nh.type === 'core' && nh.owner === username) {
+                                    isNearMyCore = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // Міст завжди -2 (навіть навколо ратуші) — 5Б
+                        if (h.type === 'bridge') {
+                            totalUpkeep += 2;
+                        } else if (!isNearMyCore) {
+                            totalUpkeep += 2;
+                        }
+                    }
                 }
                 if (h.unit && h.unit.type === 'clubman' && h.unit.owner === username) totalUpkeep += 1;
             });
@@ -656,32 +697,35 @@
             return changed;
         }
 
-        // ===== офлайн авторемонт ратуші =====
-        async function processOfflineCoreHeal(username, worldHexes) {
+        // ===== ОНОВЛЕНО 5.30.13: processOfflineCoreHeal без username, обробляє ВСІ ратуші =====
+        async function processOfflineCoreHeal(worldHexes) {
             const now = Date.now();
             const updates = {};
-            let healedCount = 0;
             let totalHealed = 0;
+            let myHealed = 0;  // окремо для повідомлення
 
             Object.keys(worldHexes).forEach(key => {
                 const h = worldHexes[key];
                 if (!h || h.type !== 'core') return;
-                if (h.owner !== username) return;
+                // ===== БЕЗ перевірки власника — обробляємо ВСІ =====
                 const result = computeCoreAutoHeal(h, now);
                 if (result && result.changed) {
                     updates[`world_hexes/${key}/hp`] = result.newHp;
                     updates[`world_hexes/${key}/lastHealAt`] = result.newLastHealAt;
-                    healedCount++;
                     totalHealed += (result.newHp - (h.hp || 0));
+                    if (h.owner === currentUsername) {
+                        myHealed += (result.newHp - (h.hp || 0));
+                    }
                 }
             });
 
             if (Object.keys(updates).length > 0) {
                 try {
                     await update(ref(db), updates);
+                    // Оновлюємо локальну копію
                     Object.keys(worldHexes).forEach(key => {
                         const h = worldHexes[key];
-                        if (!h || h.type !== 'core' || h.owner !== username) return;
+                        if (!h || h.type !== 'core') return;
                         if (updates[`world_hexes/${key}/hp`] !== undefined) {
                             h.hp = updates[`world_hexes/${key}/hp`];
                             h.lastHealAt = updates[`world_hexes/${key}/lastHealAt`];
@@ -689,7 +733,8 @@
                     });
                 } catch (err) { console.error('Помилка офлайн-авторемонту:', err); }
             }
-            return { healedCount, totalHealed };
+            // ===== 3А: повертаємо тільки моє (для повідомлення) =====
+            return { totalHealed, myHealed };
         }
 
         async function processOfflineProgress(username, userData, worldHexes) {
@@ -712,12 +757,13 @@
                 setTimeout(() => { alert(`💰 Поки вас не було (${timeText}), накапало: +${Math.floor(earnedGold)} золота!`); }, 700);
             }
 
-            // офлайн-авторемонт ратуш
+            // офлайн-авторемонт ратуш (усіх)
             if (diffMinutes > 0.2) {
-                const healResult = await processOfflineCoreHeal(username, worldHexes);
-                if (healResult.totalHealed >= 1) {
+                const healResult = await processOfflineCoreHeal(worldHexes);
+                // ===== 3А: показуємо ТІЛЬКИ про мою ратушу =====
+                if (healResult.myHealed >= 1) {
                     setTimeout(() => {
-                        alert(`🔧 Поки вас не було, ратуша відремонтувалась на +${Math.round(healResult.totalHealed)} HP!`);
+                        alert(`🔧 Поки вас не було, ваша ратуша відремонтувалась на +${Math.round(healResult.myHealed)} HP!`);
                     }, 1500);
                 }
             }
@@ -826,8 +872,7 @@
             }, 20000);
         }
 
-        // ===== НОВЕ 5.30.12: онлайн-цикл авторемонту — тепер обробляє ВСІ ратуші =====
-        // Потрібно для повного догону (щоб чужі ратуші теж ремонтувались, поки я ONLINE)
+        // ===== 5.30.12: онлайн-цикл авторемонту — обробляє ВСІ ратуші =====
         let autoHealInterval = null;
         function startAutoHealLoop() {
             if (autoHealInterval) clearInterval(autoHealInterval);
@@ -841,7 +886,6 @@
                 Object.keys(hexWorldData).forEach(key => {
                     const h = hexWorldData[key];
                     if (!h || h.type !== 'core') return;
-                    // ===== 5.30.12: без перевірки власника — обробляємо всі =====
                     const result = computeCoreAutoHeal(h, now);
                     if (result && result.changed) {
                         updates[`world_hexes/${key}/hp`] = result.newHp;
@@ -974,8 +1018,6 @@
             return null;
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: findAttackersOf тепер повертає атакуючих БУДЬ-ЯКОГО власника =====
-        // Але тільки тих, хто зараз у стані 'fighting' з targetKey
         function findAttackersOf(targetKey) {
             const result = [];
             Object.keys(hexWorldData).forEach(k => {
@@ -1003,8 +1045,6 @@
             return result;
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: handleCoreDestroyed повертає більше інформації =====
-        // Тепер треба знати, кому зараховувати золото-трофей (власнику атакуючого)
         async function handleCoreDestroyed(targetKey, targetHex, attackerSrcKey, attackerUnit, isOffline) {
             const messages = [];
             const defenderOwner = targetHex.owner;
@@ -1085,18 +1125,14 @@
                 newHexesForWinner[a.srcKey] = updated;
             });
 
-            // ===== 3А: повідомлення ТІЛЬКИ про свої дії =====
             if (isMyAction) {
                 messages.push(`🏰 Ратушу гравця ${defenderOwner} ЗНИЩЕНО!`);
                 if (rewardGold > 0) messages.push(`💰 Трофей: +${rewardGold} золота (50% ворога)`);
                 if (killedCount > 0) messages.push(`💀 Знищено воїнів ворога: ${killedCount}`);
             } else if (defenderOwner === currentUsername) {
-                // Мою ратушу знищив хтось інший — повідомляю мене
                 messages.push(`💥 Вашу ратушу ЗНИЩЕНО гравцем ${winnerOwner}!`);
             }
 
-            // ===== 2А: повертаємо { goldReward, goldOwner } =====
-            // goldOwner — кому зарахувати золото (власник атакуючого)
             return {
                 goldReward: rewardGold,
                 goldOwner: winnerOwner,
@@ -1108,31 +1144,28 @@
         }
 
         // =====================================================================
-        // ГОЛОВНА ФУНКЦІЯ ОБРОБКИ ЮНІТІВ (ПЕРЕРОБЛЕНО 5.30.12)
+        // ГОЛОВНА ФУНКЦІЯ ОБРОБКИ ЮНІТІВ
         // =====================================================================
         async function processUnits(now, isOffline = false) {
             const hexUpdates = {};
             const messages = [];
             const processedUnits = new Set();
-            // ===== 2А: групуємо золото по власниках =====
-            const goldByOwner = {};  // { ownerName: amount }
+            const goldByOwner = {};
 
             const getHex = (key) => (key in hexUpdates ? hexUpdates[key] : hexWorldData[key]);
             const setHex = (key, obj) => { if (obj === null) hexUpdates[key] = null; else hexUpdates[key] = obj; };
 
-            // ===== 3А: хелпер для повідомлень (тільки про своїх) =====
             const pushMsgIfMine = (unitOwner, text) => {
                 if (unitOwner === currentUsername) messages.push(text);
             };
 
-            // ===== КРОК 1: ЗБІР ПОДІЙ (тепер БУДЬ-ЯКОГО власника) =====
+            // ===== КРОК 1: ЗБІР ПОДІЙ =====
             const events = [];
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
                 if (!h || !h.unit) return;
                 const u = h.unit;
-                // ===== 1Б: обробляємо всіх юнітів =====
-                if (u.owner === '__barbarian__') return;  // варварських не чіпаємо в циклі
+                if (u.owner === '__barbarian__') return;
                 if (u.state !== 'moving' && u.state !== 'fighting') return;
                 if (!u.arrivalTime || now < u.arrivalTime) return;
                 events.push({ srcKey: key, unit: u, arrival: u.arrivalTime });
@@ -1161,10 +1194,9 @@
                 const targetUnit = targetHex ? targetHex.unit : null;
 
                 // =============================================================
-                // ФАЗА БОЮ (state === 'fighting')
+                // ФАЗА БОЮ
                 // =============================================================
                 if (unit.state === 'fighting') {
-                    // --- БІЙ З РАТУШЕЮ ---
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== unitOwner) {
                         const allAttackers = findAttackersOf(targetKey);
                         if (!allAttackers.some(a => a.unit.id === unit.id)) {
@@ -1175,7 +1207,7 @@
                             e.unit.state === 'moving' &&
                             !processedUnits.has(e.unit.id) &&
                             e.srcKey !== targetKey &&
-                            e.unit.owner === unitOwner  // атакуючі тільки тієї ж команди, що й поточний
+                            e.unit.owner === unitOwner
                         );
                         arrivingAttackers.forEach(a => {
                             if (!allAttackers.some(x => x.unit.id === a.unit.id)) {
@@ -1190,7 +1222,6 @@
                         const coreLevel = targetHex.level || 1;
                         const coreDmg = getCoreDmg(coreLevel);
 
-                        // Ратуша б'є у відповідь КОЖНОГО атакуючого
                         allAttackers.forEach(a => {
                             const aSrcHex = getHex(a.srcKey);
                             if (!aSrcHex || !aSrcHex.unit || aSrcHex.unit.id !== a.unit.id) return;
@@ -1225,7 +1256,6 @@
                                 setHex(k, result.newHexes[k]);
                             });
 
-                            // ===== 2А: зараховуємо золото ВЛАСНИКУ =====
                             if (result.goldReward > 0) {
                                 const owner = result.goldOwner;
                                 goldByOwner[owner] = (goldByOwner[owner] || 0) + result.goldReward;
@@ -1255,7 +1285,6 @@
                         continue;
                     }
 
-                    // --- Ціль зникла ---
                     if (!targetHex || !targetUnit) {
                         const h = { ...(getHex(srcKey) || {}) };
                         h.unit = stopTravel(unit);
@@ -1264,8 +1293,6 @@
                         continue;
                     }
 
-                    // --- ЗВИЧАЙНИЙ БІЙ (з юнітом) ---
-                    // Атакуючі тієї ж команди, що й поточний юніт
                     const allAttackers = findAttackersOf(targetKey).filter(a => a.unit.owner === unitOwner);
                     if (!allAttackers.some(a => a.unit.id === unit.id)) {
                         allAttackers.push({ srcKey, unit });
@@ -1329,7 +1356,6 @@
                     } else if (defender.hp <= 0) {
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
-                            // ===== 2А: золото ВЛАСНИКУ переможця =====
                             goldByOwner[victim.unit.owner] = (goldByOwner[victim.unit.owner] || 0) + reward;
                             setHex(targetKey, {
                                 owner: victim.unit.owner,
@@ -1397,7 +1423,7 @@
                 }
 
                 // =============================================================
-                // ФАЗА РУХУ (state === 'moving')
+                // ФАЗА РУХУ
                 // =============================================================
                 if (unit.state === 'moving') {
                     if (targetHex && targetHex.type === 'chasm') {
@@ -1408,7 +1434,6 @@
                         continue;
                     }
 
-                    // --- ЧУЖИЙ юніт на цілі → атака ---
                     if (targetUnit && targetUnit.owner !== unitOwner) {
                         const allAttackers = findAttackersOf(targetKey).filter(a => a.unit.owner === unitOwner);
                         if (allAttackers.length >= MAX_ATTACKERS) {
@@ -1439,7 +1464,6 @@
                         continue;
                     }
 
-                    // --- МІЙ (цієї ж команди) юніт на цілі → обхід ---
                     if (targetUnit && targetUnit.owner === unitOwner) {
                         const waitKey = findWaitingHex(unit);
                         if (waitKey && waitKey !== srcKey) {
@@ -1458,7 +1482,6 @@
                         continue;
                     }
 
-                    // --- ВОРОЖА ратуша на цілі → бій ---
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== unitOwner) {
                         const newUnit = { ...unit };
                         newUnit.state = 'fighting';
@@ -1470,7 +1493,6 @@
                         continue;
                     }
 
-                    // --- Гекс зайнятий ---
                     if (isHexOccupiedByUnit(targetKey, unit.id)) {
                         const waitKey = findWaitingHex(unit);
                         if (waitKey && waitKey !== srcKey) {
@@ -1489,7 +1511,6 @@
                         continue;
                     }
 
-                    // --- ЗВИЧАЙНИЙ КРОК ---
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
@@ -1521,23 +1542,18 @@
                 updates[`world_hexes/${k}`] = hexUpdates[k];
             });
 
-            // ===== 2А: золото кожному власнику окремо =====
-            // Якщо власник = currentUsername — використовуємо вже відоме userGold
-            // Якщо власник інший — читаємо з Firebase й оновлюємо
             const ownerNames = Object.keys(goldByOwner);
             for (const ownerName of ownerNames) {
                 const amount = goldByOwner[ownerName];
                 if (amount <= 0) continue;
                 try {
                     if (ownerName === currentUsername) {
-                        // Мій — можна просто додати
                         const gSnap = await get(ref(db, `users/${currentUsername}/gold`));
                         const currentG = gSnap.exists() ? (gSnap.val() || 0) : 0;
                         updates[`users/${currentUsername}/gold`] = currentG + amount;
                     } else {
-                        // Чужий — треба обережно прочитати й записати
                         const gSnap = await get(ref(db, `users/${ownerName}/gold`));
-                        if (!gSnap.exists()) continue;  // гравець зник
+                        if (!gSnap.exists()) continue;
                         const currentG = gSnap.val() || 0;
                         updates[`users/${ownerName}/gold`] = currentG + amount;
                     }
@@ -1551,15 +1567,12 @@
             return { changed: true, messages };
         }
 
-        // ===== НОВЕ 5.30.12: швидкість кроку для конкретного власника =====
-        // (бо getStepMsForHex використовує currentUsername)
         function getStepMsForHexForOwner(key, owner) {
             const h = hexWorldData[key];
             if (h && h.owner === owner) return MOVE_STEP_FAST_MS;
             return MOVE_STEP_MS;
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: _killUnit приймає pushMsgIfMine =====
         function _killUnit(hexUpdates, srcKey, unitId, getHex, setHex, messages, pushMsgIfMine) {
             const h = { ...(getHex(srcKey) || {}) };
             if (h.unit && h.unit.id === unitId) {
@@ -1588,7 +1601,6 @@
             }, 3000);
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: catchUpOffline обробляє УСІХ юнітів =====
         async function catchUpOffline() {
             const report = [];
             for (let i = 0; i < 3000; i++) {
@@ -1766,7 +1778,6 @@
             return result;
         }
 
-        // ===== 5.30.9: обчислення залишку часу руху =====
         function computeUnitRemainingMs(unit, nowMs) {
             if (!unit || unit.state !== 'moving') return { toNext: 0, total: 0 };
             const path = unit.path || [];
@@ -1780,7 +1791,6 @@
             return { toNext, total };
         }
 
-        // ===== 5.30.10: час до початку авторемонту =====
         function computeAutoHealStartIn(coreHex, nowMs) {
             if (!coreHex || coreHex.type !== 'core') return null;
             const maxHp = getCoreMaxHp(coreHex.level || 1);
@@ -1793,17 +1803,22 @@
             return healStartAt - now;
         }
 
-        // ===== 5.30.11: розбір доходу/утримання для конкретного гекса =====
+        // ===== ОНОВЛЕНО 5.30.13: analyzeHexEconomy — фікс утримання =====
+        // Тепер:
+        // 1) isPurchased перевіряється ОКРЕМО від типу (Задача 3)
+        // 2) Гекси навколо МОЄЇ ратуші — безкоштовні (Задача 4), крім моста
         function analyzeHexEconomy(hexKey, hexInfo) {
             const result = { income: 0, upkeep: 0, balance: 0, bonusLines: [] };
             if (!hexInfo) return result;
             const type = hexInfo.type || '';
             const level = hexInfo.level || 1;
 
+            // ===== 1) Дохід (залежить від типу) =====
             if (type === 'core') {
                 result.income = getIncomeByLevel(level);
             } else if (type === 'farm') {
                 result.income = 1;
+                // Бонус вітряків поруч
                 if (hexInfo.owner === currentUsername) {
                     const [r, c] = hexKey.split('_').map(Number);
                     const neighbors = getNeighbors(r, c);
@@ -1826,17 +1841,25 @@
                         const nh = hexWorldData[n.key];
                         if (nh && nh.owner === currentUsername && nh.type === 'farm') farmCount++;
                     });
-                    result.income = 0;
                     if (farmCount > 0) {
                         result.bonusLines.push(`Підсилює ${farmCount} ферм(у) на +${farmCount} золота/хв`);
                     } else {
                         result.bonusLines.push(`Немає ферм поруч (бонус 0)`);
                     }
                 }
-            } else if (type === 'bridge') {
+            }
+
+            // ===== 2) Утримання (НЕЗАЛЕЖНО від типу) =====
+            // Міст — завжди -2 (5Б)
+            if (type === 'bridge') {
                 result.upkeep = 2;
-            } else if (type === 'purchased') {
-                result.upkeep = 2;
+            } else if (hexInfo.isPurchased === true || type === 'purchased') {
+                // ===== Задача 4: якщо це сусід МОЄЇ ратуші — безкоштовно =====
+                const nearMyCore = isAdjacentToMyCore(hexKey);
+                if (!nearMyCore) {
+                    result.upkeep = 2;
+                }
+                // Якщо nearMyCore — upkeep = 0 (безкоштовно)
             }
 
             result.balance = result.income - result.upkeep;
@@ -2167,6 +2190,7 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
+        // ===== ОНОВЛЕНО 5.30.13: openTerritoryModal з кнопкою "Продати" =====
         function openTerritoryModal(r, c, hexInfo) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
@@ -2221,11 +2245,13 @@
                 return;
             }
 
+            // ===== МІЙ гекс =====
             const isStarter = hexInfo.type === 'starter';
             const isBridge = hexInfo.type === 'bridge';
             const isFarm = hexInfo.type === 'farm';
             const isMill = hexInfo.type === 'mill';
             const isPurchased = hexInfo.type === 'purchased';
+            const isCore = hexInfo.type === 'core';
             const hasMyUnitHere = isMyUnit(hexInfo);
 
             title.innerText = getHexTypeLabel(hexInfo);
@@ -2270,9 +2296,28 @@
 
             cardHtml += `</div>`;
 
+            // ===== КНОПКИ =====
             if (hasMyUnitHere) actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">Меню воїна</button>`;
-            if (isFarm || isMill) actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">Знести (5 золота)</button>`;
-            else if (!isBridge) actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">Ферма (10 золота)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">Вітряк (20 золота)</button>`;
+
+            // Будівництво / знесення
+            if (isFarm || isMill) {
+                actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">Знести (5 золота)</button>`;
+            } else if (isStarter || isPurchased) {
+                // На пустій землі можна будувати
+                actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">Ферма (10 золота)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">Вітряк (20 золота)</button>`;
+            }
+            // На мості/ратуші нічого не будуємо
+
+            // ===== НОВЕ 5.30.13: Кнопка "Продати" =====
+            // Умови:
+            // - гекс мій (ми вже тут)
+            // - тип starter або purchased (пуста земля)
+            // - НЕ core, НЕ farm, НЕ mill, НЕ bridge
+            // - 2Б-1: воїн може стояти (гекс стає нейтральним, але воїн залишається)
+            if (!isCore && (isStarter || isPurchased)) {
+                actionBtns += `<button class="btn-sell" onclick="sellTerritory(${r}, ${c})">Продати за ${SELL_TERRITORY_REWARD} золота</button>`;
+            }
+
             cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
         }
 
@@ -2280,6 +2325,43 @@
             document.getElementById('territory-modal').style.display = 'none';
             selectedHexCoords = null;
             activeSelection = null;
+        }
+
+        // ===== НОВЕ 5.30.13: продаж клітинки =====
+        window.sellTerritory = async function(r, c) {
+            const key = `${r}_${c}`;
+            const hexInfo = hexWorldData[key];
+            if (!hexInfo) { alert("Гекс не знайдено!"); return; }
+            if (hexInfo.owner !== currentUsername) { alert("Це не ваш гекс!"); return; }
+
+            // Перевірка: тільки starter або purchased
+            if (hexInfo.type !== 'starter' && hexInfo.type !== 'purchased') {
+                alert("Можна продати тільки пусту землю (без будівель).");
+                return;
+            }
+
+            // 2Б-1: якщо на гексі воїн — він залишається, гекс стає нейтральним з воїном
+            const hasUnit = !!hexInfo.unit;
+
+            if (!confirm(hasUnit
+                ? `Продати гекс за ${SELL_TERRITORY_REWARD} золота?\nНа гексі стоїть ваш воїн — він залишиться на нейтральній землі.`
+                : `Продати гекс за ${SELL_TERRITORY_REWARD} золота?`)) return;
+
+            const updates = {};
+            if (hasUnit) {
+                // Гекс стає нейтральним, але воїн залишається
+                updates[`world_hexes/${key}`] = { unit: hexInfo.unit };
+            } else {
+                // Гекс повністю видаляється
+                updates[`world_hexes/${key}`] = null;
+            }
+            updates[`users/${currentUsername}/gold`] = userGold + SELL_TERRITORY_REWARD;
+            updates[`users/${currentUsername}/lastOnline`] = Date.now();
+            try {
+                await update(ref(db), updates);
+                closeTerritoryModal();
+                alert(`Гекс продано! +${SELL_TERRITORY_REWARD} золота`);
+            } catch (err) { alert(err.message); }
         }
 
         function openUnitModal(r, c, hexInfo) {
@@ -2645,12 +2727,11 @@
             if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
         }
 
-        // ===== ТІК (кожну секунду): час руху воїна + таймер авторемонту ратуші =====
+        // ===== ТІК (кожну секунду) =====
         let unitTimeTickInterval = null;
         function startUnitTimeTick() {
             if (unitTimeTickInterval) clearInterval(unitTimeTickInterval);
             unitTimeTickInterval = setInterval(() => {
-                // --- 1) Модалка воїна ---
                 const unitModal = document.getElementById('unit-modal');
                 if (unitModal && unitModal.style.display === 'block' && activeSelection && activeSelection.layer === 'unit') {
                     let found = null;
@@ -2680,7 +2761,6 @@
                     }
                 }
 
-                // --- 2) Модалка ратуші (таймер авторемонту) ---
                 const thModal = document.getElementById('townhall-modal');
                 if (thModal && thModal.style.display === 'block') {
                     let coreHex = null, coreKey = null;
@@ -2850,8 +2930,6 @@
             svg.appendChild(g);
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: показуємо HP-бари для БУДЬ-ЯКОГО бою, де є МІЙ юніт =====
-        // (або де моя ратуша отримує урон від когось іншого)
         function renderBattleHPBars(svg) {
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
@@ -2863,7 +2941,6 @@
                 const targetHex = hexWorldData[targetKey];
                 if (!targetHex) return;
 
-                // Показуємо HP-бари, якщо це МІЙ юніт, або якщо ціль — МОЯ ратуша
                 const isMine = (h.unit.owner === currentUsername);
                 const isMyCoreUnderAttack = (targetHex.type === 'core' && targetHex.owner === currentUsername);
                 if (!isMine && !isMyCoreUnderAttack) return;
@@ -3006,7 +3083,6 @@
             svg.appendChild(g);
         }
 
-        // ===== ОНОВЛЕНО 5.30.12: пульсація "core-under-attack" — для БУДЬ-ЯКОЇ ратуші під атакою =====
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
@@ -3020,7 +3096,6 @@
             const unitQueue = [];
             const labelQueue = [];
 
-            // ===== 5.30.12: попередньо збираємо всі гекси-ратуші, які зараз під атакою =====
             const coresUnderAttack = new Set();
             Object.keys(hexWorldData).forEach(k => {
                 const h = hexWorldData[k];
@@ -3052,13 +3127,27 @@
                     return;
                 }
 
+                // ===== 5.30.13: гекс без owner (нейтральний), але з воїном =====
+                if (!hexData.owner) {
+                    // Це нейтральний гекс (можливо, з воїном після продажу)
+                    let plain = true;
+                    polygon.style.fill = '#1b263b';
+                    polygon.style.stroke = '#1b263b';
+                    polygon.classList.add('occupied-border');
+                    if (hasUnit) {
+                        const isBarb = hexData.unit.type === 'barbarian';
+                        const unitColor = isBarb ? '#dc2626' : getPlayerColor(hexData.unit.owner);
+                        unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: plain });
+                    }
+                    return;
+                }
+
                 polygon.style.fill = hexData.color;
                 polygon.style.stroke = hexData.color;
 
                 let plain = false;
                 if (hexData.type === 'core') {
                     polygon.classList.add('occupied-core');
-                    // ===== 5.30.12: показуємо пульсацію для будь-якої ратуші, яку атакують =====
                     if (coresUnderAttack.has(key)) polygon.classList.add('core-under-attack');
                     renderTownHallVector(svg, center, hexData.color || '#3b82f6', hexData.level || 1);
                     const level = hexData.level || 1;
