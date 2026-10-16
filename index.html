@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.4</title>
+    <title>HexPolitics v5.30.5</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.4
+    ПОТОЧНА ВЕРСІЯ: v5.30.5
 
     ЩО ЗМІНИЛОСЬ:
-    - v5.30.4: Чистий перезбір файлу без дублікатів коду.
-               Виправлено версію в CURRENT_VERSION.
-               Повністю відновлено частину 3/3.
+    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ
+               * Виправлено баг "3 воїни на 1 табір → всі зникають"
+               * Сумарний урон при атаці кількома воїнами (3×25=75)
+               * Максимум 6 атакуючих на гекс, решта — у черзі
+               * Обхід зайнятих гексів
+               * Повідомлення про смерть воїна
+               * Автоматичний підхід наступного з черги
+    - v5.30.4: Чистий перезбір файлу без дублікатів
     - v5.30.2: ВИПРАВЛЕНО помилку авторизації
-               "update failed: values argument contains a path
-               /world_hexes/X_Y that is ancestor of another path
-               /world_hexes/X_Y/unit"
-    - v5.30.1: ЗОНА КОНТРОЛЮ (ЗК)
-    - v5.30: ЗК, знищення ратуші
 
     ФОРМАТ: файл розбито на 4 частини
     ============================================
@@ -150,8 +150,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.4</h2>
-            <p id="loader-desc">Зона контролю, знищення ратуші...</p>
+            <h2 id="loader-status">HexPolitics v5.30.5</h2>
+            <p id="loader-desc">Бойове оновлення...</p>
         </div>
     </div>
 
@@ -280,7 +280,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.4";
+        const CURRENT_VERSION = "5.30.5";
 
         let mode = "login";
         let currentUsername = "";
@@ -297,6 +297,7 @@
         let gameLoopBusy = false;
         const FIGHT_ROUND_MS = 5000;
         const MOVE_STEP_MS = 60000;
+        const MAX_ATTACKERS = 6;
 
         const BARBARIAN_LEVELS = {
             weak:   { hp: 40,  dmg: 15, rewardMin: 40,  rewardMax: 60  },
@@ -368,7 +369,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.4"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.5"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -731,284 +732,402 @@
         }
 
         // =====================================================================
-        // ВИПРАВЛЕНО v5.30.2 (і збережено у v5.30.4):
-        // Раніше в одному update() писались і сам гекс (`world_hexes/X_Y`),
-        // і його поле (`world_hexes/X_Y/unit`) — Firebase таке забороняє.
-        // Тепер стан кожного гекса збирається в hexUpdates і записується
-        // ЦІЛКОМ, одним разом — без конфліктів шляхів.
+        // ХЕЛПЕРИ ДЛЯ БОЙОВОЇ ЛОГІКИ 5.30.5
+        // =====================================================================
+
+        // Повертає true, якщо на гексі (r,c) вже стоїть ЮНІТ (свій або чужий).
+        // Потрібно для "обходу зайнятих гексів" і "очікування в черзі".
+        function isHexOccupiedByUnit(key, ignoreUnitId) {
+            const h = hexWorldData[key];
+            if (!h || !h.unit) return false;
+            if (ignoreUnitId && h.unit.id === ignoreUnitId) return false;
+            return true;
+        }
+
+        // Знайти вільний сусідній гекс біля цілі (для обходу зайнятого гекса).
+        // Повертає key вільного гекса, або null, якщо немає.
+        function findFreeAdjacentHex(targetR, targetC, occupiedKeys) {
+            const neighbors = getNeighbors(targetR, targetC);
+            // Перемішуємо, щоб не завжди той самий
+            const shuffled = neighbors.slice().sort(() => Math.random() - 0.5);
+            for (const n of shuffled) {
+                const h = hexWorldData[n.key];
+                if (h && h.type === 'chasm') continue;
+                if (isHexOccupiedByUnit(n.key)) continue;
+                if (occupiedKeys && occupiedKeys.has(n.key)) continue;
+                return n.key;
+            }
+            return null;
+        }
+
+        // Знайти вільний гекс на попередньому кроці (щоб зупинитися і почекати).
+        // Пріоритет: гекс, з якого прийшов воїн (path[pathIndex - 1]).
+        function findWaitingHex(unit) {
+            const path = unit.path || [];
+            const idx = unit.pathIndex || 0;
+            if (idx > 0 && path[idx - 1]) {
+                const prevKey = path[idx - 1];
+                if (!isHexOccupiedByUnit(prevKey, unit.id)) return prevKey;
+            }
+            // Резерв: будь-який вільний сусідній гекс
+            const [r, c] = (unit.targetKey || '').split('_').map(Number);
+            if (!isNaN(r) && !isNaN(c)) {
+                return findFreeAdjacentHex(r, c, null);
+            }
+            return null;
+        }
+
+        // Скільки воїнів зараз атакують цей гекс (state fighting, targetKey = key)?
+        // Повертає масив { srcKey, unit }.
+        function findAttackersOf(targetKey) {
+            const result = [];
+            Object.keys(hexWorldData).forEach(k => {
+                const h = hexWorldData[k];
+                if (!h || !h.unit) return;
+                if (h.unit.owner !== currentUsername) return;
+                if (h.unit.state !== 'fighting') return;
+                if (h.unit.targetKey !== targetKey) return;
+                result.push({ srcKey: k, unit: h.unit });
+            });
+            return result;
+        }
+
+        // =====================================================================
+        // ГОЛОВНА ФУНКЦІЯ ОБРОБКИ ЮНІТІВ (v5.30.5 — ПОВНІСТЮ ПЕРЕРОБЛЕНА)
+        //
+        // Логіка:
+        // 1. Збираємо всі "події" юнітів (arrivalTime <= now).
+        // 2. Обробляємо їх у хронологічному порядку.
+        // 3. Записуємо зміни в hexUpdates.
+        // 4. ОДНИМ update() відправляємо у Firebase.
         // =====================================================================
         async function processUnits(now, isOffline = false) {
             const hexUpdates = {};   // key → новий повний об'єкт гекса
             const messages = [];
-            const touched = new Set();
+            const processedUnits = new Set();  // id юнітів, яких уже обробили в цьому циклі
             let goldBonus = 0;
 
             const getHex = (key) => (key in hexUpdates ? hexUpdates[key] : hexWorldData[key]);
             const setHex = (key, obj) => { if (obj === null) hexUpdates[key] = null; else hexUpdates[key] = obj; };
 
+            // ===== КРОК 1: ЗБІР ПОДІЙ =====
+            const events = [];
             Object.keys(hexWorldData).forEach(key => {
-                const h0 = hexWorldData[key];
-                if (!h0 || !h0.unit || h0.unit.owner !== currentUsername) return;
-                const unit = h0.unit;
-                if (unit.state !== 'moving' && unit.state !== 'fighting') return;
-                if (!unit.arrivalTime || now < unit.arrivalTime) return;
-                if (touched.has(key)) return;
+                const h = hexWorldData[key];
+                if (!h || !h.unit) return;
+                if (h.unit.owner !== currentUsername) return;
+                const u = h.unit;
+                if (u.state !== 'moving' && u.state !== 'fighting') return;
+                if (!u.arrivalTime || now < u.arrivalTime) return;
+                events.push({ srcKey: key, unit: u, arrival: u.arrivalTime });
+            });
+            // Сортуємо за часом прибуття (хто раніше — той перший)
+            events.sort((a, b) => a.arrival - b.arrival);
 
-                const srcKey = key;
+            // ===== КРОК 2: ОБРОБКА КОЖНОЇ ПОДІЇ =====
+            for (const ev of events) {
+                const { srcKey, unit: u0 } = ev;
+                if (processedUnits.has(u0.id)) continue;
+
+                const unit = u0;
                 const targetKey = unit.targetKey;
 
-                // Захист: якщо джерело і ціль збігаються — просто зупиняємо воїна
+                // --- Захист: src === target ---
                 if (srcKey === targetKey) {
-                    const h = getHex(srcKey) ? { ...getHex(srcKey) } : {};
+                    const h = { ...(getHex(srcKey) || {}) };
                     h.unit = stopTravel(unit);
                     setHex(srcKey, h);
-                    touched.add(srcKey);
-                    return;
+                    processedUnits.add(unit.id);
+                    continue;
                 }
 
-                const targetHex = getHex(targetKey);
+                let targetHex = getHex(targetKey);
                 const targetUnit = targetHex ? targetHex.unit : null;
 
-                // ===== ФАЗА БОЮ =====
+                // --- ФАЗА БОЮ (state === 'fighting') ---
                 if (unit.state === 'fighting') {
-                    if (touched.has(targetKey)) return;
-                    touched.add(srcKey); touched.add(targetKey);
                     if (!targetHex || !targetUnit) {
-                        const h = getHex(srcKey) ? { ...getHex(srcKey) } : {};
+                        // Ціль зникла — зупиняємось
+                        const h = { ...(getHex(srcKey) || {}) };
                         h.unit = stopTravel(unit);
                         setHex(srcKey, h);
-                        return;
+                        processedUnits.add(unit.id);
+                        continue;
                     }
 
-                    const attacker = { ...unit };
+                    // Хто зараз атакує цей гекс? (всі, хто має state fighting + targetKey)
+                    // Але оскільки ми обробляємо по одному — рахуємо сумарний урон
+                    // від УСІХ атакуючих, які вже в стані fighting.
+                    const allAttackers = findAttackersOf(targetKey);
+                    // Додаємо тих, хто ще в черзі (state moving, але вже прибув), щоб вони теж приєдналися
+                    // Знайдемо їх серед подій
+                    const arrivingAttackers = events.filter(e =>
+                        e.unit.targetKey === targetKey &&
+                        e.unit.state === 'moving' &&
+                        !processedUnits.has(e.unit.id) &&
+                        e.srcKey !== targetKey
+                    );
+
+                    // Перевіряємо ліміт атакуючих
+                    const totalAttackersCount = allAttackers.length + arrivingAttackers.length;
+                    if (totalAttackersCount > MAX_ATTACKERS) {
+                        // Переповнення — зупиняємо воїна на попередньому кроці
+                        const waitKey = findWaitingHex(unit);
+                        if (waitKey) {
+                            // переміщуємо воїна на waitKey (знімаємо з srcKey)
+                            const srcH = { ...(getHex(srcKey) || {}) };
+                            delete srcH.unit;
+                            setHex(srcKey, srcH);
+                            const waitH = { ...(getHex(waitKey) || {}) };
+                            waitH.unit = stopTravel(unit);
+                            setHex(waitKey, waitH);
+                        } else {
+                            const h = { ...(getHex(srcKey) || {}) };
+                            h.unit = stopTravel(unit);
+                            setHex(srcKey, h);
+                        }
+                        processedUnits.add(unit.id);
+                        continue;
+                    }
+
+                    // Рахуємо сумарний урон від усіх (включно з собою)
+                    let totalDmg = 0;
+                    allAttackers.forEach(a => { totalDmg += a.unit.dmg; });
+                    if (!allAttackers.some(a => a.unit.id === unit.id)) totalDmg += unit.dmg;
+                    // Плюс ті, хто прибуває цього ж циклу
+                    arrivingAttackers.forEach(a => { totalDmg += a.unit.dmg; });
+
+                    // Ворог відповідає ОДНОМУ з атакуючих (першому, хто прийшов — менший pathIndex)
+                    // Виберемо "жертву" — того, хто має найменший pathIndex
+                    const allForTarget = [
+                        ...allAttackers,
+                        { srcKey, unit },
+                        ...arrivingAttackers.map(a => ({ srcKey: a.srcKey, unit: a.unit }))
+                    ];
+                    allForTarget.sort((a, b) => (a.unit.pathIndex || 0) - (b.unit.pathIndex || 0));
+                    const victim = allForTarget[0];
+
+                    // Наносимо урон ворогу
                     const defender = { ...targetUnit };
                     const isCamp = targetHex.type === 'barbarian_camp';
-                    defender.hp -= attacker.dmg;
-                    attacker.hp -= defender.dmg;
+                    defender.hp -= totalDmg;
                     if (isCamp) defender.lastCombat = now;
 
-                    if (defender.hp <= 0 && attacker.hp <= 0) {
-                        const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                        delete srcH.unit;
-                        setHex(srcKey, srcH);
+                    // Ворог б'є жертву
+                    const victimDmg = defender.dmg || 0;
+                    let victimNewHp = victim.unit.hp - victimDmg;
+
+                    // --- Результати ---
+                    if (defender.hp <= 0 && victimNewHp <= 0) {
+                        // Обидва гинуть
+                        _killUnit(hexUpdates, victim.srcKey, victim.unit.id, getHex, setHex, messages);
                         if (isCamp) {
                             setHex(targetKey, null);
                         } else {
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
+                            const tgtH = { ...(getHex(targetKey) || {}) };
                             delete tgtH.unit;
                             setHex(targetKey, tgtH);
                         }
                     } else if (defender.hp <= 0) {
-                        const winner = { ...attacker, state: 'moving' };
-                        const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                        delete srcH.unit;
-                        setHex(srcKey, srcH);
-
+                        // Ворог гине — решта атакуючих продовжують/зупиняються
                         if (isCamp) {
                             const reward = targetHex.reward || 100;
                             goldBonus += reward;
-                            const finalUnit = computeUnitAfterCombat(winner, isOffline);
+                            // Гекс стає власника, але БЕЗ юніта (бо юніт — це ворог-варвар, він загинув)
                             setHex(targetKey, {
                                 owner: currentUsername,
                                 color: getPlayerColor(currentUsername),
                                 type: 'starter',
-                                isPurchased: false,
-                                unit: finalUnit
+                                isPurchased: false
                             });
                             messages.push(`🎉 Табір зачищено! +${reward} золота`);
                         } else {
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                            const path = winner.path || [];
-                            const nextIndex = (winner.pathIndex || 0) + 1;
-                            const updatedUnit = (nextIndex >= path.length)
-                                ? stopTravel(winner)
-                                : {
-                                    ...winner,
-                                    state: 'moving',
-                                    pathIndex: nextIndex,
-                                    targetKey: path[nextIndex],
-                                    arrivalTime: isOffline ? (winner.arrivalTime + MOVE_STEP_MS) : (Date.now() + MOVE_STEP_MS)
-                                };
-                            tgtH.unit = updatedUnit;
+                            // Звичайна ціль — переможець (перший) займає гекс
+                            const winner = { ...victim.unit };
+                            // прибираємо воїна з srcKey
+                            const vSrcH = { ...(getHex(victim.srcKey) || {}) };
+                            delete vSrcH.unit;
+                            setHex(victim.srcKey, vSrcH);
+                            // Кладемо на targetKey
+                            const tgtH = { ...(getHex(targetKey) || {}) };
+                            // Зупиняємо подальший рух переможця (бо він зайняв гекс)
+                            tgtH.unit = stopTravel(winner);
                             setHex(targetKey, tgtH);
                         }
-                    } else if (attacker.hp <= 0) {
-                        const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                        delete srcH.unit;
-                        setHex(srcKey, srcH);
-                        const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
+
+                        // Решта атакуючих (крім переможця) — теж зупиняються (не заходять у гекс)
+                        allForTarget.forEach(fighter => {
+                            if (fighter.unit.id === victim.unit.id) return;
+                            // Знайдемо їх gекс у hexUpdates
+                            const fSrcH = { ...(getHex(fighter.srcKey) || {}) };
+                            if (fSrcH.unit && fSrcH.unit.id === fighter.unit.id) {
+                                fSrcH.unit = stopTravel(fighter.unit);
+                                setHex(fighter.srcKey, fSrcH);
+                                processedUnits.add(fighter.unit.id);
+                            }
+                        });
+                        processedUnits.add(victim.unit.id);
+                    } else if (victimNewHp <= 0) {
+                        // Жертва гине — решта продовжують бій
+                        _killUnit(hexUpdates, victim.srcKey, victim.unit.id, getHex, setHex, messages);
+                        // Оновлюємо defender
+                        const tgtH = { ...(getHex(targetKey) || {}) };
                         tgtH.unit = defender;
                         setHex(targetKey, tgtH);
+                        // Решта воїнів — продовжують fighting
+                        allForTarget.forEach(fighter => {
+                            if (fighter.unit.id === victim.unit.id) return;
+                            const fSrcH = { ...(getHex(fighter.srcKey) || {}) };
+                            if (fSrcH.unit && fSrcH.unit.id === fighter.unit.id) {
+                                const fu = { ...fSrcH.unit };
+                                fu.state = 'fighting';
+                                fu.arrivalTime = isOffline ? (fu.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
+                                fSrcH.unit = fu;
+                                setHex(fighter.srcKey, fSrcH);
+                                processedUnits.add(fighter.unit.id);
+                            }
+                        });
                     } else {
-                        attacker.state = 'fighting';
-                        attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
-                        const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                        srcH.unit = attacker;
-                        setHex(srcKey, srcH);
-                        const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
+                        // Обидва вижили — продовжуємо бій
+                        // Оновлюємо defender
+                        const tgtH = { ...(getHex(targetKey) || {}) };
                         tgtH.unit = defender;
                         setHex(targetKey, tgtH);
+
+                        allForTarget.forEach(fighter => {
+                            const fSrcH = { ...(getHex(fighter.srcKey) || {}) };
+                            if (fSrcH.unit && fSrcH.unit.id === fighter.unit.id) {
+                                const fu = { ...fSrcH.unit };
+                                if (fighter.unit.id === victim.unit.id) {
+                                    fu.hp = victimNewHp;
+                                }
+                                fu.state = 'fighting';
+                                fu.arrivalTime = isOffline ? (fu.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
+                                fSrcH.unit = fu;
+                                setHex(fighter.srcKey, fSrcH);
+                                processedUnits.add(fighter.unit.id);
+                            }
+                        });
                     }
-                    return;
+                    continue;
                 }
 
-                // ===== ФАЗА РУХУ =====
+                // --- ФАЗА РУХУ (state === 'moving') ---
                 if (unit.state === 'moving') {
+                    // Прірва попереду
                     if (targetHex && targetHex.type === 'chasm') {
-                        const h = getHex(srcKey) ? { ...getHex(srcKey) } : {};
+                        const h = { ...(getHex(srcKey) || {}) };
                         h.unit = stopTravel(unit);
                         setHex(srcKey, h);
-                        return;
+                        processedUnits.add(unit.id);
+                        continue;
                     }
 
+                    // На гексі вже стоїть ЧУЖИЙ юніт — атака
                     if (targetUnit && targetUnit.owner !== currentUsername) {
-                        if (touched.has(targetKey)) return;
-                        touched.add(srcKey); touched.add(targetKey);
-                        const attacker = { ...unit };
-                        const defender = { ...targetUnit };
-                        const isCamp = targetHex.type === 'barbarian_camp';
-                        defender.hp -= attacker.dmg;
-                        attacker.hp -= defender.dmg;
-                        if (isCamp) defender.lastCombat = now;
-
-                        if (defender.hp <= 0 && attacker.hp <= 0) {
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            delete srcH.unit;
-                            setHex(srcKey, srcH);
-                            if (isCamp) {
-                                setHex(targetKey, null);
+                        // Перевіряємо ліміт атакуючих
+                        const allAttackers = findAttackersOf(targetKey);
+                        const arrivingAttackers = events.filter(e =>
+                            e.unit.targetKey === targetKey &&
+                            e.unit.state === 'moving' &&
+                            !processedUnits.has(e.unit.id) &&
+                            e.srcKey !== targetKey
+                        );
+                        if (allAttackers.length + arrivingAttackers.length > MAX_ATTACKERS) {
+                            // Переповнення — зупиняємо / обхід
+                            const waitKey = findWaitingHex(unit);
+                            if (waitKey) {
+                                const srcH = { ...(getHex(srcKey) || {}) };
+                                delete srcH.unit;
+                                setHex(srcKey, srcH);
+                                const waitH = { ...(getHex(waitKey) || {}) };
+                                waitH.unit = stopTravel(unit);
+                                setHex(waitKey, waitH);
                             } else {
-                                const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                                delete tgtH.unit;
-                                setHex(targetKey, tgtH);
+                                const h = { ...(getHex(srcKey) || {}) };
+                                h.unit = stopTravel(unit);
+                                setHex(srcKey, h);
                             }
-                        } else if (defender.hp <= 0) {
-                            const winner = { ...attacker, state: 'moving' };
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            delete srcH.unit;
-                            setHex(srcKey, srcH);
-
-                            if (isCamp) {
-                                const reward = targetHex.reward || 100;
-                                goldBonus += reward;
-                                const finalUnit = computeUnitAfterCombat(winner, isOffline);
-                                setHex(targetKey, {
-                                    owner: currentUsername,
-                                    color: getPlayerColor(currentUsername),
-                                    type: 'starter',
-                                    isPurchased: false,
-                                    unit: finalUnit
-                                });
-                                messages.push(`🎉 Табір зачищено! +${reward} золота`);
-                            } else {
-                                const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                                const path = winner.path || [];
-                                const nextIndex = (winner.pathIndex || 0) + 1;
-                                const updatedUnit = (nextIndex >= path.length)
-                                    ? stopTravel(winner)
-                                    : {
-                                        ...winner,
-                                        state: 'moving',
-                                        pathIndex: nextIndex,
-                                        targetKey: path[nextIndex],
-                                        arrivalTime: isOffline ? (winner.arrivalTime + MOVE_STEP_MS) : (Date.now() + MOVE_STEP_MS)
-                                    };
-                                tgtH.unit = updatedUnit;
-                                setHex(targetKey, tgtH);
-                            }
-                        } else if (attacker.hp <= 0) {
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            delete srcH.unit;
-                            setHex(srcKey, srcH);
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                            tgtH.unit = defender;
-                            setHex(targetKey, tgtH);
-                        } else {
-                            attacker.state = 'fighting';
-                            attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            srcH.unit = attacker;
-                            setHex(srcKey, srcH);
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                            tgtH.unit = defender;
-                            setHex(targetKey, tgtH);
+                            processedUnits.add(unit.id);
+                            continue;
                         }
-                        return;
+
+                        // Переводимо воїна у стан fighting (він "стоїть" на srcKey, б'ється з targetKey)
+                        const newUnit = { ...unit };
+                        newUnit.state = 'fighting';
+                        newUnit.arrivalTime = now;  // бій почнеться одразу на наступному циклі
+                        // НЕ рухаємо воїна з srcKey — він б'ється звідси
+                        const srcH = { ...(getHex(srcKey) || {}) };
+                        srcH.unit = newUnit;
+                        setHex(srcKey, srcH);
+
+                        // Одразу ж наносимо перший удар? Ні — чекаємо наступного циклу,
+                        // коли він увійде у фазу fighting і обробить сумарний урон.
+                        processedUnits.add(unit.id);
+                        continue;
                     }
 
+                    // На гексі стоїть МІЙ юніт — зупиняємось (не заходимо)
                     if (targetUnit && targetUnit.owner === currentUsername) {
-                        const h = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                        h.unit = stopTravel(unit);
-                        setHex(srcKey, h);
-                        return;
-                    }
-
-                    // ===== ЗНИЩЕННЯ РАТУШІ =====
-                    if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
-                        if (touched.has(targetKey)) return;
-                        touched.add(srcKey); touched.add(targetKey);
-                        const attacker = { ...unit };
-                        let coreHp = targetHex.hp !== undefined ? targetHex.hp : 200;
-                        coreHp -= attacker.dmg;
-                        attacker.hp -= 30;
-
-                        if (coreHp <= 0) {
-                            const myColor = getPlayerColor(currentUsername);
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
+                        const waitKey = findWaitingHex(unit);
+                        if (waitKey && waitKey !== srcKey) {
+                            const srcH = { ...(getHex(srcKey) || {}) };
                             delete srcH.unit;
                             setHex(srcKey, srcH);
-
-                            setHex(targetKey, {
-                                owner: currentUsername,
-                                color: myColor,
-                                type: 'purchased',
-                                isPurchased: true,
-                                unit: stopTravel(attacker)
-                            });
-
-                            const [tR, tC] = targetKey.split('_').map(Number);
-                            const neighbors = getNeighbors(tR, tC);
-                            neighbors.forEach(n => {
-                                const nHex = getHex(n.key);
-                                if (!nHex) return;
-                                if (nHex.type === 'chasm') return;
-                                if (nHex.owner === currentUsername) return;
-                                const newObj = { ...nHex };
-                                newObj.owner = currentUsername;
-                                newObj.color = myColor;
-                                newObj.isPurchased = nHex.isPurchased || true;
-                                setHex(n.key, newObj);
-                                touched.add(n.key);
-                            });
-                            messages.push("💥 Ратушу ворога знищено! Сусідні гекси переходять до тебе!");
-                        } else if (attacker.hp <= 0) {
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            delete srcH.unit;
-                            setHex(srcKey, srcH);
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                            tgtH.hp = coreHp;
-                            setHex(targetKey, tgtH);
+                            const waitH = { ...(getHex(waitKey) || {}) };
+                            waitH.unit = stopTravel(unit);
+                            setHex(waitKey, waitH);
                         } else {
-                            attacker.state = 'fighting';
-                            attacker.arrivalTime = isOffline ? (attacker.arrivalTime + FIGHT_ROUND_MS) : (now + FIGHT_ROUND_MS);
-                            const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
-                            srcH.unit = attacker;
-                            setHex(srcKey, srcH);
-                            const tgtH = getHex(targetKey) ? { ...getHex(targetKey) } : {};
-                            tgtH.hp = coreHp;
-                            setHex(targetKey, tgtH);
+                            const h = { ...(getHex(srcKey) || {}) };
+                            h.unit = stopTravel(unit);
+                            setHex(srcKey, h);
                         }
-                        return;
+                        processedUnits.add(unit.id);
+                        continue;
                     }
 
-                    // ===== ЗВИЧАЙНИЙ КРОК =====
+                    // --- ЗНИЩЕННЯ РАТУШІ (core) ---
+                    if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
+                        // Переводимо в fighting (аналогічно атаці на юніт)
+                        const newUnit = { ...unit };
+                        newUnit.state = 'fighting';
+                        newUnit.arrivalTime = now;
+                        const srcH = { ...(getHex(srcKey) || {}) };
+                        srcH.unit = newUnit;
+                        setHex(srcKey, srcH);
+                        processedUnits.add(unit.id);
+                        continue;
+                    }
+
+                    // --- ЗВИЧАЙНИЙ КРОК ---
+                    // Перевіряємо, чи targetKey вільний (на випадок, якщо його зайняв інший воїн цього ж циклу)
+                    if (isHexOccupiedByUnit(targetKey, unit.id)) {
+                        // Хтось уже тут — зупиняємось / обхід
+                        const waitKey = findWaitingHex(unit);
+                        if (waitKey && waitKey !== srcKey) {
+                            const srcH = { ...(getHex(srcKey) || {}) };
+                            delete srcH.unit;
+                            setHex(srcKey, srcH);
+                            const waitH = { ...(getHex(waitKey) || {}) };
+                            waitH.unit = stopTravel(unit);
+                            setHex(waitKey, waitH);
+                        } else {
+                            const h = { ...(getHex(srcKey) || {}) };
+                            h.unit = stopTravel(unit);
+                            setHex(srcKey, h);
+                        }
+                        processedUnits.add(unit.id);
+                        continue;
+                    }
+
                     const moved = { ...unit };
                     const path = moved.path || [];
                     const nextIndex = (moved.pathIndex || 0) + 1;
                     const existingHexData = targetHex ? { ...targetHex } : {};
                     delete existingHexData.unit;
 
-                    const srcH = getHex(srcKey) ? { ...getHex(srcKey) } : {};
+                    // Прибираємо з srcKey
+                    const srcH = { ...(getHex(srcKey) || {}) };
                     delete srcH.unit;
                     setHex(srcKey, srcH);
 
@@ -1021,12 +1140,11 @@
                         existingHexData.unit = moved;
                     }
                     setHex(targetKey, existingHexData);
-                    touched.add(srcKey); touched.add(targetKey);
-                    return;
+                    processedUnits.add(unit.id);
                 }
-            });
+            }
 
-            // Формуємо фінальний updates для Firebase
+            // ===== КРОК 3: ФОРМУВАННЯ UPDATES =====
             const updates = {};
             Object.keys(hexUpdates).forEach(k => {
                 updates[`world_hexes/${k}`] = hexUpdates[k];
@@ -1039,6 +1157,16 @@
             if (Object.keys(updates).length === 0) return { changed: false, messages };
             await update(ref(db), updates);
             return { changed: true, messages };
+        }
+
+        // Хелпер: "вбити" юніта і повідомити гравцю
+        function _killUnit(hexUpdates, srcKey, unitId, getHex, setHex, messages) {
+            const h = { ...(getHex(srcKey) || {}) };
+            if (h.unit && h.unit.id === unitId) {
+                delete h.unit;
+                setHex(srcKey, h);
+                if (messages) messages.push(`💀 Ваш воїн загинув на гексі ${srcKey.replace('_', ';')}`);
+            }
         }
 
         function startGameLoop() {
@@ -1078,8 +1206,7 @@
         }
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/4 =====
-
-                // ===== ІНТЕРАКТИВ =====
+        // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1571,31 +1698,17 @@
             const hexInfo = hexWorldData[key];
             const hexOwner = hexInfo ? hexInfo.owner : null;
 
-            if (hexOwner === currentUsername) {
-                alert("Це вже ваш гекс!");
-                return;
-            }
-
-            if (hexInfo && hexInfo.type === 'chasm') {
-                alert("Не можна захопити прірву!");
-                return;
-            }
-
-            if (!isMyUnit(hexInfo)) {
-                alert("Тут немає вашого воїна!");
-                return;
-            }
+            if (hexOwner === currentUsername) { alert("Це вже ваш гекс!"); return; }
+            if (hexInfo && hexInfo.type === 'chasm') { alert("Не можна захопити прірву!"); return; }
+            if (!isMyUnit(hexInfo)) { alert("Тут немає вашого воїна!"); return; }
 
             if (isHexInEnemyZOC(r, c)) {
-                alert("Неможливо захопити: гекс у зоні контролю ворога! Прибери ворожого воїна або зруйнуй ратушу.");
+                alert("Неможливо захопити: гекс у зоні контролю ворога!");
                 return;
             }
 
             if (!hexInfo || !hexOwner) {
-                if (userGold < 10) {
-                    alert("Потрібно 10 золота для захоплення нейтрального гекса.");
-                    return;
-                }
+                if (userGold < 10) { alert("Потрібно 10 золота для захоплення нейтрального гекса."); return; }
                 const updates = {};
                 updates[`world_hexes/${key}`] = {
                     owner: currentUsername,
@@ -1606,33 +1719,17 @@
                 };
                 updates[`users/${currentUsername}/gold`] = userGold - 10;
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
-                try {
-                    await update(ref(db), updates);
-                    closeUnitModal();
-                    alert("🌍 Нейтральний гекс захоплено! (-10 золота)");
-                } catch (err) { alert("Помилка захоплення: " + err.message); }
+                try { await update(ref(db), updates); closeUnitModal(); alert("🌍 Нейтральний гекс захоплено! (-10 золота)"); }
+                catch (err) { alert("Помилка захоплення: " + err.message); }
                 return;
             }
 
             if (hexOwner !== currentUsername) {
                 const isCamp = hexInfo.type === 'barbarian_camp';
                 const isCore = hexInfo.type === 'core';
-
-                if (hexInfo.unit && hexInfo.unit.owner !== currentUsername) {
-                    alert("На гексі стоїть ворожий воїн. Спочатку перемагай його в бою!");
-                    return;
-                }
-
-                if (isCamp) {
-                    alert("Табір варварів не можна захопити напряму — атакуй його воїном!");
-                    return;
-                }
-
-                if (isCore) {
-                    alert("Ворожу ратушу треба руйнувати атакою, а не захопленням!");
-                    return;
-                }
-
+                if (hexInfo.unit && hexInfo.unit.owner !== currentUsername) { alert("На гексі стоїть ворожий воїн. Спочатку перемагай його в бою!"); return; }
+                if (isCamp) { alert("Табір варварів не можна захопити напряму — атакуй його воїном!"); return; }
+                if (isCore) { alert("Ворожу ратушу треба руйнувати атакою, а не захопленням!"); return; }
                 const updates = {};
                 const preservedType = hexInfo.type;
                 updates[`world_hexes/${key}`] = {
@@ -1643,11 +1740,8 @@
                     unit: hexInfo.unit || null
                 };
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
-                try {
-                    await update(ref(db), updates);
-                    closeUnitModal();
-                    alert("⚔️ Ворожий гекс відвойовано!");
-                } catch (err) { alert("Помилка захоплення: " + err.message); }
+                try { await update(ref(db), updates); closeUnitModal(); alert("⚔️ Ворожий гекс відвойовано!"); }
+                catch (err) { alert("Помилка захоплення: " + err.message); }
                 return;
             }
         }
@@ -2153,3 +2247,4 @@
     </script>
 </body>
 </html>
+        
