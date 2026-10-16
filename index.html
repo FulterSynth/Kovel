@@ -3,30 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.6</title>
+    <title>HexPolitics v5.30.7</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
     ПОТОЧНА ВЕРСІЯ: v5.30.7
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ
+               * Шкала HP ратуші — смужка під ніком + проценти
+               * Нова іконка воїнів — древня дубина (45° вліво)
+               * Прибрано коронку з ніка ратуші
     - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ
                * Атака на ворожу ратушу (core) — працює!
                * HP ратуші: 100 / 150 / 300 (за рівнем 1 / 2 / 3)
                * Ратуша б'є у відповідь КОЖНОГО атакуючого: 25 / 30 / 30
                * Воїн-захисник на ратуші гине разом з нею
-               * Гекс ратуші + 6 сусідів → переможцю (з будівлями, доходами, витратами)
+               * Гекс ратуші + 6 сусідів → переможцю
                * Гекс ратуші займає той, хто ПЕРШИЙ почав бій
                * ВСІ воїни переможеного гравця гинуть на всій карті
                * Трофей = 50% золота ворога на момент знищення
-               * Переможений може заснувати нову ратушу безкоштовно
-    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ
-               * Виправлено баг "3 воїни на 1 табір → всі зникають"
-               * Сумарний урон при атаці кількома воїнами (3×25=75)
-               * Максимум 6 атакуючих на гекс, решта — у черзі
-               * Обхід зайнятих гексів
-               * Повідомлення про смерть воїна
-               * Автоматичний підхід наступного з черги
+    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ (сумарний урон, ліміт 6 атакуючих, обхід)
     - v5.30.2: ВИПРАВЛЕНО помилку авторизації
 
     ФОРМАТ: файл розбито на 4 частини
@@ -163,8 +160,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.6</h2>
-            <p id="loader-desc">Облогове оновлення...</p>
+            <h2 id="loader-status">HexPolitics v5.30.7</h2>
+            <p id="loader-desc">Косметичне оновлення...</p>
         </div>
     </div>
 
@@ -302,7 +299,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.6";
+        const CURRENT_VERSION = "5.30.7";
 
         let mode = "login";
         let currentUsername = "";
@@ -321,7 +318,7 @@
         const MOVE_STEP_MS = 60000;
         const MAX_ATTACKERS = 6;
 
-        // ===== НОВЕ 5.30.6: характеристики ратуші =====
+        // ===== 5.30.6: характеристики ратуші =====
         const CORE_HP_BY_LEVEL = { 1: 100, 2: 150, 3: 300 };
         const CORE_DMG_BY_LEVEL = { 1: 25, 2: 30, 3: 30 };
         function getCoreMaxHp(level) { return CORE_HP_BY_LEVEL[level] || CORE_HP_BY_LEVEL[1]; }
@@ -397,7 +394,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.6"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.7"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -510,7 +507,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 1/4 =====
 
-                // ===== ЕКОНОМІКА =====
+                        // ===== ЕКОНОМІКА =====
         function calculateRawIncome(username, worldHexes) {
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
@@ -544,8 +541,7 @@
         function calculateEffectiveIncome(username, worldHexes) { return Math.max(1, calculateRawIncome(username, worldHexes)); }
         function getIncomeByLevel(level) { if (level === 2) return 2; if (level === 3) return 3; return 1; }
 
-        // ===== НОВЕ 5.30.6: helper для створення ратуші =====
-        // Повертає об'єкт гекса-ратуші з правильним HP за рівнем.
+        // ===== helper для створення ратуші =====
         function makeCoreHex(owner, color, level) {
             const hp = getCoreMaxHp(level || 1);
             return {
@@ -559,9 +555,7 @@
             };
         }
 
-        // ===== НОВЕ 5.30.6: перевірка, чи HP ратуші відповідає рівню =====
-        // Потрібно для міграції старих ратуш (HP 200) до нових (100/150/300).
-        // Якщо знайдено невідповідність — повертає true і оновлює hexWorldData.
+        // ===== перевірка, чи HP ратуші відповідає рівню =====
         function normalizeCoreHp() {
             let changed = false;
             Object.keys(hexWorldData).forEach(key => {
@@ -718,7 +712,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 2/4 =====
 
-                // ===== БІЙ ТА РУХ =====
+                        // ===== БІЙ ТА РУХ =====
         function stopTravel(unit) {
             const u = { ...unit, state: 'idle' };
             delete u.targetKey; delete u.arrivalTime; delete u.path; delete u.pathIndex; delete u.finalTargetKey;
@@ -833,11 +827,9 @@
         }
 
         // =====================================================================
-        // ХЕЛПЕРИ ДЛЯ ЗНИЩЕННЯ РАТУШІ (5.30.6)
+        // ХЕЛПЕРИ ДЛЯ ЗНИЩЕННЯ РАТУШІ
         // =====================================================================
 
-        // Знайти всіх воїнів вказаного власника на всій карті.
-        // Повертає масив { srcKey, unit }.
         function findAllUnitsOfOwner(ownerName) {
             const result = [];
             Object.keys(hexWorldData).forEach(k => {
@@ -849,8 +841,6 @@
             return result;
         }
 
-        // Обробити знищення ратуші. Викликається, коли HP ратуші впав до 0.
-        // Повертає { goldReward, messages }.
         async function handleCoreDestroyed(targetKey, targetHex, attackerSrcKey, attackerUnit, isOffline) {
             const messages = [];
             const defenderOwner = targetHex.owner;
@@ -866,21 +856,18 @@
                 }
             } catch (err) { console.error('Помилка отримання золота ворога:', err); }
 
-            // 2) Гекс ратуші + 6 сусідів → переможцю (з будівлями та витратами/доходами)
-            const newHexesForWinner = {};  // key → об'єкт гекса
+            // 2) Гекс ратуші + 6 сусідів → переможцю
+            const newHexesForWinner = {};
             const [tr, tc] = targetKey.split('_').map(Number);
             const winnerColor = getPlayerColor(winnerOwner);
 
-            // 2.1) Сам гекс ратуші → порожній (без unit), тип 'starter' бо ратуші вже немає
             newHexesForWinner[targetKey] = {
                 owner: winnerOwner,
                 color: winnerColor,
                 type: 'starter',
                 isPurchased: false
-                // unit НЕ ставимо — його поставить атакуючий нижче
             };
 
-            // 2.2) 6 сусідів → переможцю (зберігаючи тип, але прибираючи юніт)
             getNeighbors(tr, tc).forEach(n => {
                 const nHex = hexWorldData[n.key];
                 if (!nHex) return;
@@ -888,20 +875,17 @@
                 newHexesForWinner[n.key] = {
                     owner: winnerOwner,
                     color: winnerColor,
-                    type: nHex.type,  // зберігаємо farm/mill/starter/purchased/bridge
+                    type: nHex.type,
                     isPurchased: nHex.isPurchased || false,
                     level: nHex.level
-                    // unit НЕ переносимо — ворожі воїни гинуть (див. нижче)
                 };
             });
 
-            // 3) ВБИВАЄМО ВСІХ воїнів переможеного гравця на ВСІЙ карті (12А)
+            // 3) ВБИВАЄМО ВСІХ воїнів переможеного гравця на ВСІЙ карті
             const defenderUnits = findAllUnitsOfOwner(defenderOwner);
             let killedCount = 0;
             defenderUnits.forEach(({ srcKey, unit }) => {
-                // Якщо цей воїн стоїть на гексі, який щойно перейшов переможцю — гекс уже в newHexesForWinner без unit
-                if (newHexesForWinner[srcKey]) return;  // вже очищено
-                // Інакше — треба прибрати unit з цього гекса
+                if (newHexesForWinner[srcKey]) return;
                 const h = hexWorldData[srcKey];
                 if (!h) return;
                 const cleaned = { ...h };
@@ -910,32 +894,25 @@
                 killedCount++;
             });
 
-            // 4) Воїн-захисник на самій ратуші (якщо був) — гине (А1)
             if (targetHex.unit) {
-                // targetKey вже у newHexesForWinner без unit — все ок
                 killedCount++;
             }
 
-            // 5) Гекс ратуші займає атакуючий з найменшим pathIndex (1В)
-            //    Знаходимо всіх, хто атакував цю ратушу
+            // 4) Гекс ратуші займає атакуючий з найменшим pathIndex
             const allAttackers = findAttackersOf(targetKey);
-            // Додаємо поточного атакуючого, якщо він ще не в списку
             if (!allAttackers.some(a => a.unit.id === attackerUnit.id)) {
                 allAttackers.push({ srcKey: attackerSrcKey, unit: attackerUnit });
             }
-            // Сортуємо по pathIndex (хто перший почав — той перший)
             allAttackers.sort((a, b) => (a.unit.pathIndex || 0) - (b.unit.pathIndex || 0));
             const winnerAttacker = allAttackers[0];
 
-            // Ставимо переможця на гекс ратуші
             const winnerUnit = stopTravel(winnerAttacker.unit);
             newHexesForWinner[targetKey].unit = winnerUnit;
 
-            // 6) Інші атакуючі (крім переможця) — зупиняються на своїх місцях
+            // 5) Інші атакуючі — зупиняються на своїх місцях
             allAttackers.forEach(a => {
                 if (a.unit.id === winnerAttacker.unit.id) return;
                 if (newHexesForWinner[a.srcKey]) {
-                    // гекс уже в списку — просто зупиняємо unit
                     if (newHexesForWinner[a.srcKey].unit && newHexesForWinner[a.srcKey].unit.id === a.unit.id) {
                         newHexesForWinner[a.srcKey].unit = stopTravel(a.unit);
                     }
@@ -948,7 +925,6 @@
                 newHexesForWinner[a.srcKey] = updated;
             });
 
-            // 7) Формуємо повідомлення
             messages.push(`🏰 Ратушу гравця ${defenderOwner} ЗНИЩЕНО!`);
             if (rewardGold > 0) messages.push(`💰 Трофей: +${rewardGold} золота (50% ворога)`);
             if (killedCount > 0) messages.push(`💀 Знищено воїнів ворога: ${killedCount}`);
@@ -964,8 +940,6 @@
             const messages = [];
             const processedUnits = new Set();
             let goldBonus = 0;
-            // Окремо збираємо "знищені ратуші" — обробляємо їх ПІСЛЯ основного циклу
-            const destroyedCores = [];  // { targetKey, targetHex, attackerSrcKey, attackerUnit }
 
             const getHex = (key) => (key in hexUpdates ? hexUpdates[key] : hexWorldData[key]);
             const setHex = (key, obj) => { if (obj === null) hexUpdates[key] = null; else hexUpdates[key] = obj; };
@@ -1008,12 +982,10 @@
                 if (unit.state === 'fighting') {
                     // Якщо ціль — РАТУША (core), обробляємо окремо
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== currentUsername) {
-                        // Збираємо всіх атакуючих цієї ратуші (з hexWorldData + поточний)
                         const allAttackers = findAttackersOf(targetKey);
                         if (!allAttackers.some(a => a.unit.id === unit.id)) {
                             allAttackers.push({ srcKey, unit });
                         }
-                        // Додаємо тих, хто прибуває цього ж циклу (state 'moving', але прибув)
                         const arrivingAttackers = events.filter(e =>
                             e.unit.targetKey === targetKey &&
                             e.unit.state === 'moving' &&
@@ -1026,23 +998,20 @@
                             }
                         });
 
-                        // Рахуємо сумарний урон по ратуші
                         let totalDmg = 0;
                         allAttackers.forEach(a => { totalDmg += a.unit.dmg; });
 
-                        // Ратуша отримує урон
                         const coreHp = (targetHex.hp !== undefined ? targetHex.hp : getCoreMaxHp(targetHex.level || 1)) - totalDmg;
                         const coreLevel = targetHex.level || 1;
                         const coreDmg = getCoreDmg(coreLevel);
 
-                        // Ратуша б'є У ВІДПОВІДЬ КОЖНОГО атакуючого (8Г)
+                        // Ратуша б'є У ВІДПОВІДЬ КОЖНОГО атакуючого
                         allAttackers.forEach(a => {
                             const aSrcHex = getHex(a.srcKey);
                             if (!aSrcHex || !aSrcHex.unit || aSrcHex.unit.id !== a.unit.id) return;
                             const wounded = { ...aSrcHex.unit };
                             wounded.hp = (wounded.hp || 0) - coreDmg;
                             if (wounded.hp <= 0) {
-                                // Воїн загинув
                                 const cleaned = { ...aSrcHex };
                                 delete cleaned.unit;
                                 setHex(a.srcKey, cleaned);
@@ -1056,12 +1025,9 @@
                         });
 
                         if (coreHp <= 0) {
-                            // ===== РАТУША ЗНИЩЕНА =====
-                            // Переможець — той, хто ПЕРШИЙ почав бій (найменший pathIndex)
                             allAttackers.sort((a, b) => (a.unit.pathIndex || 0) - (b.unit.pathIndex || 0));
                             const winnerAttacker = allAttackers[0];
 
-                            // Обробляємо знищення ратуші (це асинхронна операція, бо читає золото ворога)
                             const result = await handleCoreDestroyed(
                                 targetKey,
                                 targetHex,
@@ -1070,34 +1036,24 @@
                                 isOffline
                             );
 
-                            // Записуємо всі нові гекси
                             Object.keys(result.newHexes).forEach(k => {
                                 setHex(k, result.newHexes[k]);
                             });
 
-                            // Додаємо трофей
                             goldBonus += result.goldReward;
-
-                            // Додаємо повідомлення
                             result.messages.forEach(m => messages.push(m));
 
-                            // Позначаємо ВСІХ атакуючих як оброблених (щоб не обробити їх двічі)
                             allAttackers.forEach(a => processedUnits.add(a.unit.id));
                             arrivingAttackers.forEach(a => processedUnits.add(a.unit.id));
                             continue;
                         } else {
-                            // Ратуша ще жива — оновлюємо HP і продовжуємо бій
                             const updatedCore = { ...targetHex, hp: coreHp };
-                            // Воїн-захисник (якщо є) — він теж б'є у відповідь? Поки ні,
-                            // бо 4В говорить: захисник гине разом з ратушею. Але поки ратуша жива —
-                            // захисник теж може бити. Поки що залишимо як "тільки ратуша б'є".
                             setHex(targetKey, updatedCore);
 
-                            // Всі атакуючі продовжують бій через FIGHT_ROUND_MS
                             allAttackers.forEach(a => {
                                 const aSrcHex = getHex(a.srcKey);
                                 if (!aSrcHex || !aSrcHex.unit || aSrcHex.unit.id !== a.unit.id) return;
-                                if (aSrcHex.unit.hp <= 0) return; // вже вбитий ратушею
+                                if (aSrcHex.unit.hp <= 0) return;
                                 const updated = { ...aSrcHex.unit };
                                 updated.state = 'fighting';
                                 updated.targetKey = targetKey;
@@ -1119,7 +1075,6 @@
                         continue;
                     }
 
-                    // ... (далі — існуюча логіка бою з варварами/воїнами, без змін)
                     const allAttackers = findAttackersOf(targetKey);
                     const arrivingAttackers = events.filter(e =>
                         e.unit.targetKey === targetKey &&
@@ -1430,7 +1385,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/4 =====
 
-                // ===== ІНТЕРАКТИВ =====
+                        // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1613,7 +1568,7 @@
 
             if (hexInfo && hexInfo.type === 'barbarian_camp') { openTerritoryModal(r, c, hexInfo); return; }
 
-            // ===== НОВЕ 5.30.6: ворожа ратуша =====
+            // ===== ворожа ратуша =====
             if (hexInfo && hexInfo.type === 'core' && hexInfo.owner && hexInfo.owner !== currentUsername) {
                 openEnemyCoreModal(r, c, hexInfo);
                 return;
@@ -1687,12 +1642,10 @@
         }
         window.closeBaseModal = function() { document.getElementById('base-modal').style.display = 'none'; selectedHexCoords = null; }
 
-        // ===== ОНОВЛЕНО 5.30.6: використовує makeCoreHex =====
         window.confirmBuildBase = async function() {
             if (!selectedHexCoords || !selectedColor) return;
             const { r, c } = selectedHexCoords;
             const updates = {};
-            // Використовуємо helper — правильний HP за рівнем (100 для 1 рівня)
             updates[`world_hexes/${r}_${c}`] = makeCoreHex(currentUsername, selectedColor, 1);
             getNeighbors(r, c).forEach(n => {
                 if (!hexWorldData[n.key]) updates[`world_hexes/${n.key}`] = { owner: currentUsername, color: selectedColor, type: 'starter', isPurchased: false };
@@ -1724,7 +1677,6 @@
 
         window.closeTownHallModal = function() { document.getElementById('townhall-modal').style.display = 'none'; activeSelection = null; }
 
-        // ===== НОВЕ 5.30.6: модалка ворожої ратуші =====
         function openEnemyCoreModal(r, c, coreHex) {
             hideAllModals();
             activeSelection = { key: `${r}_${c}`, layer: 'enemy-core' };
@@ -1764,10 +1716,8 @@
             activeSelection = null;
         }
 
-        // Почати атаку на ратушу: беремо першого вільного мого воїна поблизу і шлемо на гекс ратуші
         window.startAttackCore = function(r, c) {
             const targetKey = `${r}_${c}`;
-            // Знаходимо мого вільного воїна поблизу
             let chosen = null;
             for (const n of getNeighbors(r, c)) {
                 const h = hexWorldData[n.key];
@@ -1777,7 +1727,6 @@
                 break;
             }
             if (!chosen) { alert("Немає вільного воїна поруч!"); return; }
-            // Знаходимо шлях від воїна до ратуші (1 крок)
             const path = findPath(chosen.r, chosen.c, r, c);
             if (!path || path.length === 0) { alert("Шлях не знайдено!"); return; }
             closeEnemyCoreModal();
@@ -1881,7 +1830,6 @@
                 return;
             }
 
-            // ===== НОВЕ 5.30.6: ворожа ратуша через territory-modal =====
             if (hexInfo && hexInfo.type === 'core' && hexInfo.owner && hexInfo.owner !== currentUsername) {
                 const level = hexInfo.level || 1;
                 const maxHp = getCoreMaxHp(level);
@@ -2237,6 +2185,7 @@
             let renderScheduled = false;
             unsubWorld = onValue(ref(db, 'world_hexes'), (snapshot) => {
                 hexWorldData = snapshot.exists() ? snapshot.val() : {};
+                tryMigrateCoreHpOnce();
                 if (!renderScheduled) {
                     renderScheduled = true;
                     requestAnimationFrame(() => {
@@ -2377,7 +2326,6 @@
 
                 drawBattleHPBar(svg, p1.x, p1.y - 30, h.unit, "#3b82f6", "Ви");
 
-                // ===== НОВЕ 5.30.6: якщо ціль — ратуша, показуємо її HP =====
                 if (targetHex.type === 'core') {
                     const coreLevel = targetHex.level || 1;
                     const coreMaxHp = getCoreMaxHp(coreLevel);
@@ -2440,38 +2388,83 @@
             return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
         }
 
+        // ===== ДУБИНА (древня, 45° вліво) =====
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
-            const s = k;
-            const darkenedTeamColor = darkenColor(teamColor, 0.6) || '#1e293b';
-            const ringColor = unit.state === 'fighting' ? '#ef4444' : darkenedTeamColor;
             const g = svgEl("g", { class: "unit-badge" });
-            const unitBgColor = isBarbarian ? '#450a0a' : (teamColor || '#0f172a');
-            g.appendChild(svgEl("circle", { cx, cy, r, fill: unitBgColor, stroke: ringColor, 'stroke-width': 2.5 * k, 'stroke-dasharray': unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none' }));
-            g.appendChild(svgEl("line", { x1: cx - 2 * s, y1: cy + 4 * s, x2: cx - 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
-            g.appendChild(svgEl("line", { x1: cx + 2 * s, y1: cy + 4 * s, x2: cx + 3 * s, y2: cy + 9 * s, stroke: '#1e293b', 'stroke-width': 2.2 * s, 'stroke-linecap': 'round' }));
-            g.appendChild(svgEl("rect", { x: cx - 4 * s, y: cy - 3 * s, width: 8 * s, height: 8 * s, fill: teamColor, stroke: '#0f172a', 'stroke-width': 1 * s, rx: 1.5 * s }));
-            g.appendChild(svgEl("rect", { x: cx - 4 * s, y: cy + 3 * s, width: 8 * s, height: 1.5 * s, fill: '#0f172a' }));
-            g.appendChild(svgEl("circle", { cx, cy: cy - 7 * s, r: 3.5 * s, fill: '#fde68a', stroke: '#0f172a', 'stroke-width': 0.9 * s }));
-            g.appendChild(svgEl("path", { d: `M ${cx - 4 * s} ${cy - 7 * s} Q ${cx} ${cy - 12 * s} ${cx + 4 * s} ${cy - 7 * s} Z`, fill: '#64748b', stroke: '#0f172a', 'stroke-width': 0.9 * s }));
-            g.appendChild(svgEl("circle", { cx: cx + 1 * s, cy: cy - 6.5 * s, r: 0.7 * s, fill: '#0f172a' }));
-            g.appendChild(svgEl("line", { x1: cx + 3 * s, y1: cy - 1 * s, x2: cx + 6 * s, y2: cy - 6 * s, stroke: teamColor, 'stroke-width': 1.8 * s, 'stroke-linecap': 'round' }));
-            g.appendChild(svgEl("line", { x1: cx + 5 * s, y1: cy - 4 * s, x2: cx + 10 * s, y2: cy - 11 * s, stroke: '#6b3410', 'stroke-width': 1.8 * s, 'stroke-linecap': 'round' }));
-            g.appendChild(svgEl("ellipse", { cx: cx + 11 * s, cy: cy - 12 * s, rx: 2.5 * s, ry: 3 * s, fill: '#8b4513', stroke: '#4a2008', 'stroke-width': 0.7 * s }));
-            g.appendChild(svgEl("polygon", { points: `${cx + 9.5 * s},${cy - 14 * s} ${cx + 8.5 * s},${cy - 16 * s} ${cx + 11 * s},${cy - 15 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
-            g.appendChild(svgEl("polygon", { points: `${cx + 13 * s},${cy - 14 * s} ${cx + 14.5 * s},${cy - 16 * s} ${cx + 12 * s},${cy - 15 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
-            g.appendChild(svgEl("polygon", { points: `${cx + 11.5 * s},${cy - 9.5 * s} ${cx + 12 * s},${cy - 7.5 * s} ${cx + 13 * s},${cy - 10 * s}`, fill: '#94a3b8', stroke: '#475569', 'stroke-width': 0.3 * s }));
+
+            // Колір кола: варвар — темно-бордовий, свій — колір команди
+            let circleFill, circleStroke;
             if (isBarbarian) {
-                g.appendChild(svgEl("rect", { x: cx - 4 * s, y: cy - 3 * s, width: 8 * s, height: 8 * s, fill: 'none', stroke: '#7f1d1d', 'stroke-width': 1 * s, rx: 1.5 * s }));
-                g.appendChild(svgEl("polygon", { points: `${cx - 3.5 * s},${cy - 9 * s} ${cx - 5 * s},${cy - 13 * s} ${cx - 2 * s},${cy - 10 * s}`, fill: '#fef3c7', stroke: '#78350f', 'stroke-width': 0.5 * s }));
-                g.appendChild(svgEl("polygon", { points: `${cx + 3.5 * s},${cy - 9 * s} ${cx + 5 * s},${cy - 13 * s} ${cx + 2 * s},${cy - 10 * s}`, fill: '#fef3c7', stroke: '#78350f', 'stroke-width': 0.5 * s }));
+                circleFill = '#7f1d1d';
+                circleStroke = '#450a0a';
+            } else {
+                circleFill = teamColor || '#3b82f6';
+                circleStroke = darkenColor(circleFill, 0.55) || '#1e40af';
             }
+
+            // Коло ззаду
+            g.appendChild(svgEl("circle", {
+                cx, cy, r,
+                fill: circleFill,
+                stroke: circleStroke,
+                "stroke-width": 2.5 * k,
+                "stroke-dasharray": unit.state === 'moving' ? `${4 * k} ${3 * k}` : 'none'
+            }));
+
+            // Дубина — 45° вліво, поверх кола
+            const clubG = svgEl("g", {});
+            clubG.setAttribute("transform", `translate(${cx}, ${cy}) rotate(-45) scale(${k * 1.05})`);
+
+            // Тінь-обводка
+            clubG.appendChild(svgEl("path", {
+                d: "M -4 16 Q -5 8 -3 0 Q -7 -8 -6 -14 Q -8 -18 -4 -20 Q 0 -23 4 -20 Q 8 -18 6 -14 Q 7 -8 3 0 Q 5 8 4 16 Z",
+                fill: "#3e1f05"
+            }));
+            // Тіло
+            clubG.appendChild(svgEl("path", {
+                d: "M -3 16 Q -4 8 -2 0 Q -6 -8 -5 -14 Q -7 -18 -3 -20 Q 0 -22 3 -20 Q 7 -18 5 -14 Q 6 -8 2 0 Q 4 8 3 16 Z",
+                fill: "#8b4513", stroke: "#4a2008", "stroke-width": 0.6
+            }));
+            // Заокруглений верх
+            clubG.appendChild(svgEl("ellipse", {
+                cx: 0, cy: -19, rx: 5, ry: 4,
+                fill: "#8b4513", stroke: "#4a2008", "stroke-width": 0.7
+            }));
+            // Сучки
+            clubG.appendChild(svgEl("circle", { cx: -3, cy: -16, r: 1.2, fill: "#6b3410" }));
+            clubG.appendChild(svgEl("circle", { cx: 3, cy: -18, r: 1.0, fill: "#6b3410" }));
+            clubG.appendChild(svgEl("circle", { cx: 0, cy: -13, r: 1.3, fill: "#6b3410" }));
+            // Тріщини
+            clubG.appendChild(svgEl("path", { d: "M -2 -6 Q -1 -2 -2 2", stroke: "#4a2008", "stroke-width": 0.4, fill: "none", opacity: "0.8" }));
+            clubG.appendChild(svgEl("path", { d: "M 1 -5 Q 2 -1 1 3", stroke: "#4a2008", "stroke-width": 0.4, fill: "none", opacity: "0.8" }));
+            // Підсвітка
+            clubG.appendChild(svgEl("ellipse", { cx: 1, cy: -21, rx: 2, ry: 1.3, fill: "#a86a2d", opacity: "0.6" }));
+            // Обмотка (3 грубі смужки)
+            clubG.appendChild(svgEl("line", { x1: -3.5, y1: 6, x2: 3, y2: 6.5, stroke: "#3e1f05", "stroke-width": 0.7 }));
+            clubG.appendChild(svgEl("line", { x1: -4, y1: 9, x2: 3, y2: 9.5, stroke: "#3e1f05", "stroke-width": 0.7 }));
+            clubG.appendChild(svgEl("line", { x1: -4, y1: 12, x2: 3, y2: 12.5, stroke: "#3e1f05", "stroke-width": 0.7 }));
+
+            g.appendChild(clubG);
+
+            // HP-смужка під бейджем
             const maxHp = unit.maxHp || 100;
             const pct = Math.max(0, Math.min(1, (unit.hp || 0) / maxHp));
             const barW = 18 * k, barH = 3 * k;
-            const bx = cx - barW / 2, by = cy + 11 * k;
+            const bx = cx - barW / 2, by = cy + 13 * k;
             g.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, fill: '#475569' }));
             g.appendChild(svgEl("rect", { x: bx, y: by, width: Math.max(0.1, barW * pct), height: barH, rx: barH / 2, fill: pct > 0.5 ? '#10b981' : (pct > 0.25 ? '#f59e0b' : '#ef4444') }));
+
+            // Пульсація бою
+            if (unit.state === 'fighting') {
+                g.appendChild(svgEl("circle", {
+                    cx, cy, r: r * 1.15, fill: "none",
+                    stroke: "#ef4444", "stroke-width": 1.5 * k,
+                    "stroke-dasharray": `${3 * k} ${3 * k}`,
+                    opacity: "0.9"
+                }));
+            }
+
             svg.appendChild(g);
         }
 
@@ -2516,7 +2509,6 @@
                 let plain = false;
                 if (hexData.type === 'core') {
                     polygon.classList.add('occupied-core');
-                    // Пульсація, якщо ратуша під атакою
                     const isUnderAttack = Object.values(hexWorldData).some(h =>
                         h && h.unit && h.unit.state === 'fighting' && h.unit.targetKey === key && h.unit.owner === currentUsername
                     );
@@ -2526,8 +2518,7 @@
                     const maxHp = getCoreMaxHp(level);
                     const hp = hexData.hp !== undefined ? hexData.hp : maxHp;
                     const hpPct = Math.round((hp / maxHp) * 100);
-                    const hpText = `${Math.round(hp)}/${maxHp} (${hpPct}%)`;
-                    labelQueue.push({ center, text: `👑 ${hexData.owner} [L${level}] ❤️ ${hpText}`, damaged: hpPct < 60 });
+                    labelQueue.push({ center, text: `${hexData.owner} [L${level}]`, damaged: hpPct < 60, hpPct: hpPct, hp: hp, maxHp: maxHp });
                 } else if (hexData.type === 'bridge') { polygon.classList.add('bridge-hex'); renderBridgeVector(svg, center); }
                 else if (hexData.type === 'farm') { polygon.classList.add('occupied-border'); renderFarmVector(svg, center); }
                 else if (hexData.type === 'mill') { polygon.classList.add('occupied-border'); renderMillVector(svg, center); }
@@ -2561,34 +2552,75 @@
 
             renderBattleHPBars(svg);
 
-            labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged));
+            labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged, l.hpPct, l.hp, l.maxHp));
         }
 
-        function renderLabel(svg, center, labelContent, damaged) {
+        // ===== ЛЕЙБЛ З СМУЖКОЮ HP =====
+        function renderLabel(svg, center, labelContent, damaged, hpPct, hp, maxHp) {
             const labelY = center.y - 40;
             const approxWidth = Math.max(70, labelContent.length * 7.2 + 14);
+            const hasHpBar = (hpPct !== undefined && hpPct !== null);
+
+            const bgHeight = hasHpBar ? 28 : 20;
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             rect.setAttribute("x", center.x - approxWidth / 2);
             rect.setAttribute("y", labelY - 10);
             rect.setAttribute("width", approxWidth);
-            rect.setAttribute("height", 20);
+            rect.setAttribute("height", bgHeight);
             rect.setAttribute("class", "owner-label-bg");
             if (damaged) rect.setAttribute("stroke", "#ef4444");
             svg.appendChild(rect);
+
             const userText = document.createElementNS("http://www.w3.org/2000/svg", "text");
             userText.setAttribute("x", center.x);
-            userText.setAttribute("y", labelY);
+            userText.setAttribute("y", hasHpBar ? labelY - 2 : labelY);
             userText.setAttribute("class", damaged ? "owner-label-text core-damaged" : "owner-label-text");
             userText.textContent = labelContent;
             svg.appendChild(userText);
+
+            if (hasHpBar) {
+                const barW = approxWidth - 12;
+                const barH = 6;
+                const barX = center.x - barW / 2;
+                const barY = labelY + 8;
+
+                const barBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                barBg.setAttribute("x", barX);
+                barBg.setAttribute("y", barY);
+                barBg.setAttribute("width", barW);
+                barBg.setAttribute("height", barH);
+                barBg.setAttribute("rx", barH / 2);
+                barBg.setAttribute("fill", "#334155");
+                barBg.setAttribute("stroke", "#0f172a");
+                barBg.setAttribute("stroke-width", "0.5");
+                svg.appendChild(barBg);
+
+                const pct = Math.max(0, Math.min(1, hpPct / 100));
+                const pctColor = pct > 0.6 ? '#10b981' : (pct > 0.3 ? '#f59e0b' : '#ef4444');
+                const barFill = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                barFill.setAttribute("x", barX);
+                barFill.setAttribute("y", barY);
+                barFill.setAttribute("width", Math.max(0.5, barW * pct));
+                barFill.setAttribute("height", barH);
+                barFill.setAttribute("rx", barH / 2);
+                barFill.setAttribute("fill", pctColor);
+                svg.appendChild(barFill);
+
+                const pctText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                pctText.setAttribute("x", center.x);
+                pctText.setAttribute("y", barY + barH / 2 + 0.5);
+                pctText.setAttribute("class", "owner-label-text");
+                pctText.setAttribute("font-size", "9");
+                pctText.setAttribute("font-weight", "700");
+                pctText.setAttribute("fill", "#f8fafc");
+                pctText.textContent = `${hpPct}%`;
+                svg.appendChild(pctText);
+            }
         }
 
-        // ===== НОВЕ 5.30.6: міграція HP старих ратуш при логіні =====
-        // Викликаємо після авторизації, коли hexWorldData вже завантажено.
-        // Якщо у старих ратуш HP 200 (стара версія) — переписуємо на нові 100/150/300.
+        // ===== міграція HP старих ратуш =====
         async function migrateCoreHpIfNeeded() {
             if (normalizeCoreHp()) {
-                // Знайшли ратуші з неправильним HP — оновлюємо у Firebase
                 const updates = {};
                 Object.keys(hexWorldData).forEach(key => {
                     const h = hexWorldData[key];
@@ -2602,9 +2634,6 @@
             }
         }
 
-        // Викликаємо міграцію після логіну — з невеликою затримкою, щоб hexWorldData точно завантажився
-        // (hexWorldData вже завантажується в handleAuth до initHexGrid)
-        // Додаємо виклик у listenToWorldData (перший раз)
         let coreHpMigrated = false;
         function tryMigrateCoreHpOnce() {
             if (coreHpMigrated) return;
