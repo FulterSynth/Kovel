@@ -3,25 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.10</title>
+    <title>HexPolitics v5.30.11</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.10
+    ПОТОЧНА ВЕРСІЯ: v5.30.11
 
     ЩО ЗМІНИЛОСЬ:
-    - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ
-               * Лікування воїна ТІЛЬКИ на своїй території
-               * Воїн: +100 HP за 20 золота (не більше maxHp)
-               * Ратуша: 1 HP = 1 золото (лікує все до max за раз)
-               * Авторемонт ратуші: 10 хв без шкоди → +10 HP/хв
-               * Авторемонт працює в офлайні (як дохід золота)
-               * Модалка ратуші показує таймер до авторемонту
-    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ (формат 2:30, до наступного гекса)
-    - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ (30 сек/крок проти 60)
+    - v5.30.11: НОВЕ МЕНЮ КЛІТИНКИ
+               * Показує що стоїть на клітинці (тип текстом)
+               * Показує дохід гекса (+N золота/хв)
+               * Показує утримання гекса (-N золота/хв)
+               * Показує підсумок (баланс гекса)
+               * Показує воїна на гексі (з HP)
+               * Прибрано емодзі з меню клітинки
+    - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ (лікування тільки вдома, авторемонт ратуші)
+    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ (формат 2:30)
+    - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ (30 сек/крок)
     - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ (шкала HP, древня дубина)
-    - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ (атака на ратушу, HP 100/150/300, трофей 50%)
-    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ (сумарний урон, ліміт 6 атакуючих, обхід)
+    - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ (атака на ратушу)
+    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ (сумарний урон, ліміт 6, обхід)
     - v5.30.2: ВИПРАВЛЕНО помилку авторизації
 
     ФОРМАТ: файл розбито на 4 частини
@@ -151,6 +152,12 @@
         #chat-input:focus { border-color: #38bdf8; }
         #chat-send-btn { padding: 0 14px; border: none; background: #3b82f6; color: #fff; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; }
         #chat-send-btn:hover { background: #2563eb; }
+
+        /* ===== 5.30.11: стиль для рядків балансу в меню клітинки ===== */
+        .hex-balance-row { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+        .hex-balance-label { color: #94a3b8; }
+        .hex-balance-value { font-weight: bold; }
+        .hex-balance-total { border-top: 1px solid #334155; margin-top: 4px; padding-top: 6px; }
     </style>
 </head>
 <body>
@@ -158,8 +165,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.10</h2>
-            <p id="loader-desc">Лікування та авторемонт...</p>
+            <h2 id="loader-status">HexPolitics v5.30.11</h2>
+            <p id="loader-desc">Нове меню клітинки...</p>
         </div>
     </div>
 
@@ -231,7 +238,7 @@
     </div>
 
     <div id="territory-modal" class="modal">
-        <h3 id="territory-title">🌍 Управління гексом</h3>
+        <h3 id="territory-title">Управління гексом</h3>
         <div id="territory-card-container"></div>
         <div class="modal-btns" id="territory-buttons"></div>
         <div style="margin-top: 8px;">
@@ -258,7 +265,7 @@
     </div>
 
     <div id="move-banner">
-        <span>🟢 Оберіть будь-який гекс на карті</span>
+        <span>Оберіть будь-який гекс на карті</span>
         <button onclick="cancelMoveMode()">Скасувати</button>
     </div>
 
@@ -297,7 +304,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.10";
+        const CURRENT_VERSION = "5.30.11";
 
         let mode = "login";
         let currentUsername = "";
@@ -318,10 +325,10 @@
         const MAX_ATTACKERS = 6;
 
         // ===== 5.30.10: лікування та авторемонт =====
-        const HEAL_UNIT_COST = 20;                          // 20 золота за лікування воїна
-        const HEAL_UNIT_HP = 100;                           // +100 HP (не більше maxHp)
-        const CORE_HEAL_RATE_PER_MIN = 10;                  // +10 HP/хв авторемонт
-        const CORE_AUTO_HEAL_DELAY_MS = 10 * 60 * 1000;     // 10 хв без шкоди → починає капати
+        const HEAL_UNIT_COST = 20;
+        const HEAL_UNIT_HP = 100;
+        const CORE_HEAL_RATE_PER_MIN = 10;
+        const CORE_AUTO_HEAL_DELAY_MS = 10 * 60 * 1000;
 
         // ===== 5.30.6: характеристики ратуші =====
         const CORE_HP_BY_LEVEL = { 1: 100, 2: 150, 3: 300 };
@@ -360,27 +367,67 @@
             return total;
         }
 
-        // ===== НОВЕ 5.30.10: авторемонт ратуші =====
-        // Повертає { newHp, newLastHealAt, changed } — якщо є що оновлювати
-        // coreHex — об'єкт гекса ратуші
-        // now — поточний timestamp
+        // ===== 5.30.10: авторемонт ратуші =====
         function computeCoreAutoHeal(coreHex, now) {
             if (!coreHex || coreHex.type !== 'core') return null;
             const maxHp = getCoreMaxHp(coreHex.level || 1);
             const hp = coreHex.hp !== undefined ? coreHex.hp : maxHp;
-            if (hp >= maxHp) return null;  // повна — нічого не робимо
-            if (!coreHex.lastDamageAt) return null;  // не було шкоди — не капає
+            if (hp >= maxHp) return null;
+            if (!coreHex.lastDamageAt) return null;
             const sinceDamage = now - coreHex.lastDamageAt;
-            if (sinceDamage < CORE_AUTO_HEAL_DELAY_MS) return null;  // ще не минуло 10 хв
-
-            // Лікування починається з моменту max(lastDamageAt + 10хв, lastHealAt)
+            if (sinceDamage < CORE_AUTO_HEAL_DELAY_MS) return null;
             const healStartAt = Math.max(coreHex.lastDamageAt + CORE_AUTO_HEAL_DELAY_MS, coreHex.lastHealAt || 0);
             const msElapsed = now - healStartAt;
             if (msElapsed <= 0) return null;
-            const healAmount = (msElapsed / 60000) * CORE_HEAL_RATE_PER_MIN;  // 10 HP за хвилину
+            const healAmount = (msElapsed / 60000) * CORE_HEAL_RATE_PER_MIN;
             const newHp = Math.min(maxHp, hp + healAmount);
             if (newHp <= hp) return null;
             return { newHp: newHp, newLastHealAt: now, changed: true };
+        }
+
+        // ===== НОВЕ 5.30.11: розбір доходу/утримання гекса =====
+        // Повертає { income, upkeep, balance, description } — у золоті/хв
+        // income — скільки ДАЄ гекс (farm, mill, core)
+        // upkeep — скільки ЗАБИРАЄ гекс (purchased, bridge)
+        // balance = income - upkeep
+        function getHexIncomeBreakdown(hexInfo) {
+            const result = { income: 0, upkeep: 0, balance: 0, description: '', extraLines: [] };
+            if (!hexInfo) return result;
+
+            const type = hexInfo.type || '';
+            const level = hexInfo.level || 1;
+
+            if (type === 'core') {
+                result.income = getIncomeByLevel(level);
+                result.description = `Ратуша (рівень ${level})`;
+            } else if (type === 'farm') {
+                result.income = 1;
+                result.description = 'Ферма';
+            } else if (type === 'mill') {
+                // Вітряк: рахуємо бонус своїм фермам-сусідам
+                let bonus = 0;
+                if (hexInfo.owner && currentUsername && hexInfo.owner === currentUsername) {
+                    // треба знати координати гекса — передаємо через extraLines (не маємо тут key)
+                    // Тому повертаємо просто опис, а бонус рахуємо викликом ззовні
+                }
+                result.income = 0;  // сам не дає
+                result.description = 'Вітряк';
+            } else if (type === 'bridge') {
+                result.upkeep = 2;
+                result.description = 'Міст';
+            } else if (type === 'purchased') {
+                result.upkeep = 2;
+                result.description = 'Куплена земля';
+            } else if (type === 'starter') {
+                result.description = 'Стартова земля (безкоштовна)';
+            } else if (type === 'barbarian_camp') {
+                result.description = 'Табір варварів';
+            } else {
+                result.description = 'Пусто';
+            }
+
+            result.balance = result.income - result.upkeep;
+            return result;
         }
 
         const BARBARIAN_LEVELS = {
@@ -453,7 +500,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.10"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.11"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -566,7 +613,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 1/4 =====
 
-                                // ===== ЕКОНОМІКА =====
+                                        // ===== ЕКОНОМІКА =====
         function calculateRawIncome(username, worldHexes) {
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
@@ -611,7 +658,7 @@
                 hp: hp,
                 maxHp: hp,
                 isPurchased: false,
-                lastDamageAt: Date.now(),   // ===== 5.30.10: для авторемонту =====
+                lastDamageAt: Date.now(),
                 lastHealAt: 0
             };
         }
@@ -632,8 +679,7 @@
             return changed;
         }
 
-        // ===== НОВЕ 5.30.10: офлайн авторемонт ратуші =====
-        // Проходиться по всіх моїх ратушах і додає HP за минулий час
+        // ===== офлайн авторемонт ратуші =====
         async function processOfflineCoreHeal(username, worldHexes) {
             const now = Date.now();
             const updates = {};
@@ -656,7 +702,6 @@
             if (Object.keys(updates).length > 0) {
                 try {
                     await update(ref(db), updates);
-                    // Оновимо локальну копію, щоб рендер одразу показав нове HP
                     Object.keys(worldHexes).forEach(key => {
                         const h = worldHexes[key];
                         if (!h || h.type !== 'core' || h.owner !== username) return;
@@ -690,7 +735,7 @@
                 setTimeout(() => { alert(`💰 Поки вас не було (${timeText}), накапало: +${Math.floor(earnedGold)} золота!`); }, 700);
             }
 
-            // ===== НОВЕ 5.30.10: офлайн-авторемонт ратуш =====
+            // офлайн-авторемонт ратуш
             if (diffMinutes > 0.2) {
                 const healResult = await processOfflineCoreHeal(username, worldHexes);
                 if (healResult.totalHealed >= 1) {
@@ -804,8 +849,7 @@
             }, 20000);
         }
 
-        // ===== НОВЕ 5.30.10: онлайн-цикл авторемонту ратуш =====
-        // Кожні 10 секунд перевіряє всі мої ратуші і додає HP, якщо минуло 10 хв без шкоди
+        // ===== онлайн-цикл авторемонту ратуш =====
         let autoHealInterval = null;
         function startAutoHealLoop() {
             if (autoHealInterval) clearInterval(autoHealInterval);
@@ -851,7 +895,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 2/4 =====
 
-                                // ===== БІЙ ТА РУХ =====
+                                        // ===== БІЙ ТА РУХ =====
         function stopTravel(unit) {
             const u = { ...unit, state: 'idle' };
             delete u.targetKey; delete u.arrivalTime; delete u.path; delete u.pathIndex; delete u.finalTargetKey;
@@ -1179,7 +1223,6 @@
                             arrivingAttackers.forEach(a => processedUnits.add(a.unit.id));
                             continue;
                         } else {
-                            // ===== НОВЕ 5.30.10: оновлюємо lastDamageAt (скидає таймер авторемонту) =====
                             const updatedCore = { ...targetHex, hp: coreHp, lastDamageAt: now };
                             setHex(targetKey, updatedCore);
 
@@ -1438,7 +1481,6 @@
                     delete srcH.unit;
                     setHex(srcKey, srcH);
 
-                    // ===== швидкість залежить від гекса, куди прибув =====
                     const stepMs = getStepMsForHex(targetKey);
 
                     if (nextIndex >= path.length) {
@@ -1516,7 +1558,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/4 =====
 
-                                // ===== ІНТЕРАКТИВ =====
+                                        // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1682,8 +1724,7 @@
             return { toNext, total };
         }
 
-        // ===== НОВЕ 5.30.10: час до початку авторемонту =====
-        // Повертає ms до початку авторемонту, або 0 якщо вже капає, або null якщо не треба
+        // ===== 5.30.10: час до початку авторемонту =====
         function computeAutoHealStartIn(coreHex, nowMs) {
             if (!coreHex || coreHex.type !== 'core') return null;
             const maxHp = getCoreMaxHp(coreHex.level || 1);
@@ -1692,8 +1733,77 @@
             if (!coreHex.lastDamageAt) return null;
             const now = nowMs || Date.now();
             const healStartAt = coreHex.lastDamageAt + CORE_AUTO_HEAL_DELAY_MS;
-            if (now >= healStartAt) return 0;  // вже капає
+            if (now >= healStartAt) return 0;
             return healStartAt - now;
+        }
+
+        // ===== НОВЕ 5.30.11: розбір доходу/утримання для конкретного гекса =====
+        // Повертає { income, upkeep, balance, bonusLines: [] }
+        // Враховує: тип, рівень, бонус вітряка для ферм-сусідів, воїна на гексі
+        function analyzeHexEconomy(hexKey, hexInfo) {
+            const result = { income: 0, upkeep: 0, balance: 0, bonusLines: [] };
+            if (!hexInfo) return result;
+            const type = hexInfo.type || '';
+            const level = hexInfo.level || 1;
+
+            if (type === 'core') {
+                result.income = getIncomeByLevel(level);
+            } else if (type === 'farm') {
+                result.income = 1;
+                // Перевіримо, чи є поруч мій вітряк (бонус +1)
+                if (hexInfo.owner === currentUsername) {
+                    const [r, c] = hexKey.split('_').map(Number);
+                    const neighbors = getNeighbors(r, c);
+                    let millCount = 0;
+                    neighbors.forEach(n => {
+                        const nh = hexWorldData[n.key];
+                        if (nh && nh.owner === currentUsername && nh.type === 'mill') millCount++;
+                    });
+                    if (millCount > 0) {
+                        result.income += millCount;
+                        result.bonusLines.push(`Вітряків поруч: ${millCount} (+${millCount} золота/хв)`);
+                    }
+                }
+            } else if (type === 'mill') {
+                // Вітряк: рахуємо скільки ферм-сусідів він підсилює
+                if (hexInfo.owner === currentUsername) {
+                    const [r, c] = hexKey.split('_').map(Number);
+                    const neighbors = getNeighbors(r, c);
+                    let farmCount = 0;
+                    neighbors.forEach(n => {
+                        const nh = hexWorldData[n.key];
+                        if (nh && nh.owner === currentUsername && nh.type === 'farm') farmCount++;
+                    });
+                    result.income = 0;
+                    if (farmCount > 0) {
+                        result.bonusLines.push(`Підсилює ${farmCount} ферм(у) на +${farmCount} золота/хв`);
+                    } else {
+                        result.bonusLines.push(`Немає ферм поруч (бонус 0)`);
+                    }
+                }
+            } else if (type === 'bridge') {
+                result.upkeep = 2;
+            } else if (type === 'purchased') {
+                result.upkeep = 2;
+            }
+
+            result.balance = result.income - result.upkeep;
+            return result;
+        }
+
+        // ===== НОВЕ 5.30.11: текст типу гекса без емодзі =====
+        function getHexTypeLabel(hexInfo) {
+            if (!hexInfo) return 'Пусто';
+            const t = hexInfo.type;
+            if (t === 'core') return `Ратуша (рівень ${hexInfo.level || 1})`;
+            if (t === 'farm') return 'Ферма';
+            if (t === 'mill') return 'Вітряк';
+            if (t === 'bridge') return 'Міст';
+            if (t === 'purchased') return 'Куплена земля';
+            if (t === 'starter') return 'Стартова земля';
+            if (t === 'barbarian_camp') return 'Табір варварів';
+            if (t === 'chasm') return 'Прірва';
+            return 'Невідомо';
         }
 
         function handleHexClick(r, c) {
@@ -1814,7 +1924,6 @@
             catch (err) { alert('Помилка: ' + err.message); }
         }
 
-        // ===== ОНОВЛЕНО 5.30.10: авторемонт + ремонт 1 HP = 1 золото =====
         function openTownHallModal(coreHex, r, c) {
             hideAllModals();
             const modal = document.getElementById('townhall-modal');
@@ -1828,7 +1937,6 @@
             let canUpgrade = userTownHallLevel < 3;
             let totalInc = calculateEffectiveIncome(currentUsername, hexWorldData);
 
-            // ===== рядок авторемонту =====
             let autoHealText = '';
             if (currentHp >= maxHp) {
                 autoHealText = `<div><b>Авторемонт:</b> <span style="color: #94a3b8;">не потрібен (ратуша ціла)</span></div>`;
@@ -1837,7 +1945,7 @@
                 if (startIn === null) {
                     autoHealText = `<div><b>Авторемонт:</b> <span style="color: #94a3b8;">очікує данних</span></div>`;
                 } else if (startIn === 0) {
-                    autoHealText = `<div><b>Авторемонт:</b> <span style="color: #34d399;">🔧 активний, +${CORE_HEAL_RATE_PER_MIN} HP/хв</span></div>`;
+                    autoHealText = `<div><b>Авторемонт:</b> <span style="color: #34d399;">активний, +${CORE_HEAL_RATE_PER_MIN} HP/хв</span></div>`;
                 } else {
                     autoHealText = `<div><b>Авторемонт:</b> <span style="color: #fbbf24;">почнеться через ${formatDuration(startIn)}</span> <span style="color:#94a3b8;">(+${CORE_HEAL_RATE_PER_MIN} HP/хв)</span></div>`;
                 }
@@ -1851,10 +1959,10 @@
                 autoHealText;
 
             let btnsHtml = '';
-            if (isMyUnit(coreHex) && r !== undefined) btnsHtml += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
-            btnsHtml += `<button class="btn-recruit" onclick="recruitClubman()">🪵 Найми воїна (15 💰, -1 утр)</button>`;
+            if (isMyUnit(coreHex) && r !== undefined) btnsHtml += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">Меню воїна</button>`;
+            btnsHtml += `<button class="btn-recruit" onclick="recruitClubman()">Найми воїна (15 золота, -1 утр)</button>`;
             if (needHp > 0) {
-                btnsHtml += `<button class="btn-repair" onclick="repairTownHall()">🛠️ Відремонтувати (+${needHp} HP, ${needHp} 💰)</button>`;
+                btnsHtml += `<button class="btn-repair" onclick="repairTownHall()">Відремонтувати (+${needHp} HP, ${needHp} золота)</button>`;
             }
             if (canUpgrade) btnsHtml += `<button class="btn-confirm" onclick="upgradeTownHall()">Прокачати (${costText})</button>`;
             actionBtnsContainer.innerHTML = btnsHtml;
@@ -1880,7 +1988,7 @@
                     <b>HP:</b> <span style="color: ${hpPct < 30 ? '#ef4444' : (hpPct < 60 ? '#fbbf24' : '#34d399')}; font-weight: bold;">${Math.round(hp)} / ${maxHp} (${hpPct}%)</span><br>
                     <b>Урон у відповідь:</b> ${dmg}<br>
                     <hr style="border-color: #334155; margin: 6px 0;">
-                    <span class="bad">⚠️ При знищенні: всі воїни власника гинуть, гекс + 6 сусідів переходять переможцю, трофей = 50% золота ворога.</span>
+                    <span class="bad">При знищенні: всі воїни власника гинуть, гекс + 6 сусідів переходять переможцю, трофей = 50% золота ворога.</span>
                 </div>
                 <div style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Атака відбувається воїном. Оберіть свого воїна і накажіть йти на цей гекс.</div>
             `;
@@ -1888,7 +1996,7 @@
             let btns = '';
             const hasMyUnitNearby = getNeighbors(r, c).some(n => isMyUnit(hexWorldData[n.key]));
             if (hasMyUnitNearby) {
-                btns += `<button class="btn-attack-core" onclick="startAttackCore(${r}, ${c})">⚔️ Атакувати ратушу</button>`;
+                btns += `<button class="btn-attack-core" onclick="startAttackCore(${r}, ${c})">Атакувати ратушу</button>`;
             } else {
                 btns += `<button class="btn-disabled" disabled>Потрібен воїн поруч</button>`;
             }
@@ -1919,7 +2027,6 @@
             executeUnitMove(chosen.r, chosen.c, r, c, path);
         }
 
-        // ===== ОНОВЛЕНО 5.30.10: ремонт 1 HP = 1 золото =====
         window.repairTownHall = async function() {
             let coreKey = null;
             Object.keys(hexWorldData).forEach(k => { if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') coreKey = k; });
@@ -1932,7 +2039,7 @@
             if (userGold < needHp) { alert(`Потрібно ${needHp} золота (1 HP = 1 золото). У вас ${Math.floor(userGold)}.`); return; }
             const updates = {};
             updates[`world_hexes/${coreKey}/hp`] = maxHp;
-            updates[`world_hexes/${coreKey}/lastDamageAt`] = Date.now();  // скидаємо авторемонт
+            updates[`world_hexes/${coreKey}/lastDamageAt`] = Date.now();
             updates[`world_hexes/${coreKey}/lastHealAt`] = Date.now();
             updates[`users/${currentUsername}/gold`] = userGold - needHp;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -1959,7 +2066,7 @@
                     updates[`world_hexes/${coreHexKey}/level`] = newLevel;
                     updates[`world_hexes/${coreHexKey}/hp`] = newMaxHp;
                     updates[`world_hexes/${coreHexKey}/maxHp`] = newMaxHp;
-                    updates[`world_hexes/${coreHexKey}/lastDamageAt`] = Date.now();  // оновлюємо таймер
+                    updates[`world_hexes/${coreHexKey}/lastDamageAt`] = Date.now();
                 }
                 await update(ref(db), updates);
                 alert(`Ратушу покращено до Рівня ${newLevel}! HP: ${newMaxHp}, урон: ${getCoreDmg(newLevel)}`);
@@ -1986,12 +2093,18 @@
             try { await update(ref(db), updates); closeTownHallModal(); alert("Воїна найнято!"); } catch (err) { alert(err.message); }
         }
 
+        // ===== 5.30.11: мост без емодзі =====
         function openBridgeModal(r, c) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
-            document.getElementById('territory-title').innerText = "🌉 Побудувати міст";
-            document.getElementById('territory-card-container').innerHTML = `<div class="info-card"><b>Переправа:</b><br>💰 30 золота<br><span class="bad">-2 золота/хв</span><br></div>`;
-            document.getElementById('territory-buttons').innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати (30 💰)</button>`;
+            document.getElementById('territory-title').innerText = "Побудувати міст";
+            document.getElementById('territory-card-container').innerHTML =
+                `<div class="info-card">` +
+                `<b>Переправа через прірву</b><br><br>` +
+                `<div class="hex-balance-row"><span class="hex-balance-label">Ціна:</span><span class="hex-balance-value">30 золота</span></div>` +
+                `<div class="hex-balance-row"><span class="hex-balance-label">Утримання:</span><span class="hex-balance-value bad">-2 золота/хв</span></div>` +
+                `</div>`;
+            document.getElementById('territory-buttons').innerHTML = `<button class="btn-bridge" onclick="buildBridge(${r}, ${c})">Побудувати (30 золота)</button>`;
             modal.style.display = 'block';
         }
 
@@ -2004,33 +2117,43 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
+        // ===== ПОВНІСТЮ ПЕРЕРОБЛЕНО 5.30.11: нове меню клітинки =====
         function openTerritoryModal(r, c, hexInfo) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
             const title = document.getElementById('territory-title');
             const cardContainer = document.getElementById('territory-card-container');
             const buttonsContainer = document.getElementById('territory-buttons');
+            const key = `${r}_${c}`;
             let cardHtml = '', actionBtns = '';
 
+            // ===== Табір варварів =====
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
                 const level = hexInfo.level || 'weak';
-                const levelNames = { weak: '🟢 Слабкий', medium: '🟡 Середній', strong: '🔴 Сильний' };
+                const levelNames = { weak: 'Слабкий', medium: 'Середній', strong: 'Сильний' };
                 const cfg = BARBARIAN_LEVELS[level] || BARBARIAN_LEVELS.weak;
                 const curHp = hexInfo.unit ? Math.round(hexInfo.unit.hp) : cfg.hp;
                 const curDmg = hexInfo.unit ? hexInfo.unit.dmg : cfg.dmg;
-                title.innerText = `⛺ Табір (${levelNames[level]})`;
-                cardHtml = `<div class="info-card"><b>Дика територія</b><br>Тип: <b>${levelNames[level]}</b><br>❤️ ${curHp} / ${cfg.hp}<br>⚔️ ${curDmg}<br>💰 Скарб: ${hexInfo.reward || 100}<br><span class="good">Завойована земля стане безкоштовною</span></div>`;
+                title.innerText = `Табір (${levelNames[level]})`;
+                cardHtml = `<div class="info-card">` +
+                    `<b>Ворожа територія</b><br>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Тип:</span><span class="hex-balance-value">${levelNames[level]}</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">HP ворога:</span><span class="hex-balance-value">${curHp} / ${cfg.hp}</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Урон ворога:</span><span class="hex-balance-value">${curDmg}</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Скарб:</span><span class="hex-balance-value good">${hexInfo.reward || 100} золота</span></div>` +
+                    `</div>`;
                 cardContainer.innerHTML = cardHtml;
                 buttonsContainer.innerHTML = `<button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>`;
                 modal.style.display = 'block';
                 return;
             }
 
+            // ===== Ворожа ратуша (fallback) =====
             if (hexInfo && hexInfo.type === 'core' && hexInfo.owner && hexInfo.owner !== currentUsername) {
                 const level = hexInfo.level || 1;
                 const maxHp = getCoreMaxHp(level);
                 const hp = hexInfo.hp !== undefined ? hexInfo.hp : maxHp;
-                title.innerText = "⚔️ Ворожа Ратуша";
+                title.innerText = "Ворожа Ратуша";
                 cardHtml = `<div class="info-card"><b>Власник:</b> ${hexInfo.owner}<br><b>Рівень:</b> ${level}<br><b>HP:</b> ${Math.round(hp)} / ${maxHp}<br><b>Урон:</b> ${getCoreDmg(level)}</div>`;
                 cardContainer.innerHTML = cardHtml;
                 buttonsContainer.innerHTML = `<button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>`;
@@ -2038,25 +2161,82 @@
                 return;
             }
 
+            // ===== Порожній гекс (нейтральний) =====
             if (!hexInfo || !hexInfo.owner) {
-                title.innerText = "🌍 Придбати гекс";
-                cardHtml = `<div class="info-card"><b>Купівля:</b><br>💰 10 золота<br><span class="bad">-2 золота/хв</span><br></div>`;
-                actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити (10 💰)</button>`;
+                title.innerText = "Придбати гекс";
+                cardHtml = `<div class="info-card">` +
+                    `<b>Порожній гекс</b><br>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Що на ній:</span><span class="hex-balance-value">Пусто</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Ціна купівлі:</span><span class="hex-balance-value">10 золота</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Утримання після купівлі:</span><span class="hex-balance-value bad">-2 золота/хв</span></div>` +
+                    `</div>`;
+                actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити (10 золота)</button>`;
                 cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
                 return;
             }
 
+            // ===== МІЙ гекс =====
             const isStarter = hexInfo.type === 'starter';
             const isBridge = hexInfo.type === 'bridge';
             const isFarm = hexInfo.type === 'farm';
             const isMill = hexInfo.type === 'mill';
             const isPurchased = hexInfo.type === 'purchased';
             const hasMyUnitHere = isMyUnit(hexInfo);
-            title.innerText = isBridge ? "🌉 Міст" : "🏗️ Управління";
-            cardHtml = `<div class="info-card">${isStarter ? '<span class="good">Безкоштовна земля.</span><br><br>' : ''}${isPurchased ? '<span class="warn">Куплена (-2 💰/хв).</span><br><br>' : ''}${isFarm ? '<b>🌾 Ферма (+1 💰/хв).</b><br><br>' : ''}${isMill ? '<b>🛞🌀 Вітряк.</b><br><br>' : ''}<b>Будівлі:</b><br>🌾 (10 💰) | 🛞🌀 (20 💰)</div>`;
-            if (hasMyUnitHere) actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">🛡️ Меню воїна</button>`;
-            if (isFarm || isMill) actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">🔨 Знести (5 💰)</button>`;
-            else if (!isBridge) actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">🌾 Ферма (10 💰)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">🛞🌀 Вітряк (20 💰)</button>`;
+
+            title.innerText = getHexTypeLabel(hexInfo);
+
+            // Економіка гекса
+            const eco = analyzeHexEconomy(key, hexInfo);
+
+            // ===== Картка з інформацією =====
+            cardHtml = `<div class="info-card">`;
+            cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Що на ній:</span><span class="hex-balance-value">${getHexTypeLabel(hexInfo)}</span></div>`;
+
+            // Воїн на гексі
+            if (hasMyUnitHere) {
+                const u = hexInfo.unit;
+                let unitStateText = 'готовий';
+                if (u.state === 'moving') unitStateText = 'рухається';
+                else if (u.state === 'fighting') unitStateText = 'у бою';
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Стоїть:</span><span class="hex-balance-value">Ваш воїн (${Math.round(u.hp)}/${u.maxHp} HP, ${unitStateText})</span></div>`;
+            }
+
+            // Дохід
+            if (eco.income > 0) {
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Дохід:</span><span class="hex-balance-value good">+${eco.income} золота/хв</span></div>`;
+            } else {
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Дохід:</span><span class="hex-balance-value">0 золота/хв</span></div>`;
+            }
+
+            // Утримання
+            if (eco.upkeep > 0) {
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Утримання:</span><span class="hex-balance-value bad">-${eco.upkeep} золота/хв</span></div>`;
+            } else {
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Утримання:</span><span class="hex-balance-value">0 золота/хв</span></div>`;
+            }
+
+            // Утримання воїна, якщо він тут
+            if (hasMyUnitHere) {
+                cardHtml += `<div class="hex-balance-row"><span class="hex-balance-label">Утримання воїна:</span><span class="hex-balance-value bad">-1 золото/хв</span></div>`;
+            }
+
+            // Підсумок
+            let totalBalance = eco.balance - (hasMyUnitHere ? 1 : 0);
+            let totalColor = totalBalance > 0 ? 'good' : (totalBalance < 0 ? 'bad' : '');
+            let totalSign = totalBalance > 0 ? '+' : '';
+            cardHtml += `<div class="hex-balance-row hex-balance-total"><span class="hex-balance-label"><b>Разом:</b></span><span class="hex-balance-value ${totalColor}">${totalSign}${totalBalance} золота/хв</span></div>`;
+
+            // Додаткові рядки (бонуси вітряка/ферми)
+            eco.bonusLines.forEach(line => {
+                cardHtml += `<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${line}</div>`;
+            });
+
+            cardHtml += `</div>`;
+
+            // ===== Кнопки =====
+            if (hasMyUnitHere) actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">Меню воїна</button>`;
+            if (isFarm || isMill) actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">Знести (5 золота)</button>`;
+            else if (!isBridge) actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">Ферма (10 золота)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">Вітряк (20 золота)</button>`;
             cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
         }
 
@@ -2066,46 +2246,44 @@
             activeSelection = null;
         }
 
-        // ===== МЕНЮ ВОЇНА (ОНОВЛЕНО 5.30.10: лікування тільки на своїй території) =====
+        // ===== МЕНЮ ВОЇНА =====
         function openUnitModal(r, c, hexInfo) {
             hideAllModals();
             const unitId = hexInfo.unit && hexInfo.unit.id ? hexInfo.unit.id : null;
             activeSelection = { key: `${r}_${c}`, unitId: unitId, layer: 'unit' };
             const u = hexInfo.unit;
 
-            // ===== Блок статусу =====
             let statusHtml = '';
             if (u.state === 'idle') {
-                statusHtml = `<b>Статус:</b> 🟢 Готовий`;
+                statusHtml = `<b>Статус:</b> Готовий`;
             } else if (u.state === 'fighting') {
-                statusHtml = `<b>Статус:</b> ⚔️ У бою!`;
+                statusHtml = `<b>Статус:</b> У бою!`;
             } else if (u.state === 'moving') {
                 const totalSteps = (u.path || []).length;
                 const currentStep = (u.pathIndex || 0) + 1;
                 const rem = computeUnitRemainingMs(u, Date.now());
-                statusHtml = `<b>Статус:</b> 🚶 Рухається (${currentStep}/${totalSteps} гексів)<br>` +
+                statusHtml = `<b>Статус:</b> Рухається (${currentStep}/${totalSteps} гексів)<br>` +
                              `<b>До наступного:</b> ${formatDuration(rem.toNext)}<br>` +
                              `<b>Всього залишилось:</b> ${formatDuration(rem.total)}`;
             }
 
             document.getElementById('unit-card').innerHTML =
-                `<div class="info-card">❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>` +
-                `⚔️ <b>Урон:</b> ${u.dmg}<br>` +
+                `<div class="info-card">HP: <b>${Math.round(u.hp)} / ${u.maxHp}</b><br>` +
+                `Урон: <b>${u.dmg}</b><br>` +
                 `${statusHtml}<br>` +
-                `<span style="opacity: 0.7;">Утримання: -1 💰/хв</span></div>` +
+                `<span style="opacity: 0.7;">Утримання: -1 золото/хв</span></div>` +
                 `<div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>`;
 
             let btns = '';
             if (u.state === 'idle') {
-                btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">🚶 Перемістити воїна</button>`;
+                btns += `<button class="btn-move" onclick="startMoveUnit(${r}, ${c})">Перемістити воїна</button>`;
 
-                // ===== лікування тільки на своїй території =====
                 if (u.hp < u.maxHp) {
                     const onMyTerritory = isMyTerritory(hexInfo);
                     if (onMyTerritory) {
-                        btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">💊 Вилікувати +${HEAL_UNIT_HP} HP (${HEAL_UNIT_COST} 💰)</button>`;
+                        btns += `<button class="btn-heal" onclick="healUnit(${r}, ${c})">Вилікувати +${HEAL_UNIT_HP} HP (${HEAL_UNIT_COST} золота)</button>`;
                     } else {
-                        btns += `<button class="btn-disabled" disabled>💊 Лікування тільки на своїй землі</button>`;
+                        btns += `<button class="btn-disabled" disabled>Лікування тільки на своїй землі</button>`;
                     }
                 }
 
@@ -2115,16 +2293,16 @@
                     const blockedByZOC = isHexInEnemyZOC(r, c);
 
                     if (blockedByZOC) {
-                        btns += `<button class="btn-disabled" disabled>🚫 Зона контролю ворога</button>`;
+                        btns += `<button class="btn-disabled" disabled>Зона контролю ворога</button>`;
                     } else if (!hexOwner) {
-                        btns += `<button class="btn-capture" onclick="captureHex(${r}, ${c})">🌍 Захопити гекс (10 💰)</button>`;
+                        btns += `<button class="btn-capture" onclick="captureHex(${r}, ${c})">Захопити гекс (10 золота)</button>`;
                     } else if (hexType !== 'barbarian_camp' && hexType !== 'core' && !(hexInfo.unit && hexInfo.unit.owner !== currentUsername)) {
-                        btns += `<button class="btn-capture-enemy" onclick="captureHex(${r}, ${c})">⚔️ Відвоювати гекс</button>`;
+                        btns += `<button class="btn-capture-enemy" onclick="captureHex(${r}, ${c})">Відвоювати гекс</button>`;
                     }
                 }
-            } else if (u.state === 'fighting') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">🏃 Відступити</button>`;
-            else if (u.state === 'moving') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">↩️ Скасувати рух</button>`;
-            btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">📍 Меню клітинки</button>`;
+            } else if (u.state === 'fighting') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">Відступити</button>`;
+            else if (u.state === 'moving') btns += `<button class="btn-demolish" onclick="retreatUnit(${r}, ${c})">Скасувати рух</button>`;
+            btns += `<button class="btn-confirm" onclick="switchToCell(${r}, ${c})">Меню клітинки</button>`;
             document.getElementById('unit-buttons').innerHTML = btns;
             document.getElementById('unit-modal').style.display = 'block';
 
@@ -2200,7 +2378,7 @@
                 };
                 updates[`users/${currentUsername}/gold`] = userGold - 10;
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
-                try { await update(ref(db), updates); closeUnitModal(); alert("🌍 Нейтральний гекс захоплено! (-10 золота)"); }
+                try { await update(ref(db), updates); closeUnitModal(); alert("Нейтральний гекс захоплено! (-10 золота)"); }
                 catch (err) { alert("Помилка захоплення: " + err.message); }
                 return;
             }
@@ -2221,7 +2399,7 @@
                     unit: hexInfo.unit || null
                 };
                 updates[`users/${currentUsername}/lastOnline`] = Date.now();
-                try { await update(ref(db), updates); closeUnitModal(); alert("⚔️ Ворожий гекс відвойовано!"); }
+                try { await update(ref(db), updates); closeUnitModal(); alert("Ворожий гекс відвойовано!"); }
                 catch (err) { alert("Помилка захоплення: " + err.message); }
                 return;
             }
@@ -2287,25 +2465,21 @@
             } catch (err) { alert(err.message); }
         }
 
-        // ===== ОНОВЛЕНО 5.30.10: лікування +100 HP за 20 золота, ТІЛЬКИ на своїй території =====
         window.healUnit = async function(r, c) {
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
             if (!isMyUnit(hex)) return;
 
-            // 1) Перевірка, чи це моя територія
             if (!isMyTerritory(hex)) {
                 alert("Лікувати воїна можна тільки на своїй території!");
                 return;
             }
 
-            // 2) Перевірка золота
             if (userGold < HEAL_UNIT_COST) {
                 alert(`Потрібно ${HEAL_UNIT_COST} золота.`);
                 return;
             }
 
-            // 3) Лікуємо: +100 HP, але не більше maxHp
             const u = hex.unit;
             const healed = Math.min(u.maxHp, u.hp + HEAL_UNIT_HP);
             if (healed <= u.hp) { alert("Воїн вже повний!"); return; }
@@ -2332,7 +2506,7 @@
             updates[`world_hexes/${key}`] = { owner: currentUsername, color: currentHex.color || getPlayerColor(currentUsername), type: type, isPurchased: wasPurchased, unit: currentHex.unit || null };
             updates[`users/${currentUsername}/gold`] = userGold - cost;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert(type === 'farm' ? "🌾 Ферму зведено!" : "🛞🌀 Вітряк зведено!"); } catch (err) { alert(err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert(type === 'farm' ? "Ферму зведено!" : "Вітряк зведено!"); } catch (err) { alert(err.message); }
         }
 
         window.demolishBuilding = async function(r, c) {
@@ -2346,7 +2520,7 @@
             updates[`world_hexes/${key}`] = { owner: hexInfo.owner, color: hexInfo.color, type: restoredType, isPurchased: wasPurchased, unit: hexInfo.unit || null };
             updates[`users/${currentUsername}/gold`] = userGold - 5;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("🔨 Знесено!"); } catch (err) { alert(err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("Знесено!"); } catch (err) { alert(err.message); }
         }
 
         // ===== ЧАТ =====
@@ -2460,12 +2634,12 @@
                             const infoCard = card.querySelector('.info-card');
                             if (infoCard) {
                                 infoCard.innerHTML =
-                                    `❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>` +
-                                    `⚔️ <b>Урон:</b> ${u.dmg}<br>` +
-                                    `<b>Статус:</b> 🚶 Рухається (${currentStep}/${totalSteps} гексів)<br>` +
+                                    `HP: <b>${Math.round(u.hp)} / ${u.maxHp}</b><br>` +
+                                    `Урон: <b>${u.dmg}</b><br>` +
+                                    `<b>Статус:</b> Рухається (${currentStep}/${totalSteps} гексів)<br>` +
                                     `<b>До наступного:</b> ${formatDuration(rem.toNext)}<br>` +
                                     `<b>Всього залишилось:</b> ${formatDuration(rem.total)}<br>` +
-                                    `<span style="opacity: 0.7;">Утримання: -1 💰/хв</span>`;
+                                    `<span style="opacity: 0.7;">Утримання: -1 золото/хв</span>`;
                             }
                         }
                     }
@@ -2494,7 +2668,7 @@
                                 if (startIn === null) {
                                     autoHealText = `<div><b>Авторемонт:</b> <span style="color: #94a3b8;">очікує данних</span></div>`;
                                 } else if (startIn === 0) {
-                                    autoHealText = `<div><b>Авторемонт:</b> <span style="color: #34d399;">🔧 активний, +${CORE_HEAL_RATE_PER_MIN} HP/хв</span></div>`;
+                                    autoHealText = `<div><b>Авторемонт:</b> <span style="color: #34d399;">активний, +${CORE_HEAL_RATE_PER_MIN} HP/хв</span></div>`;
                                 } else {
                                     autoHealText = `<div><b>Авторемонт:</b> <span style="color: #fbbf24;">почнеться через ${formatDuration(startIn)}</span> <span style="color:#94a3b8;">(+${CORE_HEAL_RATE_PER_MIN} HP/хв)</span></div>`;
                                 }
@@ -2958,8 +3132,8 @@
         }
 
         // ===== ЗАПУСК ЦИКЛІВ =====
-        startUnitTimeTick();       // тік модалок (кожну секунду)
-        startAutoHealLoop();       // авторемонт ратуш (кожні 10 сек)
+        startUnitTimeTick();
+        startAutoHealLoop();
     </script>
 </body>
 </html>
