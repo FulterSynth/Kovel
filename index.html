@@ -3,24 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.8</title>
+    <title>HexPolitics v5.30.9</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.8
+    ПОТОЧНА ВЕРСІЯ: v5.30.9
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ
+               * alert при наказі — показує гекси + час у форматі 2:30
+               * Модалка воїна — повний час маршруту + час до наступного гекса
+               * Час перераховується щоразу за поточним станом карти
+               * Формат: 0:45 (45 сек), 2:30 (2 хв 30 сек), 1:20:00 (1 год 20 хв)
     - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ
                * Свої юніти на своїй території рухаються в 2 рази швидше (30 сек/крок)
                * На чужій території — як завжди (60 сек/крок)
-               * Швидкість залежить від гекса, де СТОЇТЬ юніт (А1)
-               * Кожен крок рахується окремо (свій = 30, чужий = 60)
-               * Офлайн-прогрес рахує так само
-               * Бій не чіпаємо (5 сек завжди)
-    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ
-               * Шкала HP ратуші — смужка під ніком + проценти
-               * Нова іконка воїнів — древня дубина (45° вліво)
-               * Прибрано коронку з ніка ратуші
+    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ (шкала HP ратуші, древня дубина)
     - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ (атака на ратушу, HP 100/150/300, трофей 50%)
     - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ (сумарний урон, ліміт 6 атакуючих, обхід)
     - v5.30.2: ВИПРАВЛЕНО помилку авторизації
@@ -159,8 +157,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.8</h2>
-            <p id="loader-desc">Швидкість на своїй території...</p>
+            <h2 id="loader-status">HexPolitics v5.30.9</h2>
+            <p id="loader-desc">Час руху в інтерфейсі...</p>
         </div>
     </div>
 
@@ -298,7 +296,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.8";
+        const CURRENT_VERSION = "5.30.9";
 
         let mode = "login";
         let currentUsername = "";
@@ -315,7 +313,7 @@
         let gameLoopBusy = false;
         const FIGHT_ROUND_MS = 5000;
         const MOVE_STEP_MS = 60000;
-        const MOVE_STEP_FAST_MS = 30000;   // ===== НОВЕ 5.30.8: на своїй території =====
+        const MOVE_STEP_FAST_MS = 30000;   // на своїй території
         const MAX_ATTACKERS = 6;
 
         // ===== 5.30.6: характеристики ратуші =====
@@ -324,13 +322,43 @@
         function getCoreMaxHp(level) { return CORE_HP_BY_LEVEL[level] || CORE_HP_BY_LEVEL[1]; }
         function getCoreDmg(level) { return CORE_DMG_BY_LEVEL[level] || CORE_DMG_BY_LEVEL[1]; }
 
-        // ===== НОВЕ 5.30.8: швидкість кроку залежно від гекса =====
-        // Якщо гекс належить гравцю — 30 сек, інакше — 60 сек.
-        // Використовує hexWorldData напряму, щоб працювало і в офлайні.
+        // ===== 5.30.8: швидкість кроку залежно від гекса =====
         function getStepMsForHex(key) {
             const h = hexWorldData[key];
             if (h && h.owner === currentUsername) return MOVE_STEP_FAST_MS;
             return MOVE_STEP_MS;
+        }
+
+        // ===== НОВЕ 5.30.9: форматування часу =====
+        // Повертає рядок формату:
+        //   < 60 хв  → "M:SS"  (напр. "2:30", "0:45")
+        //   >= 60 хв → "H:MM:SS" (напр. "1:20:00")
+        function formatDuration(ms) {
+            if (!ms || ms < 0) ms = 0;
+            const totalSec = Math.ceil(ms / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            if (h > 0) {
+                return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        // ===== НОВЕ 5.30.9: оцінка часу шляху =====
+        // pathArr — масив ключів гексів (без стартового)
+        // startKey — ключ, з якого воїн вирушає
+        // Повертає сумарний час у мс, рахуючи за поточним станом карти
+        function estimatePathMs(pathArr, startKey) {
+            if (!pathArr || pathArr.length === 0) return 0;
+            let total = 0;
+            // Перший крок: швидкість від поточного гекса (startKey)
+            total += getStepMsForHex(startKey);
+            // Наступні кроки: швидкість від гексів, куди прибуваємо (pathArr[0..n-2])
+            for (let i = 0; i < pathArr.length - 1; i++) {
+                total += getStepMsForHex(pathArr[i]);
+            }
+            return total;
         }
 
         const BARBARIAN_LEVELS = {
@@ -403,7 +431,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.8"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.9"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -516,7 +544,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 1/4 =====
 
-                        // ===== ЕКОНОМІКА =====
+                                // ===== ЕКОНОМІКА =====
         function calculateRawIncome(username, worldHexes) {
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.values(worldHexes).forEach(h => {
@@ -721,7 +749,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 2/4 =====
 
-                        // ===== БІЙ ТА РУХ =====
+                                // ===== БІЙ ТА РУХ =====
         function stopTravel(unit) {
             const u = { ...unit, state: 'idle' };
             delete u.targetKey; delete u.arrivalTime; delete u.path; delete u.pathIndex; delete u.finalTargetKey;
@@ -1307,7 +1335,7 @@
                     delete srcH.unit;
                     setHex(srcKey, srcH);
 
-                    // ===== НОВЕ 5.30.8: швидкість залежить від гекса, куди прибув =====
+                    // ===== швидкість залежить від гекса, куди прибув =====
                     const stepMs = getStepMsForHex(targetKey);
 
                     if (nextIndex >= path.length) {
@@ -1385,7 +1413,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/4 =====
 
-                        // ===== ІНТЕРАКТИВ =====
+                                // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1533,6 +1561,25 @@
                 }
             });
             return result;
+        }
+
+        // ===== НОВЕ 5.30.9: обчислення залишку часу руху =====
+        // Повертає { toNext: ms до наступного гекса, total: ms до кінця маршруту }
+        function computeUnitRemainingMs(unit, nowMs) {
+            if (!unit || unit.state !== 'moving') return { toNext: 0, total: 0 };
+            const path = unit.path || [];
+            const idx = unit.pathIndex || 0;
+            const currentTargetKey = unit.targetKey;
+            const now = nowMs || Date.now();
+            const toNext = Math.max(0, (unit.arrivalTime || now) - now);
+
+            // Залишок після наступного кроку
+            let total = toNext;
+            for (let i = idx; i < path.length - 1; i++) {
+                // наступний гекс, куди воїн прибуде після i-го кроку
+                total += getStepMsForHex(path[i]);
+            }
+            return { toNext, total };
         }
 
         function handleHexClick(r, c) {
@@ -1869,20 +1916,34 @@
             activeSelection = null;
         }
 
-        // ===== МЕНЮ ВОЇНА =====
+        // ===== МЕНЮ ВОЇНА (ОНОВЛЕНО 5.30.9: час руху) =====
         function openUnitModal(r, c, hexInfo) {
             hideAllModals();
             const unitId = hexInfo.unit && hexInfo.unit.id ? hexInfo.unit.id : null;
             activeSelection = { key: `${r}_${c}`, unitId: unitId, layer: 'unit' };
             const u = hexInfo.unit;
-            let stateText = '🟢 Готовий';
-            if (u.state === 'moving') {
+
+            // ===== Блок статусу (з часом, якщо рухається) =====
+            let statusHtml = '';
+            if (u.state === 'idle') {
+                statusHtml = `<b>Статус:</b> 🟢 Готовий`;
+            } else if (u.state === 'fighting') {
+                statusHtml = `<b>Статус:</b> ⚔️ У бою!`;
+            } else if (u.state === 'moving') {
                 const totalSteps = (u.path || []).length;
                 const currentStep = (u.pathIndex || 0) + 1;
-                stateText = `🚶 Рухається (${currentStep}/${totalSteps} крок)`;
-            } else if (u.state === 'fighting') stateText = '⚔️ У бою!';
+                const rem = computeUnitRemainingMs(u, Date.now());
+                statusHtml = `<b>Статус:</b> 🚶 Рухається (${currentStep}/${totalSteps} гексів)<br>` +
+                             `<b>До наступного:</b> ${formatDuration(rem.toNext)}<br>` +
+                             `<b>Всього залишилось:</b> ${formatDuration(rem.total)}`;
+            }
 
-            document.getElementById('unit-card').innerHTML = `<div class="info-card">❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>⚔️ <b>Урон:</b> ${u.dmg}<br><b>Статус:</b> ${stateText}<br><span style="opacity: 0.7;">Утримання: -1 💰/хв</span></div><div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>`;
+            document.getElementById('unit-card').innerHTML =
+                `<div class="info-card">❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>` +
+                `⚔️ <b>Урон:</b> ${u.dmg}<br>` +
+                `${statusHtml}<br>` +
+                `<span style="opacity: 0.7;">Утримання: -1 💰/хв</span></div>` +
+                `<div style="font-size: 11px; color: #94a3b8;">Клікніть по клітинці ще раз, щоб відкрити її меню.</div>`;
 
             let btns = '';
             if (u.state === 'idle') {
@@ -2039,18 +2100,36 @@
             renderWorldData();
         }
 
+        // ===== ОНОВЛЕНО 5.30.9: alert з гексами + часом =====
         async function executeUnitMove(sr, sc, tr, tc, path) {
             cancelMoveMode();
             const sourceKey = `${sr}_${sc}`;
             const sourceHex = hexWorldData[sourceKey];
             if (!isMyUnit(sourceHex) || sourceHex.unit.state !== 'idle') return;
-            // ===== 5.30.8: перший крок — залежить від поточного гекса =====
+
+            // 1) Рахуємо час за поточним станом карти (Е1)
+            const totalMs = estimatePathMs(path, sourceKey);
+            const totalSteps = path.length;
+
+            // 2) Перший крок — від поточного гекса
             const firstStepMs = getStepMsForHex(sourceKey);
-            const unit = { ...sourceHex.unit, state: 'moving', path: path, pathIndex: 0, targetKey: path[0], arrivalTime: Date.now() + firstStepMs, finalTargetKey: `${tr}_${tc}` };
+
+            const unit = {
+                ...sourceHex.unit,
+                state: 'moving',
+                path: path,
+                pathIndex: 0,
+                targetKey: path[0],
+                arrivalTime: Date.now() + firstStepMs,
+                finalTargetKey: `${tr}_${tc}`
+            };
             const updates = {};
             updates[`world_hexes/${sourceKey}/unit`] = unit;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); alert(`Воїн вирушив! Кроків: ${path.length}. Час: ~${path.length} хв.`); } catch (err) { alert(err.message); }
+            try {
+                await update(ref(db), updates);
+                alert(`Воїн вирушив!\nШлях: ${totalSteps} гексів. Час: ${formatDuration(totalMs)}.`);
+            } catch (err) { alert(err.message); }
         }
 
         window.healUnit = async function(r, c) {
@@ -2178,6 +2257,42 @@
 
         function stopChatListener() {
             if (chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
+        }
+
+        // ===== ТІК ОНОВЛЕННЯ ЧАСУ (кожну секунду, якщо модалка відкрита) =====
+        let unitTimeTickInterval = null;
+        function startUnitTimeTick() {
+            if (unitTimeTickInterval) clearInterval(unitTimeTickInterval);
+            unitTimeTickInterval = setInterval(() => {
+                const modal = document.getElementById('unit-modal');
+                if (!modal || modal.style.display !== 'block') return;
+                if (!activeSelection || activeSelection.layer !== 'unit') return;
+                // Знайти воїна
+                let found = null;
+                if (activeSelection.unitId) found = findMyUnitById(activeSelection.unitId);
+                if (!found) {
+                    const h = hexWorldData[activeSelection.key];
+                    if (isMyUnit(h)) found = { key: activeSelection.key, hex: h };
+                }
+                if (!found || found.hex.unit.state !== 'moving') return;
+                // Оновити тільки текст статусу (не перебудовуємо весь модал)
+                const u = found.hex.unit;
+                const totalSteps = (u.path || []).length;
+                const currentStep = (u.pathIndex || 0) + 1;
+                const rem = computeUnitRemainingMs(u, Date.now());
+                const card = document.getElementById('unit-card');
+                if (!card) return;
+                // Знайти перший info-card і оновити його
+                const infoCard = card.querySelector('.info-card');
+                if (!infoCard) return;
+                infoCard.innerHTML =
+                    `❤️ <b>HP:</b> ${Math.round(u.hp)} / ${u.maxHp}<br>` +
+                    `⚔️ <b>Урон:</b> ${u.dmg}<br>` +
+                    `<b>Статус:</b> 🚶 Рухається (${currentStep}/${totalSteps} гексів)<br>` +
+                    `<b>До наступного:</b> ${formatDuration(rem.toNext)}<br>` +
+                    `<b>Всього залишилось:</b> ${formatDuration(rem.total)}<br>` +
+                    `<span style="opacity: 0.7;">Утримання: -1 💰/хв</span>`;
+            }, 1000);
         }
 
         function listenToWorldData() {
@@ -2625,6 +2740,10 @@
             coreHpMigrated = true;
             migrateCoreHpIfNeeded().catch(err => console.error(err));
         }
+
+        // ===== ЗАПУСК ТІКУ ЧАСУ ПРИ ЛОГІНІ =====
+        // Викликаємо startUnitTimeTick() один раз (він сам перевіряє, чи модал відкритий)
+        startUnitTimeTick();
     </script>
 </body>
 </html>
