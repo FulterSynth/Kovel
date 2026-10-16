@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.13</title>
+    <title>HexPolitics v5.30.14</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.13
+    ПОТОЧНА ВЕРСІЯ: v5.30.14
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.14: UI ОНОВЛЕННЯ
+               * Усі модалки пересунуті ПРАВОРУЧ екрана
+               * Скрол у модалках (якщо вміст більший за екран)
+               * Краще видно крапки воїна (вони зазвичай ліворуч)
     - v5.30.13: ПРОДАЖ ЗЕМЛІ ТА ФІКСИ
                * Продаж своїх пустих клітинок за 5 золота
                * Навколо ратуші 6 гексів безкоштовні (утримання 0)
@@ -86,7 +90,8 @@
         .zoom-btn { width: 44px; height: 44px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155; color: #fff; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: background 0.2s; }
         .zoom-btn:hover { background: #3b82f6; }
 
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 92%; max-width: 340px; }
+        /* ===== 5.30.14: модалки ПРАВОРУЧ + СКРОЛ ===== */
+        .modal { display: none; position: fixed; top: 50%; right: 15px; transform: translateY(-50%); background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto; }
         .modal h3 { margin-bottom: 10px; color: #38bdf8; font-size: 18px; }
 
         .color-picker { display: flex; justify-content: center; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
@@ -166,8 +171,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.13</h2>
-            <p id="loader-desc">Продаж землі та фікси...</p>
+            <h2 id="loader-status">HexPolitics v5.30.14</h2>
+            <p id="loader-desc">Модалки праворуч...</p>
         </div>
     </div>
 
@@ -305,7 +310,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.13";
+        const CURRENT_VERSION = "5.30.14";
 
         let mode = "login";
         let currentUsername = "";
@@ -324,28 +329,24 @@
         const MOVE_STEP_MS = 60000;
         const MOVE_STEP_FAST_MS = 30000;
         const MAX_ATTACKERS = 6;
-        const SELL_TERRITORY_REWARD = 5;   // ===== НОВЕ 5.30.13: ціна продажу клітинки =====
+        const SELL_TERRITORY_REWARD = 5;
 
-        // ===== 5.30.10: лікування та авторемонт =====
         const HEAL_UNIT_COST = 20;
         const HEAL_UNIT_HP = 100;
         const CORE_HEAL_RATE_PER_MIN = 10;
         const CORE_AUTO_HEAL_DELAY_MS = 10 * 60 * 1000;
 
-        // ===== 5.30.6: характеристики ратуші =====
         const CORE_HP_BY_LEVEL = { 1: 100, 2: 150, 3: 300 };
         const CORE_DMG_BY_LEVEL = { 1: 25, 2: 30, 3: 30 };
         function getCoreMaxHp(level) { return CORE_HP_BY_LEVEL[level] || CORE_HP_BY_LEVEL[1]; }
         function getCoreDmg(level) { return CORE_DMG_BY_LEVEL[level] || CORE_DMG_BY_LEVEL[1]; }
 
-        // ===== 5.30.8: швидкість кроку залежно від гекса =====
         function getStepMsForHex(key) {
             const h = hexWorldData[key];
             if (h && h.owner === currentUsername) return MOVE_STEP_FAST_MS;
             return MOVE_STEP_MS;
         }
 
-        // ===== 5.30.9: форматування часу =====
         function formatDuration(ms) {
             if (!ms || ms < 0) ms = 0;
             const totalSec = Math.ceil(ms / 1000);
@@ -358,7 +359,6 @@
             return `${m}:${String(s).padStart(2, '0')}`;
         }
 
-        // ===== 5.30.9: оцінка часу шляху =====
         function estimatePathMs(pathArr, startKey) {
             if (!pathArr || pathArr.length === 0) return 0;
             let total = 0;
@@ -369,7 +369,6 @@
             return total;
         }
 
-        // ===== 5.30.10: авторемонт ратуші =====
         function computeCoreAutoHeal(coreHex, now) {
             if (!coreHex || coreHex.type !== 'core') return null;
             const maxHp = getCoreMaxHp(coreHex.level || 1);
@@ -387,8 +386,6 @@
             return { newHp: newHp, newLastHealAt: now, changed: true };
         }
 
-        // ===== НОВЕ 5.30.13: чи гекс сусід МОЄЇ ратуші =====
-        // Використовується для безкоштовної землі навколо ратуші
         function isAdjacentToMyCore(hexKey) {
             const parts = hexKey.split('_');
             const r = parseInt(parts[0]);
@@ -404,7 +401,6 @@
             return false;
         }
 
-        // ===== 5.30.11: розбір доходу/утримання гекса =====
         function getHexIncomeBreakdown(hexInfo) {
             const result = { income: 0, upkeep: 0, balance: 0, description: '', extraLines: [] };
             if (!hexInfo) return result;
@@ -448,7 +444,6 @@
         let dragStartY = 0;
         let isClick = true;
 
-        // ===== 5.30.12: черга золота по власниках =====
         let pendingGoldByOwner = {};
 
         function generateUnitId() {
@@ -495,7 +490,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.13"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.14"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -608,8 +603,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 1/5 =====
 
-                                                // ===== ЕКОНОМІКА =====
-        // ===== ОНОВЛЕНО 5.30.13: гекси навколо МОЄЇ ратуші не мають -2 =====
+                                                        // ===== ЕКОНОМІКА =====
         function calculateRawIncome(username, worldHexes) {
             let baseLevel = 1, totalUpkeep = 0, farmsCount = 0, millsBonus = 0;
             Object.keys(worldHexes).forEach(key => {
@@ -623,9 +617,7 @@
                         if (h.type === 'core') baseLevel = h.level || 1;
                         if (h.type === 'farm') farmsCount += 1;
                     }
-                    // ===== 5.30.13: -2 тільки якщо це НЕ гекс навколо МОЄЇ ратуші =====
                     if (h.isPurchased === true || h.type === 'purchased' || h.type === 'bridge') {
-                        // Перевірка: чи це сусід моєї ратуші?
                         const [r, c] = key.split('_').map(Number);
                         let isNearMyCore = false;
                         if (!isNaN(r) && !isNaN(c)) {
@@ -638,7 +630,6 @@
                                 }
                             }
                         }
-                        // Міст завжди -2 (навіть навколо ратуші) — 5Б
                         if (h.type === 'bridge') {
                             totalUpkeep += 2;
                         } else if (!isNearMyCore) {
@@ -665,7 +656,6 @@
         function calculateEffectiveIncome(username, worldHexes) { return Math.max(1, calculateRawIncome(username, worldHexes)); }
         function getIncomeByLevel(level) { if (level === 2) return 2; if (level === 3) return 3; return 1; }
 
-        // ===== helper для створення ратуші =====
         function makeCoreHex(owner, color, level) {
             const hp = getCoreMaxHp(level || 1);
             return {
@@ -681,7 +671,6 @@
             };
         }
 
-        // ===== перевірка, чи HP ратуші відповідає рівню =====
         function normalizeCoreHp() {
             let changed = false;
             Object.keys(hexWorldData).forEach(key => {
@@ -697,17 +686,15 @@
             return changed;
         }
 
-        // ===== ОНОВЛЕНО 5.30.13: processOfflineCoreHeal без username, обробляє ВСІ ратуші =====
         async function processOfflineCoreHeal(worldHexes) {
             const now = Date.now();
             const updates = {};
             let totalHealed = 0;
-            let myHealed = 0;  // окремо для повідомлення
+            let myHealed = 0;
 
             Object.keys(worldHexes).forEach(key => {
                 const h = worldHexes[key];
                 if (!h || h.type !== 'core') return;
-                // ===== БЕЗ перевірки власника — обробляємо ВСІ =====
                 const result = computeCoreAutoHeal(h, now);
                 if (result && result.changed) {
                     updates[`world_hexes/${key}/hp`] = result.newHp;
@@ -722,7 +709,6 @@
             if (Object.keys(updates).length > 0) {
                 try {
                     await update(ref(db), updates);
-                    // Оновлюємо локальну копію
                     Object.keys(worldHexes).forEach(key => {
                         const h = worldHexes[key];
                         if (!h || h.type !== 'core') return;
@@ -733,7 +719,6 @@
                     });
                 } catch (err) { console.error('Помилка офлайн-авторемонту:', err); }
             }
-            // ===== 3А: повертаємо тільки моє (для повідомлення) =====
             return { totalHealed, myHealed };
         }
 
@@ -757,10 +742,8 @@
                 setTimeout(() => { alert(`💰 Поки вас не було (${timeText}), накапало: +${Math.floor(earnedGold)} золота!`); }, 700);
             }
 
-            // офлайн-авторемонт ратуш (усіх)
             if (diffMinutes > 0.2) {
                 const healResult = await processOfflineCoreHeal(worldHexes);
-                // ===== 3А: показуємо ТІЛЬКИ про мою ратушу =====
                 if (healResult.myHealed >= 1) {
                     setTimeout(() => {
                         alert(`🔧 Поки вас не було, ваша ратуша відремонтувалась на +${Math.round(healResult.myHealed)} HP!`);
@@ -872,7 +855,6 @@
             }, 20000);
         }
 
-        // ===== 5.30.12: онлайн-цикл авторемонту — обробляє ВСІ ратуші =====
         let autoHealInterval = null;
         function startAutoHealLoop() {
             if (autoHealInterval) clearInterval(autoHealInterval);
@@ -917,7 +899,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 2/5 =====
 
-                                                // ===== БІЙ ТА РУХ =====
+                                                        // ===== БІЙ ТА РУХ =====
         function stopTravel(unit) {
             const u = { ...unit, state: 'idle' };
             delete u.targetKey; delete u.arrivalTime; delete u.path; delete u.pathIndex; delete u.finalTargetKey;
@@ -1180,7 +1162,6 @@
                 const unit = u0;
                 const targetKey = unit.targetKey;
                 const unitOwner = unit.owner;
-                const isMine = (unitOwner === currentUsername);
 
                 if (srcKey === targetKey) {
                     const h = { ...(getHex(srcKey) || {}) };
@@ -1626,7 +1607,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/5 =====
 
-                                                // ===== ІНТЕРАКТИВ =====
+                                                        // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1803,22 +1784,16 @@
             return healStartAt - now;
         }
 
-        // ===== ОНОВЛЕНО 5.30.13: analyzeHexEconomy — фікс утримання =====
-        // Тепер:
-        // 1) isPurchased перевіряється ОКРЕМО від типу (Задача 3)
-        // 2) Гекси навколо МОЄЇ ратуші — безкоштовні (Задача 4), крім моста
         function analyzeHexEconomy(hexKey, hexInfo) {
             const result = { income: 0, upkeep: 0, balance: 0, bonusLines: [] };
             if (!hexInfo) return result;
             const type = hexInfo.type || '';
             const level = hexInfo.level || 1;
 
-            // ===== 1) Дохід (залежить від типу) =====
             if (type === 'core') {
                 result.income = getIncomeByLevel(level);
             } else if (type === 'farm') {
                 result.income = 1;
-                // Бонус вітряків поруч
                 if (hexInfo.owner === currentUsername) {
                     const [r, c] = hexKey.split('_').map(Number);
                     const neighbors = getNeighbors(r, c);
@@ -1849,17 +1824,13 @@
                 }
             }
 
-            // ===== 2) Утримання (НЕЗАЛЕЖНО від типу) =====
-            // Міст — завжди -2 (5Б)
             if (type === 'bridge') {
                 result.upkeep = 2;
             } else if (hexInfo.isPurchased === true || type === 'purchased') {
-                // ===== Задача 4: якщо це сусід МОЄЇ ратуші — безкоштовно =====
                 const nearMyCore = isAdjacentToMyCore(hexKey);
                 if (!nearMyCore) {
                     result.upkeep = 2;
                 }
-                // Якщо nearMyCore — upkeep = 0 (безкоштовно)
             }
 
             result.balance = result.income - result.upkeep;
@@ -2190,7 +2161,6 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
-        // ===== ОНОВЛЕНО 5.30.13: openTerritoryModal з кнопкою "Продати" =====
         function openTerritoryModal(r, c, hexInfo) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
@@ -2245,7 +2215,6 @@
                 return;
             }
 
-            // ===== МІЙ гекс =====
             const isStarter = hexInfo.type === 'starter';
             const isBridge = hexInfo.type === 'bridge';
             const isFarm = hexInfo.type === 'farm';
@@ -2296,24 +2265,13 @@
 
             cardHtml += `</div>`;
 
-            // ===== КНОПКИ =====
             if (hasMyUnitHere) actionBtns += `<button class="btn-move" onclick="switchToUnit(${r}, ${c})">Меню воїна</button>`;
-
-            // Будівництво / знесення
             if (isFarm || isMill) {
                 actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">Знести (5 золота)</button>`;
             } else if (isStarter || isPurchased) {
-                // На пустій землі можна будувати
                 actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">Ферма (10 золота)</button><button class="btn-mill" onclick="buildBuilding(${r}, ${c}, 'mill')">Вітряк (20 золота)</button>`;
             }
-            // На мості/ратуші нічого не будуємо
 
-            // ===== НОВЕ 5.30.13: Кнопка "Продати" =====
-            // Умови:
-            // - гекс мій (ми вже тут)
-            // - тип starter або purchased (пуста земля)
-            // - НЕ core, НЕ farm, НЕ mill, НЕ bridge
-            // - 2Б-1: воїн може стояти (гекс стає нейтральним, але воїн залишається)
             if (!isCore && (isStarter || isPurchased)) {
                 actionBtns += `<button class="btn-sell" onclick="sellTerritory(${r}, ${c})">Продати за ${SELL_TERRITORY_REWARD} золота</button>`;
             }
@@ -2327,20 +2285,17 @@
             activeSelection = null;
         }
 
-        // ===== НОВЕ 5.30.13: продаж клітинки =====
         window.sellTerritory = async function(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             if (!hexInfo) { alert("Гекс не знайдено!"); return; }
             if (hexInfo.owner !== currentUsername) { alert("Це не ваш гекс!"); return; }
 
-            // Перевірка: тільки starter або purchased
             if (hexInfo.type !== 'starter' && hexInfo.type !== 'purchased') {
                 alert("Можна продати тільки пусту землю (без будівель).");
                 return;
             }
 
-            // 2Б-1: якщо на гексі воїн — він залишається, гекс стає нейтральним з воїном
             const hasUnit = !!hexInfo.unit;
 
             if (!confirm(hasUnit
@@ -2349,10 +2304,8 @@
 
             const updates = {};
             if (hasUnit) {
-                // Гекс стає нейтральним, але воїн залишається
                 updates[`world_hexes/${key}`] = { unit: hexInfo.unit };
             } else {
-                // Гекс повністю видаляється
                 updates[`world_hexes/${key}`] = null;
             }
             updates[`users/${currentUsername}/gold`] = userGold + SELL_TERRITORY_REWARD;
@@ -3127,9 +3080,7 @@
                     return;
                 }
 
-                // ===== 5.30.13: гекс без owner (нейтральний), але з воїном =====
                 if (!hexData.owner) {
-                    // Це нейтральний гекс (можливо, з воїном після продажу)
                     let plain = true;
                     polygon.style.fill = '#1b263b';
                     polygon.style.stroke = '#1b263b';
