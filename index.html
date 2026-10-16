@@ -3,24 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.14</title>
+    <title>HexPolitics v5.30.16</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.14
+    ПОТОЧНА ВЕРСІЯ: v5.30.16
 
     ЩО ЗМІНИЛОСЬ:
-    - v5.30.14: UI ОНОВЛЕННЯ
-               * Усі модалки пересунуті ПРАВОРУЧ екрана
-               * Скрол у модалках (якщо вміст більший за екран)
-               * Краще видно крапки воїна (вони зазвичай ліворуч)
+    - v5.30.16: ОПТИМІЗАЦІЯ НА ТЕЛЕФОНІ
+               * LOD (Level of Detail): при zoom < 0.3 спрощення
+               * Мітки над ратушами ховаються при zoom < 0.3
+               * Іконки (ратуша/ферма/вітряк/табір/міст) ховаються при zoom < 0.3
+               * Воїни теж ховаються при zoom < 0.3
+               * Залишається тільки кольорова обводка гексів
+               * Throttle через requestAnimationFrame (плавніше drag)
+               * translate3d для GPU-прискорення
+    - v5.30.15: ЯСКРАВІ СИНІ ТОЧКИ МАРШРУТУ
+    - v5.30.14: UI ОНОВЛЕННЯ (модалки праворуч)
     - v5.30.13: ПРОДАЖ ЗЕМЛІ ТА ФІКСИ
-               * Продаж своїх пустих клітинок за 5 золота
-               * Навколо ратуші 6 гексів безкоштовні (утримання 0)
-               * Куплена земля завжди -2 (навіть з фермою)
-               * Фікс: офлайн-авторемонт чужих ратуш
-               * Фікс: утримання показується правильно
-    - v5.30.12: ДОГІН ЧУЖИХ ЮНІТІВ (рух + бій + золото власнику)
+    - v5.30.12: ДОГІН ЧУЖИХ ЮНІТІВ
     - v5.30.11: НОВЕ МЕНЮ КЛІТИНКИ
     - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ
     - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ
@@ -57,7 +58,8 @@
 
         #hex-grid-viewport { width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative; touch-action: none; }
         #hex-grid-viewport:active { cursor: grabbing; }
-        #hex-map-container { transform-origin: 0 0; position: absolute; top: 0; left: 0; will-change: transform; }
+        /* ===== 5.30.16: GPU-прискорення ===== */
+        #hex-map-container { transform-origin: 0 0; position: absolute; top: 0; left: 0; will-change: transform; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
         #hex-svg { display: block; background: #0d1b2a; }
 
         polygon.hex { stroke: #1b263b; stroke-width: 1.5; fill: #1b263b; fill-opacity: 0.3; transition: fill-opacity 0.2s ease, stroke 0.2s ease; cursor: pointer; }
@@ -90,7 +92,6 @@
         .zoom-btn { width: 44px; height: 44px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155; color: #fff; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: background 0.2s; }
         .zoom-btn:hover { background: #3b82f6; }
 
-        /* ===== 5.30.14: модалки ПРАВОРУЧ + СКРОЛ ===== */
         .modal { display: none; position: fixed; top: 50%; right: 15px; transform: translateY(-50%); background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto; }
         .modal h3 { margin-bottom: 10px; color: #38bdf8; font-size: 18px; }
 
@@ -127,7 +128,7 @@
         .unit-badge { pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.85)); }
 
         .route-dot-next { fill: #10b981; stroke: #ffffff; stroke-width: 2; pointer-events: none; animation: dotPulse 1.2s ease-in-out infinite; filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.9)); }
-        .route-dot-path { fill: #3b82f6; stroke: #ffffff; stroke-width: 1.5; pointer-events: none; opacity: 0.8; }
+        .route-dot-path { fill: #38bdf8; stroke: #ffffff; stroke-width: 1.5; pointer-events: none; opacity: 0.8; filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.9)); }
         @keyframes dotPulse { 0%, 100% { r: 6; } 50% { r: 8; } }
 
         .battle-hp-bar-bg { fill: rgba(15, 23, 42, 0.9); stroke: #0f172a; stroke-width: 1; pointer-events: none; }
@@ -171,8 +172,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.14</h2>
-            <p id="loader-desc">Модалки праворуч...</p>
+            <h2 id="loader-status">HexPolitics v5.30.16</h2>
+            <p id="loader-desc">Оптимізація на телефоні...</p>
         </div>
     </div>
 
@@ -310,7 +311,10 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.14";
+        const CURRENT_VERSION = "5.30.16";
+
+        // ===== 5.30.16: LOD поріг =====
+        const LOD_ZOOM_THRESHOLD = 0.3;  // при zoom < 0.3 — ховаємо деталі
 
         let mode = "login";
         let currentUsername = "";
@@ -446,6 +450,9 @@
 
         let pendingGoldByOwner = {};
 
+        // ===== 5.30.16: throttle через requestAnimationFrame =====
+        let transformRafPending = false;
+
         function generateUnitId() {
             return 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
         }
@@ -490,7 +497,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.14"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.16"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -932,7 +939,6 @@
             return null;
         }
 
-        // ===== ЗОНА КОНТРОЛЮ =====
         function isHexInEnemyZOC(r, c) {
             const targetKey = `${r}_${c}`;
             const neighbors = getNeighbors(r, c);
@@ -1641,7 +1647,18 @@
             return points.join(" ");
         }
 
-        function updateTransform() { document.getElementById('hex-map-container').style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`; }
+        // ===== ОНОВЛЕНО 5.30.16: throttle + translate3d =====
+        function updateTransform() {
+            if (transformRafPending) return;  // вже заплановано
+            transformRafPending = true;
+            requestAnimationFrame(() => {
+                const el = document.getElementById('hex-map-container');
+                if (el) {
+                    el.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
+                }
+                transformRafPending = false;
+            });
+        }
 
         window.zoomIn = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.min(2.5, scale + 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.zoomOut = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.max(0.15, scale - 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
@@ -3036,6 +3053,7 @@
             svg.appendChild(g);
         }
 
+        // ===== ПОВНІСТЮ ПЕРЕРОБЛЕНО 5.30.16: LOD =====
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
@@ -3046,17 +3064,22 @@
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex', 'zoc-blocked', 'core-under-attack');
             });
 
+            // ===== LOD: при малому zoom ховаємо деталі =====
+            const isLODActive = scale < LOD_ZOOM_THRESHOLD;
+
             const unitQueue = [];
             const labelQueue = [];
 
             const coresUnderAttack = new Set();
-            Object.keys(hexWorldData).forEach(k => {
-                const h = hexWorldData[k];
-                if (!h || !h.unit) return;
-                if (h.unit.state !== 'fighting') return;
-                if (!h.unit.targetKey) return;
-                coresUnderAttack.add(h.unit.targetKey);
-            });
+            if (!isLODActive) {
+                Object.keys(hexWorldData).forEach(k => {
+                    const h = hexWorldData[k];
+                    if (!h || !h.unit) return;
+                    if (h.unit.state !== 'fighting') return;
+                    if (!h.unit.targetKey) return;
+                    coresUnderAttack.add(h.unit.targetKey);
+                });
+            }
 
             Object.keys(hexWorldData).forEach(key => {
                 const hexData = hexWorldData[key];
@@ -3075,20 +3098,23 @@
                     const borderColors = { weak: "#22c55e", medium: "#f59e0b", strong: "#dc2626" };
                     polygon.style.fill = bgColors[level] || bgColors.weak;
                     polygon.style.stroke = borderColors[level] || borderColors.weak;
-                    renderBarbarianCampVector(svg, center, level);
-                    if (hasUnit) unitQueue.push({ center, unit: hexData.unit, color: '#dc2626', barbarian: true, big: false });
+
+                    // ===== LOD: ховаємо табори при малому zoom =====
+                    if (!isLODActive) {
+                        renderBarbarianCampVector(svg, center, level);
+                        if (hasUnit) unitQueue.push({ center, unit: hexData.unit, color: '#dc2626', barbarian: true, big: false });
+                    }
                     return;
                 }
 
                 if (!hexData.owner) {
-                    let plain = true;
                     polygon.style.fill = '#1b263b';
                     polygon.style.stroke = '#1b263b';
                     polygon.classList.add('occupied-border');
-                    if (hasUnit) {
+                    if (hasUnit && !isLODActive) {
                         const isBarb = hexData.unit.type === 'barbarian';
                         const unitColor = isBarb ? '#dc2626' : getPlayerColor(hexData.unit.owner);
-                        unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: plain });
+                        unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: true });
                     }
                     return;
                 }
@@ -3100,46 +3126,59 @@
                 if (hexData.type === 'core') {
                     polygon.classList.add('occupied-core');
                     if (coresUnderAttack.has(key)) polygon.classList.add('core-under-attack');
-                    renderTownHallVector(svg, center, hexData.color || '#3b82f6', hexData.level || 1);
-                    const level = hexData.level || 1;
-                    const maxHp = getCoreMaxHp(level);
-                    const hp = hexData.hp !== undefined ? hexData.hp : maxHp;
-                    const hpPct = Math.round((hp / maxHp) * 100);
-                    labelQueue.push({ center, text: `${hexData.owner} [L${level}]`, damaged: hpPct < 60, hpPct: hpPct, hp: hp, maxHp: maxHp });
-                } else if (hexData.type === 'bridge') { polygon.classList.add('bridge-hex'); renderBridgeVector(svg, center); }
-                else if (hexData.type === 'farm') { polygon.classList.add('occupied-border'); renderFarmVector(svg, center); }
-                else if (hexData.type === 'mill') { polygon.classList.add('occupied-border'); renderMillVector(svg, center); }
-                else { polygon.classList.add('occupied-border'); plain = true; }
+                    if (!isLODActive) {
+                        renderTownHallVector(svg, center, hexData.color || '#3b82f6', hexData.level || 1);
+                        const level = hexData.level || 1;
+                        const maxHp = getCoreMaxHp(level);
+                        const hp = hexData.hp !== undefined ? hexData.hp : maxHp;
+                        const hpPct = Math.round((hp / maxHp) * 100);
+                        labelQueue.push({ center, text: `${hexData.owner} [L${level}]`, damaged: hpPct < 60, hpPct: hpPct, hp: hp, maxHp: maxHp });
+                    }
+                } else if (hexData.type === 'bridge') {
+                    polygon.classList.add('bridge-hex');
+                    if (!isLODActive) renderBridgeVector(svg, center);
+                } else if (hexData.type === 'farm') {
+                    polygon.classList.add('occupied-border');
+                    if (!isLODActive) renderFarmVector(svg, center);
+                } else if (hexData.type === 'mill') {
+                    polygon.classList.add('occupied-border');
+                    if (!isLODActive) renderMillVector(svg, center);
+                } else {
+                    polygon.classList.add('occupied-border');
+                    plain = true;
+                }
 
-                if (hasUnit) {
+                if (hasUnit && !isLODActive) {
                     const isBarb = hexData.unit.type === 'barbarian';
                     const unitColor = isBarb ? '#dc2626' : getPlayerColor(hexData.unit.owner);
                     unitQueue.push({ center, unit: hexData.unit, color: unitColor, barbarian: isBarb, big: plain });
                 }
             });
 
-            unitQueue.forEach(u => {
-                if (u.big) renderUnitBadge(svg, u.center.x, u.center.y, 15, u.unit, u.color, u.barbarian);
-                else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
-            });
+            if (!isLODActive) {
+                unitQueue.forEach(u => {
+                    if (u.big) renderUnitBadge(svg, u.center.x, u.center.y, 15, u.unit, u.color, u.barbarian);
+                    else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
+                });
 
-            if (activeSelection && activeSelection.layer === 'unit') {
-                const myHex = hexWorldData[activeSelection.key];
-                if (isMyUnit(myHex) && myHex.unit.state === 'idle') {
-                    Object.keys(hexWorldData).forEach(k => {
-                        const [kr, kc] = k.split('_').map(Number);
-                        const poly = document.getElementById(`hex-${kr}-${kc}`);
-                        if (!poly) return;
-                        if (isHexInEnemyZOC(kr, kc)) {
-                            poly.classList.add('zoc-blocked');
-                        }
-                    });
+                if (activeSelection && activeSelection.layer === 'unit') {
+                    const myHex = hexWorldData[activeSelection.key];
+                    if (isMyUnit(myHex) && myHex.unit.state === 'idle') {
+                        Object.keys(hexWorldData).forEach(k => {
+                            const [kr, kc] = k.split('_').map(Number);
+                            const poly = document.getElementById(`hex-${kr}-${kc}`);
+                            if (!poly) return;
+                            if (isHexInEnemyZOC(kr, kc)) {
+                                poly.classList.add('zoc-blocked');
+                            }
+                        });
+                    }
                 }
+
+                renderBattleHPBars(svg);
+
+                labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged, l.hpPct, l.hp, l.maxHp));
             }
-
-            renderBattleHPBars(svg);
-
-            labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged, l.hpPct, l.hp, l.maxHp));
         }
 
         function renderLabel(svg, center, labelContent, damaged, hpPct, hp, maxHp) {
@@ -3229,6 +3268,31 @@
         // ===== ЗАПУСК ЦИКЛІВ =====
         startUnitTimeTick();
         startAutoHealLoop();
+
+        // ===== 5.30.16: перерендер при зміні zoom (для LOD) =====
+        // Додаємо "спостерігач" на scale — але простіше: у zoomIn/zoomOut викликати renderWorldData
+        // Це вже вбудовано в updateTransform через ручний виклик у функціях zoom
+        const originalZoomIn = window.zoomIn;
+        const originalZoomOut = window.zoomOut;
+        const originalResetView = window.resetView;
+        window.zoomIn = function() {
+            const wasLOD = scale < LOD_ZOOM_THRESHOLD;
+            originalZoomIn();
+            const isLOD = scale < LOD_ZOOM_THRESHOLD;
+            if (wasLOD !== isLOD) renderWorldData();
+        };
+        window.zoomOut = function() {
+            const wasLOD = scale < LOD_ZOOM_THRESHOLD;
+            originalZoomOut();
+            const isLOD = scale < LOD_ZOOM_THRESHOLD;
+            if (wasLOD !== isLOD) renderWorldData();
+        };
+        window.resetView = function() {
+            const wasLOD = scale < LOD_ZOOM_THRESHOLD;
+            originalResetView();
+            const isLOD = scale < LOD_ZOOM_THRESHOLD;
+            if (wasLOD !== isLOD) renderWorldData();
+        };
     </script>
 </body>
 </html>
