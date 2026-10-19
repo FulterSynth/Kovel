@@ -3,33 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.18</title>
+    <title>HexPolitics v5.30.20</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.18
+    ПОТОЧНА ВЕРСІЯ: v5.30.20
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.20: UI + БАЛАНС + ТАБОРИ
+               * Прибрано кнопки zoom (функції zoomIn/zoomOut/resetView залишено)
+               * На телефоні модалки — справа знизу (не по центру)
+               * Захоплення табору варварів: гекс стає НЕЙТРАЛЬНИМ
+               * Нагорода за табір ВИДАЄТЬСЯ гравцю
+               * Воїн: dmg 25 -> 20, hp 100 -> 70
+               * Міграція моїх воїнів при вході: dmg=20, hp<=70
+               * Нагороди: слабкий 5-15, середній 15-25, сильний 25-40
+               * Спавн таборів: 1 рандомний раз на годину, до ліміту 12
+               * Табір може з'явитись тільки на порожньому нейтральному гексі
+    - v5.30.19: UI + БАЛАНС (проміжна)
     - v5.30.18: МАПА 25x25 + ZOC НА КУПІВЛЮ
-               * GRID_ROWS/COLS: 20 -> 25
-               * Табори варварів: 8/4 -> 12/6
-               * Постійний респавн таборів до цілі (+1..2 за 10 хв)
-               * Прірви: 22% -> 20%
-               * Стартовий zoom: 0.9 -> 0.75
-               * ZOC тепер блокує КУПІВЛЮ гекса (buyTerritory)
-               * ZOC візуально: + меню купівлі (всі ворожі ZOC)
-               * Міграція 60->25: автообрізка при вході
-               * ZOC НЕ блокує рух (як і було)
     - v5.30.17: МАПА 20x20 + ВИПРАВЛЕННЯ
     - v5.30.16: ОПТИМІЗАЦІЯ НА ТЕЛЕФОНІ
-    - v5.30.15: ЯСКРАВІ СИНІ ТОЧКИ МАРШРУТУ
-    - v5.30.14: UI ОНОВЛЕННЯ (модалки праворуч)
-    - v5.30.13: ПРОДАЖ ЗЕМЛІ ТА ФІКСИ
-    - v5.30.12: ДОГІН ЧУЖИХ ЮНІТІВ
-    - v5.30.11: НОВЕ МЕНЮ КЛІТИНКИ
-    - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ
-    - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ
-    - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ
 
     ФОРМАТ: файл розбито на 7 частин
     ============================================
@@ -87,12 +81,22 @@
         #user-bar button:hover { background: #dc2626; }
         .btn-wipe { background: #b91c1c !important; border: 1px solid #f87171 !important; }
 
-        #zoom-controls { position: absolute; right: 15px; bottom: 25px; display: flex; flex-direction: column; gap: 8px; z-index: 500; }
-        .zoom-btn { width: 44px; height: 44px; background: rgba(30, 41, 59, 0.9); border: 1px solid #334155; color: #fff; border-radius: 10px; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transition: background 0.2s; }
-        .zoom-btn:hover { background: #3b82f6; }
+        /* ===== 5.30.20: кнопки zoom прибрано ===== */
 
-        .modal { display: none; position: fixed; top: 50%; right: 15px; transform: translateY(-50%); background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto; }
+        /* ===== 5.30.20: модалки на телефоні — справа знизу ===== */
+        .modal { display: none; position: fixed; background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto;
+            top: 50%; right: 15px; transform: translateY(-50%); }
         .modal h3 { margin-bottom: 10px; color: #38bdf8; font-size: 18px; }
+
+        @media (max-width: 768px) {
+            .modal {
+                top: auto;
+                bottom: 15px;
+                right: 15px;
+                transform: none;
+                max-height: 70vh;
+            }
+        }
 
         .color-picker { display: flex; justify-content: center; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
         .color-option { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.2s, opacity 0.2s; position: relative; }
@@ -171,7 +175,7 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.18</h2>
+            <h2 id="loader-status">HexPolitics v5.30.20</h2>
             <p id="loader-desc">Мапа 25×25...</p>
         </div>
     </div>
@@ -202,11 +206,7 @@
             </div>
         </div>
 
-        <div id="zoom-controls">
-            <button class="zoom-btn" onclick="zoomIn()">+</button>
-            <button class="zoom-btn" onclick="zoomOut()">−</button>
-            <button class="zoom-btn" onclick="resetView()" title="Центр">🎯</button>
-        </div>
+        <!-- ===== 5.30.20: кнопки zoom прибрано ===== -->
 
         <div id="hex-grid-viewport">
             <div id="hex-map-container">
@@ -310,17 +310,17 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.18";
+        const CURRENT_VERSION = "5.30.20";
 
-        // ===== 5.30.18: LOD поріг =====
+        // ===== LOD поріг =====
         const LOD_ZOOM_THRESHOLD = 0.35;
 
-        // ===== 5.30.18: МАПА 25x25 =====
+        // ===== Мапа 25x25 =====
         const GRID_ROWS = 25;
         const GRID_COLS = 25;
         const HEX_RADIUS = 26;
 
-        // ===== 5.30.18: Табори варварів =====
+        // ===== Табори варварів =====
         const BARBARIAN_TARGET_COUNT = 12;
         const BARBARIAN_MIN_COUNT = 6;
 
@@ -353,20 +353,26 @@
         function getCoreMaxHp(level) { return CORE_HP_BY_LEVEL[level] || CORE_HP_BY_LEVEL[1]; }
         function getCoreDmg(level) { return CORE_DMG_BY_LEVEL[level] || CORE_DMG_BY_LEVEL[1]; }
 
+        // ===== 5.30.20: нові нагороди за табори =====
         const BARBARIAN_LEVELS = {
-            weak:   { hp: 40,  dmg: 15, rewardMin: 40,  rewardMax: 60  },
-            medium: { hp: 80,  dmg: 25, rewardMin: 80,  rewardMax: 120 },
-            strong: { hp: 150, dmg: 40, rewardMin: 150, rewardMax: 220 }
+            weak:   { hp: 40,  dmg: 15, rewardMin: 5,  rewardMax: 15 },
+            medium: { hp: 80,  dmg: 25, rewardMin: 15, rewardMax: 25 },
+            strong: { hp: 150, dmg: 40, rewardMin: 25, rewardMax: 40 }
         };
         const BARBARIAN_REGEN_MS = 3 * 60 * 1000;
-        const RESPAWN_CHECK_MS = 10 * 60 * 1000;
+        // ===== 5.30.20: респавн раз на годину, 1 табір =====
+        const RESPAWN_CHECK_MS = 60 * 60 * 1000;
+
+        // ===== 5.30.20: стати воїна =====
+        const CLUBMAN_HP = 70;
+        const CLUBMAN_DMG = 20;
 
         let hexWorldData = {};
         let incomeInterval = null;
         let gameLoopInterval = null;
         let respawnInterval = null;
 
-        // ===== 5.30.18: стартовий zoom 0.75 =====
+        // ===== стартовий zoom 0.75 =====
         let scale = 0.75;
         let panX = 0;
         let panY = 0;
@@ -378,7 +384,6 @@
         let pendingGoldByOwner = {};
         let transformRafPending = false;
 
-        // ===== 5.30.18: режим підсвітки всіх ворожих ZOC =====
         let showAllEnemyZOC = false;
 
         function generateUnitId() {
@@ -425,7 +430,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.18"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.20"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -464,7 +469,6 @@
             }
         }
 
-        // ===== 5.30.18: міграція 60->25 при вході =====
         async function migrateWorldTo25Once() {
             try {
                 const snap = await get(ref(db, 'world_hexes'));
@@ -486,6 +490,36 @@
             } catch (err) { console.error('[Міграція 60→25] Помилка:', err); }
         }
 
+        // ===== 5.30.20: міграція моїх воїнів до нових статів (20/70) =====
+        async function migrateMyUnitsToNewStats() {
+            if (!currentUsername) return;
+            try {
+                const snap = await get(ref(db, 'world_hexes'));
+                if (!snap.exists()) return;
+                const world = snap.val();
+                const updates = {};
+                let count = 0;
+                Object.keys(world).forEach(key => {
+                    const h = world[key];
+                    if (!h || !h.unit) return;
+                    if (h.unit.owner !== currentUsername) return;
+                    const u = h.unit;
+                    const newHp = Math.min(u.hp !== undefined ? u.hp : CLUBMAN_HP, CLUBMAN_HP);
+                    const needUpdate = (u.dmg !== CLUBMAN_DMG) || (u.maxHp !== CLUBMAN_HP) || (u.hp !== newHp);
+                    if (needUpdate) {
+                        updates[`world_hexes/${key}/unit/dmg`] = CLUBMAN_DMG;
+                        updates[`world_hexes/${key}/unit/maxHp`] = CLUBMAN_HP;
+                        updates[`world_hexes/${key}/unit/hp`] = newHp;
+                        count++;
+                    }
+                });
+                if (count > 0) {
+                    console.log(`[Міграція воїнів] Оновлено ${count} воїнів до dmg=${CLUBMAN_DMG}, hp<=${CLUBMAN_HP}`);
+                    await update(ref(db), updates);
+                }
+            } catch (err) { console.error('[Міграція воїнів] Помилка:', err); }
+        }
+
         window.handleAuth = async function() {
             const user = document.getElementById('username').value.trim();
             const pass = document.getElementById('password').value.trim();
@@ -505,8 +539,9 @@
                     if (!snapshot.exists() || snapshot.val().password !== pass) { alert('Невірний логін або пароль!'); return; }
                     currentUsername = user;
 
-                    // ===== 5.30.18: автообрізка 60->25 =====
                     await migrateWorldTo25Once();
+                    // ===== 5.30.20: оновлюємо старих воїнів =====
+                    await migrateMyUnitsToNewStats();
 
                     const userData = snapshot.val();
                     const worldSnap = await get(child(dbRef, 'world_hexes'));
@@ -721,7 +756,7 @@
 
         function generateInitialMap() {
             let mapData = {};
-            // ===== 5.30.18: 20% прірв =====
+            // ===== 20% прірв =====
             for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) if (Math.random() < 0.20) mapData[`${r}_${c}`] = { type: 'chasm' };
             for (let step = 0; step < 2; step++) {
                 let newMap = { ...mapData };
@@ -742,34 +777,45 @@
             return mapData;
         }
 
-        // ===== 5.30.18: постійний респавн таборів до TARGET =====
+        // ===== 5.30.20: респавн раз на годину, 1 табір, тільки на порожній нейтральний гекс =====
         async function tryRespawnBarbarians() {
             if (!currentUsername) return;
             try {
                 const snap = await get(ref(db, 'world_hexes'));
                 if (!snap.exists()) return;
                 const world = snap.val();
+
+                // 1) рахуємо поточну кількість таборів
                 let campCount = 0;
                 Object.values(world).forEach(h => { if (h && h.type === 'barbarian_camp') campCount++; });
-                if (campCount >= BARBARIAN_TARGET_COUNT) return;
+                if (campCount >= BARBARIAN_TARGET_COUNT) {
+                    // ліміт досягнуто — не спавнимо
+                    return;
+                }
 
-                // додаємо 1-2 табори за раз, поки не досягнемо цілі
-                const toAdd = Math.min(BARBARIAN_TARGET_COUNT - campCount, 1 + Math.floor(Math.random() * 2));
-                const updates = {};
-                let added = 0, attempts = 0;
-                while (added < toAdd && attempts < 500) {
-                    attempts++;
-                    const key = `${Math.floor(Math.random() * GRID_ROWS)}_${Math.floor(Math.random() * GRID_COLS)}`;
-                    if (!world[key] && !updates[`world_hexes/${key}`]) {
-                        updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel());
-                        added++;
+                // 2) шукаємо ВИПАДКОВИЙ порожній нейтральний гекс
+                //    (без owner, без type, без unit — тобто гекс, якого немає в БД,
+                //     або він був очищений після перемоги над табором/продажу)
+                const candidates = [];
+                for (let r = 0; r < GRID_ROWS; r++) {
+                    for (let c = 0; c < GRID_COLS; c++) {
+                        const key = `${r}_${c}`;
+                        const h = world[key];
+                        // гекс має бути ПОВНІСТЮ відсутній у БД або бути null
+                        if (!h) candidates.push(key);
                     }
                 }
-                if (added > 0) {
-                    console.log(`[Респавн] Додано ${added} таборів варварів.`);
-                    await update(ref(db), updates);
-                }
-            } catch (err) { console.error(err); }
+                if (candidates.length === 0) return;
+
+                // вибираємо 1 випадковий
+                const chosenKey = candidates[Math.floor(Math.random() * candidates.length)];
+                const newCamp = makeBarbarianCamp(pickRandomBarbarianLevel());
+
+                const updates = {};
+                updates[`world_hexes/${chosenKey}`] = newCamp;
+                console.log(`[Респавн] Додано 1 табір (${newCamp.level}) на ${chosenKey}. Всього таборів: ${campCount + 1}/${BARBARIAN_TARGET_COUNT}`);
+                await update(ref(db), updates);
+            } catch (err) { console.error('[Респавн] Помилка:', err); }
         }
 
         function startRespawnLoop() { if (respawnInterval) clearInterval(respawnInterval); respawnInterval = setInterval(tryRespawnBarbarians, RESPAWN_CHECK_MS); }
@@ -904,7 +950,7 @@
             return null;
         }
 
-        // ===== 5.30.18: ZOC (не блокує рух, блокує захоплення та купівлю) =====
+        // ===== ZOC (не блокує рух, блокує захоплення та купівлю) =====
         function isHexInEnemyZOC(r, c) {
             const targetKey = `${r}_${c}`;
             const neighbors = getNeighbors(r, c);
@@ -1292,6 +1338,7 @@
                     if (defender.hp <= 0 && victimNewHp <= 0) {
                         _killUnit(hexUpdates, victim.srcKey, victim.unit.id, getHex, setHex, messages, pushMsgIfMine);
                         if (isCamp) {
+                            // ===== 5.30.20: табір знищено, гекс стає НЕЙТРАЛЬНИМ =====
                             setHex(targetKey, null);
                         } else {
                             const tgtH = { ...(getHex(targetKey) || {}) };
@@ -1300,15 +1347,11 @@
                         }
                     } else if (defender.hp <= 0) {
                         if (isCamp) {
+                            // ===== 5.30.20: табір зачищено, нагорода видається, гекс НЕЙТРАЛЬНИЙ =====
                             const reward = targetHex.reward || 100;
                             goldByOwner[victim.unit.owner] = (goldByOwner[victim.unit.owner] || 0) + reward;
-                            setHex(targetKey, {
-                                owner: victim.unit.owner,
-                                color: getPlayerColor(victim.unit.owner),
-                                type: 'starter',
-                                isPurchased: false
-                            });
-                            pushMsgIfMine(victim.unit.owner, `🎉 Табір зачищено! +${reward} золота`);
+                            setHex(targetKey, null);
+                            pushMsgIfMine(victim.unit.owner, `🎉 Табір зачищено! +${reward} золота (гекс вільний)`);
                         } else {
                             const winner = { ...victim.unit };
                             const vSrcH = { ...(getHex(victim.srcKey) || {}) };
@@ -1616,6 +1659,7 @@
             });
         }
 
+        // ===== 5.30.20: функції zoom залишаються (кнопок у HTML немає) =====
         window.zoomIn = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.min(2.5, scale + 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.zoomOut = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.max(0.15, scale - 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.resetView = function() { const vp = document.getElementById('hex-grid-viewport'); const svg = document.getElementById('hex-svg'); scale = 0.75; panX = (vp.clientWidth - svg.getAttribute('width') * scale) / 2; panY = (vp.clientHeight - svg.getAttribute('height') * scale) / 2; updateTransform(); }
@@ -1989,14 +2033,12 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
-            // ===== 5.30.18: вимикаємо підсвітку всіх ворожих ZOC =====
             if (showAllEnemyZOC) {
                 showAllEnemyZOC = false;
                 clearZocHighlight();
             }
         }
 
-        // ===== 5.30.18: підсвітка ZOC =====
         function clearZocHighlight() {
             document.querySelectorAll('polygon.hex.zoc-blocked').forEach(el => el.classList.remove('zoc-blocked'));
         }
@@ -2203,6 +2245,7 @@
             } catch (err) { alert(err.message); }
         }
 
+        // ===== 5.30.20: воїн dmg=20, hp=70, maxHp=70 =====
         window.recruitClubman = async function() {
             if (userGold < 15) { alert("Недостатньо золота!"); return; }
             let coreKey = null, coreHex = null;
@@ -2215,7 +2258,12 @@
             const updates = {};
             updates[`world_hexes/${coreKey}/unit`] = {
                 id: generateUnitId(),
-                type: 'clubman', owner: currentUsername, hp: 100, maxHp: 100, dmg: 25, state: 'idle'
+                type: 'clubman',
+                owner: currentUsername,
+                hp: CLUBMAN_HP,
+                maxHp: CLUBMAN_HP,
+                dmg: CLUBMAN_DMG,
+                state: 'idle'
             };
             updates[`users/${currentUsername}/gold`] = userGold - 15;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
@@ -2247,7 +2295,7 @@
         }
 
         // =====================================================================
-        // ===== 5.30.18: МЕНЮ ГЕКСА + ГОЛОВНА ПРАВКА — ZOC НА КУПІВЛЮ =====
+        // МЕНЮ ГЕКСА + ZOC НА КУПІВЛЮ (без змін від 5.30.18)
         // =====================================================================
         function openTerritoryModal(r, c, hexInfo) {
             hideAllModals();
@@ -2271,7 +2319,8 @@
                     `<div class="hex-balance-row"><span class="hex-balance-label">Тип:</span><span class="hex-balance-value">${levelNames[level]}</span></div>` +
                     `<div class="hex-balance-row"><span class="hex-balance-label">HP ворога:</span><span class="hex-balance-value">${curHp} / ${cfg.hp}</span></div>` +
                     `<div class="hex-balance-row"><span class="hex-balance-label">Урон ворога:</span><span class="hex-balance-value">${curDmg}</span></div>` +
-                    `<div class="hex-balance-row"><span class="hex-balance-label">Скарб:</span><span class="hex-balance-value good">${hexInfo.reward || 100} золота</span></div>` +
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Скарб:</span><span class="hex-balance-value good">${hexInfo.reward || 0} золота</span></div>` +
+                    `<div style="font-size: 11px; color: #fbbf24; margin-top: 6px;">Після перемоги гекс стає вільним (нейтральним).</div>` +
                     `</div>`;
                 cardContainer.innerHTML = cardHtml;
                 buttonsContainer.innerHTML = `<button class="btn-cancel" onclick="closeTerritoryModal()">Закрити</button>`;
@@ -2292,9 +2341,7 @@
                 return;
             }
 
-            // =================================================================
-            // ===== 5.30.18: ПОРОЖНІЙ ГЕКС — КУПІВЛЯ З ПЕРЕВІРКОЮ ZOC =====
-            // =================================================================
+            // ===== Порожній гекс — купівля з перевіркою ZOC =====
             if (!hexInfo || !hexInfo.owner) {
                 title.innerText = "Придбати гекс";
 
@@ -2313,7 +2360,6 @@
 
                 if (blockedByZOC) {
                     actionBtns = `<button class="btn-disabled" onclick="alert('Неможливо купити: гекс у зоні контролю ворожого юніта або ратуші!')">Зона контролю ворога</button>`;
-                    // ===== 5.30.18: підсвітка всіх ворожих ZOC на мапі =====
                     showAllEnemyZOC = true;
                     highlightAllEnemyZOC();
                 } else {
@@ -2393,20 +2439,18 @@
             document.getElementById('territory-modal').style.display = 'none';
             selectedHexCoords = null;
             activeSelection = null;
-            // ===== 5.30.18: вимикаємо ZOC-підсвітку при закритті =====
             if (showAllEnemyZOC) {
                 showAllEnemyZOC = false;
                 clearZocHighlight();
             }
         }
 
-        // ===== 5.30.18: ГОЛОВНА ПРАВКА — КУПІВЛЯ З ПЕРЕВІРКОЮ ZOC =====
+        // ===== ГОЛОВНА ПРАВКА — КУПІВЛЯ З ПЕРЕВІРКОЮ ZOC =====
         window.buyTerritory = async function(r, c) {
             if (userGold < 10) { alert("Потрібно 10 золота."); return; }
             const key = `${r}_${c}`;
             if (hexWorldData[key]) { alert("Зайнято."); closeTerritoryModal(); return; }
 
-            // ===== ПЕРЕВІРКА ZOC =====
             if (isHexInEnemyZOC(r, c)) {
                 alert("Неможливо купити гекс: він у зоні контролю ворожого юніта або ратуші!");
                 return;
@@ -2516,7 +2560,6 @@
                 setTimeout(() => renderUnitRouteDots(svg, u, `${r}_${c}`), 30);
             }
 
-            // ===== 5.30.18: підсвітка ворожих ZOC коли відкрито меню юніта =====
             showAllEnemyZOC = true;
             highlightAllEnemyZOC();
         }
@@ -3149,7 +3192,7 @@
         }
 
         // =====================================================================
-        // ===== 5.30.18: ГОЛОВНИЙ РЕНДЕР З LOD =====
+        // ГОЛОВНИЙ РЕНДЕР З LOD
         // =====================================================================
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
@@ -3256,8 +3299,6 @@
                     else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
                 });
 
-                // ===== 5.30.18: ZOC-підсвітка =====
-                // Якщо showAllEnemyZOC — підсвічуємо всі ворожі ZOC
                 if (showAllEnemyZOC) {
                     for (let rr = 0; rr < GRID_ROWS; rr++) {
                         for (let cc = 0; cc < GRID_COLS; cc++) {
@@ -3269,7 +3310,6 @@
                     }
                 }
 
-                // ===== ZOC-підсвітка при меню юніта (як було) =====
                 if (activeSelection && activeSelection.layer === 'unit') {
                     const myHex = hexWorldData[activeSelection.key];
                     if (isMyUnit(myHex) && myHex.unit.state === 'idle') {
@@ -3417,7 +3457,11 @@
         startUnitTimeTick();
         startAutoHealLoop();
 
-        // ===== 5.30.18: обгортки zoom з коректним LOD-перерендером =====
+        // ===== 5.30.20: обгортки zoom з коректним LOD-перерендером =====
+        // Кнопок у HTML немає, але функції доступні:
+        //  - pinch (два пальці) — основний спосіб на телефоні
+        //  - колесо мишки на ПК
+        //  - з консолі: zoomIn(), zoomOut(), resetView()
         const _origZoomIn = window.zoomIn;
         const _origZoomOut = window.zoomOut;
         const _origResetView = window.resetView;
