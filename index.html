@@ -3,24 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.17</title>
+    <title>HexPolitics v5.30.18</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.17
+    ПОТОЧНА ВЕРСІЯ: v5.30.18
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.18: МАПА 25x25 + ZOC НА КУПІВЛЮ
+               * GRID_ROWS/COLS: 20 -> 25
+               * Табори варварів: 8/4 -> 12/6
+               * Постійний респавн таборів до цілі (+1..2 за 10 хв)
+               * Прірви: 22% -> 20%
+               * Стартовий zoom: 0.9 -> 0.75
+               * ZOC тепер блокує КУПІВЛЮ гекса (buyTerritory)
+               * ZOC візуально: + меню купівлі (всі ворожі ZOC)
+               * Міграція 60->25: автообрізка при вході
+               * ZOC НЕ блокує рух (як і було)
     - v5.30.17: МАПА 20x20 + ВИПРАВЛЕННЯ
-               * GRID_ROWS/COLS: 60 -> 20
-               * Табори варварів: 25 -> 8 (мін 4)
-               * Стартовий zoom: 0.45 -> 0.9
-               * Прірви: 27% -> 22%
-               * LOD-поріг: 0.3 -> 0.35
-               * checkDistanceValid: дозволено базу поруч із будівлями
-               * Виправлено handleCoreDestroyed (null targetHex)
-               * Виправлено offline income (мін 1)
-               * Виправлено LOD-обгортки zoom
-               * Виправлено coresUnderAttack при LOD
     - v5.30.16: ОПТИМІЗАЦІЯ НА ТЕЛЕФОНІ
     - v5.30.15: ЯСКРАВІ СИНІ ТОЧКИ МАРШРУТУ
     - v5.30.14: UI ОНОВЛЕННЯ (модалки праворуч)
@@ -30,9 +30,6 @@
     - v5.30.10: ЛІКУВАННЯ ТА АВТОРЕМОНТ
     - v5.30.9: ЧАС РУХУ В ІНТЕРФЕЙСІ
     - v5.30.8: ШВИДКІСТЬ НА СВОЇЙ ТЕРИТОРІЇ
-    - v5.30.7: КОСМЕТИЧНЕ ОНОВЛЕННЯ
-    - v5.30.6: ОБЛОГОВЕ ОНОВЛЕННЯ
-    - v5.30.5: БОЙОВЕ ОНОВЛЕННЯ
 
     ФОРМАТ: файл розбито на 7 частин
     ============================================
@@ -174,8 +171,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.17</h2>
-            <p id="loader-desc">Мапа 20×20...</p>
+            <h2 id="loader-status">HexPolitics v5.30.18</h2>
+            <p id="loader-desc">Мапа 25×25...</p>
         </div>
     </div>
 
@@ -313,19 +310,19 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.17";
+        const CURRENT_VERSION = "5.30.18";
 
-        // ===== 5.30.17: LOD поріг (було 0.3) =====
+        // ===== 5.30.18: LOD поріг =====
         const LOD_ZOOM_THRESHOLD = 0.35;
 
-        // ===== 5.30.17: МАПА 20x20 =====
-        const GRID_ROWS = 20;
-        const GRID_COLS = 20;
+        // ===== 5.30.18: МАПА 25x25 =====
+        const GRID_ROWS = 25;
+        const GRID_COLS = 25;
         const HEX_RADIUS = 26;
 
-        // ===== 5.30.17: Табори варварів (було 25/15) =====
-        const BARBARIAN_TARGET_COUNT = 8;
-        const BARBARIAN_MIN_COUNT = 4;
+        // ===== 5.30.18: Табори варварів =====
+        const BARBARIAN_TARGET_COUNT = 12;
+        const BARBARIAN_MIN_COUNT = 6;
 
         let mode = "login";
         let currentUsername = "";
@@ -369,8 +366,8 @@
         let gameLoopInterval = null;
         let respawnInterval = null;
 
-        // ===== 5.30.17: стартовий zoom (було 0.45) =====
-        let scale = 0.9;
+        // ===== 5.30.18: стартовий zoom 0.75 =====
+        let scale = 0.75;
         let panX = 0;
         let panY = 0;
         let isDragging = false;
@@ -380,6 +377,9 @@
 
         let pendingGoldByOwner = {};
         let transformRafPending = false;
+
+        // ===== 5.30.18: режим підсвітки всіх ворожих ZOC =====
+        let showAllEnemyZOC = false;
 
         function generateUnitId() {
             return 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
@@ -425,7 +425,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.17"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.18"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -464,6 +464,28 @@
             }
         }
 
+        // ===== 5.30.18: міграція 60->25 при вході =====
+        async function migrateWorldTo25Once() {
+            try {
+                const snap = await get(ref(db, 'world_hexes'));
+                if (!snap.exists()) return;
+                const world = snap.val();
+                const toDelete = [];
+                Object.keys(world).forEach(key => {
+                    const [r, c] = key.split('_').map(Number);
+                    if (isNaN(r) || isNaN(c)) { toDelete.push(key); return; }
+                    if (r >= GRID_ROWS || c >= GRID_COLS || r < 0 || c < 0) toDelete.push(key);
+                });
+                if (toDelete.length > 0) {
+                    console.log(`[Міграція 60→25] Видаляю ${toDelete.length} гексів за межами 25×25...`);
+                    const updates = {};
+                    toDelete.forEach(k => { updates[`world_hexes/${k}`] = null; });
+                    await update(ref(db), updates);
+                    console.log('[Міграція 60→25] Готово.');
+                }
+            } catch (err) { console.error('[Міграція 60→25] Помилка:', err); }
+        }
+
         window.handleAuth = async function() {
             const user = document.getElementById('username').value.trim();
             const pass = document.getElementById('password').value.trim();
@@ -482,6 +504,10 @@
                     const snapshot = await get(child(dbRef, `users/${user}`));
                     if (!snapshot.exists() || snapshot.val().password !== pass) { alert('Невірний логін або пароль!'); return; }
                     currentUsername = user;
+
+                    // ===== 5.30.18: автообрізка 60->25 =====
+                    await migrateWorldTo25Once();
+
                     const userData = snapshot.val();
                     const worldSnap = await get(child(dbRef, 'world_hexes'));
                     hexWorldData = worldSnap.exists() ? worldSnap.val() : {};
@@ -528,6 +554,7 @@
             chatUnreadCount = 0;
             updateChatUnreadBadge();
             cancelMoveMode(); hideAllModals();
+            showAllEnemyZOC = false;
             activeSelection = null; selectedHexCoords = null; hexWorldData = {}; currentUsername = "";
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('auth-screen').style.display = 'flex';
@@ -666,7 +693,6 @@
             if (diffMinutes > 0.2) {
                 const hasBase = Object.values(worldHexes).some(h => h.owner === username && h.type === 'core');
                 if (hasBase) {
-                    // ===== 5.30.17: гарантуємо мін 1 =====
                     earnedGold = diffMinutes * Math.max(1, calculateEffectiveIncome(username, worldHexes));
                     currentGold += earnedGold;
                 }
@@ -695,8 +721,8 @@
 
         function generateInitialMap() {
             let mapData = {};
-            // ===== 5.30.17: 22% прірв (було 27%) =====
-            for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) if (Math.random() < 0.22) mapData[`${r}_${c}`] = { type: 'chasm' };
+            // ===== 5.30.18: 20% прірв =====
+            for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) if (Math.random() < 0.20) mapData[`${r}_${c}`] = { type: 'chasm' };
             for (let step = 0; step < 2; step++) {
                 let newMap = { ...mapData };
                 for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) {
@@ -716,6 +742,7 @@
             return mapData;
         }
 
+        // ===== 5.30.18: постійний респавн таборів до TARGET =====
         async function tryRespawnBarbarians() {
             if (!currentUsername) return;
             try {
@@ -724,16 +751,24 @@
                 const world = snap.val();
                 let campCount = 0;
                 Object.values(world).forEach(h => { if (h && h.type === 'barbarian_camp') campCount++; });
-                if (campCount >= BARBARIAN_MIN_COUNT) return;
-                const toAdd = Math.min(BARBARIAN_TARGET_COUNT - campCount, 5);
+                if (campCount >= BARBARIAN_TARGET_COUNT) return;
+
+                // додаємо 1-2 табори за раз, поки не досягнемо цілі
+                const toAdd = Math.min(BARBARIAN_TARGET_COUNT - campCount, 1 + Math.floor(Math.random() * 2));
                 const updates = {};
                 let added = 0, attempts = 0;
                 while (added < toAdd && attempts < 500) {
                     attempts++;
                     const key = `${Math.floor(Math.random() * GRID_ROWS)}_${Math.floor(Math.random() * GRID_COLS)}`;
-                    if (!world[key] && !updates[`world_hexes/${key}`]) { updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel()); added++; }
+                    if (!world[key] && !updates[`world_hexes/${key}`]) {
+                        updates[`world_hexes/${key}`] = makeBarbarianCamp(pickRandomBarbarianLevel());
+                        added++;
+                    }
                 }
-                if (added > 0) await update(ref(db), updates);
+                if (added > 0) {
+                    console.log(`[Респавн] Додано ${added} таборів варварів.`);
+                    await update(ref(db), updates);
+                }
             } catch (err) { console.error(err); }
         }
 
@@ -869,6 +904,7 @@
             return null;
         }
 
+        // ===== 5.30.18: ZOC (не блокує рух, блокує захоплення та купівлю) =====
         function isHexInEnemyZOC(r, c) {
             const targetKey = `${r}_${c}`;
             const neighbors = getNeighbors(r, c);
@@ -955,7 +991,6 @@
             return result;
         }
 
-        // ===== 5.30.17: захист від null targetHex =====
         async function handleCoreDestroyed(targetKey, targetHex, attackerSrcKey, attackerUnit, isOffline) {
             const messages = [];
             if (!targetHex || !targetHex.owner) {
@@ -1073,7 +1108,6 @@
                 if (unitOwner === currentUsername) messages.push(text);
             };
 
-            // ===== КРОК 1: ЗБІР ПОДІЙ =====
             const events = [];
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
@@ -1086,7 +1120,6 @@
             });
             events.sort((a, b) => a.arrival - b.arrival);
 
-            // ===== КРОК 2: ОБРОБКА КОЖНОЇ ПОДІЇ =====
             for (const ev of events) {
                 const { srcKey, unit: u0 } = ev;
                 if (processedUnits.has(u0.id)) continue;
@@ -1223,8 +1256,7 @@
                         }
                     });
 
-                    const totalAttackersCount = allAttackers.length;
-                    if (totalAttackersCount > MAX_ATTACKERS) {
+                    if (allAttackers.length > MAX_ATTACKERS) {
                         const waitKey = findWaitingHex(unit);
                         if (waitKey) {
                             const srcH = { ...(getHex(srcKey) || {}) };
@@ -1449,7 +1481,6 @@
                 }
             }
 
-            // ===== КРОК 3: ФОРМУВАННЯ UPDATES =====
             const updates = {};
             Object.keys(hexUpdates).forEach(k => {
                 updates[`world_hexes/${k}`] = hexUpdates[k];
@@ -1587,7 +1618,7 @@
 
         window.zoomIn = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.min(2.5, scale + 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.zoomOut = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.max(0.15, scale - 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
-        window.resetView = function() { const vp = document.getElementById('hex-grid-viewport'); const svg = document.getElementById('hex-svg'); scale = 0.9; panX = (vp.clientWidth - svg.getAttribute('width') * scale) / 2; panY = (vp.clientHeight - svg.getAttribute('height') * scale) / 2; updateTransform(); }
+        window.resetView = function() { const vp = document.getElementById('hex-grid-viewport'); const svg = document.getElementById('hex-svg'); scale = 0.75; panX = (vp.clientWidth - svg.getAttribute('width') * scale) / 2; panY = (vp.clientHeight - svg.getAttribute('height') * scale) / 2; updateTransform(); }
 
         function setupViewportControls() {
             if (viewportReady) return;
@@ -1670,12 +1701,10 @@
             return getNeighbors(targetR, targetC).some(n => { const h = hexWorldData[n.key]; return h && h.owner === currentUsername && h.type !== 'chasm'; });
         }
 
-        // ===== 5.30.17: ослаблена перевірка для 20x20 =====
         function checkDistanceValid(targetR, targetC) {
             const targetKey = `${targetR}_${targetC}`;
             const hex = hexWorldData[targetKey];
             if (hex && hex.type !== 'starter') return false;
-            // Дозволяємо сусідів: пусто, прірва, starter, purchased, farm, mill, bridge (не core і не табір)
             return getNeighbors(targetR, targetC).every(n1 => {
                 const h = hexWorldData[n1.key];
                 if (!h) return true;
@@ -1879,7 +1908,8 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 4/7 =====
 
-                function handleHexClick(r, c) {
+                // ===== ОБРОБКА КЛІКІВ =====
+        function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             const userHasBaseOnMap = Object.values(hexWorldData).some(h => h && h.owner === currentUsername && h.type === 'core');
@@ -1959,8 +1989,31 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
+            // ===== 5.30.18: вимикаємо підсвітку всіх ворожих ZOC =====
+            if (showAllEnemyZOC) {
+                showAllEnemyZOC = false;
+                clearZocHighlight();
+            }
         }
 
+        // ===== 5.30.18: підсвітка ZOC =====
+        function clearZocHighlight() {
+            document.querySelectorAll('polygon.hex.zoc-blocked').forEach(el => el.classList.remove('zoc-blocked'));
+        }
+
+        function highlightAllEnemyZOC() {
+            clearZocHighlight();
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    if (isHexInEnemyZOC(r, c)) {
+                        const poly = document.getElementById(`hex-${r}-${c}`);
+                        if (poly) poly.classList.add('zoc-blocked');
+                    }
+                }
+            }
+        }
+
+        // ===== ЗАСНУВАННЯ БАЗИ =====
         function openBaseModal() {
             const takenColors = new Set();
             Object.values(hexWorldData).forEach(h => { if (h.color) takenColors.add(h.color.toLowerCase()); });
@@ -1997,6 +2050,7 @@
             catch (err) { alert('Помилка: ' + err.message); }
         }
 
+        // ===== РАТУША =====
         function openTownHallModal(coreHex, r, c) {
             hideAllModals();
             const modal = document.getElementById('townhall-modal');
@@ -2044,6 +2098,7 @@
 
         window.closeTownHallModal = function() { document.getElementById('townhall-modal').style.display = 'none'; activeSelection = null; }
 
+        // ===== ВОРОЖА РАТУША =====
         function openEnemyCoreModal(r, c, coreHex) {
             hideAllModals();
             activeSelection = { key: `${r}_${c}`, layer: 'enemy-core' };
@@ -2100,6 +2155,7 @@
             executeUnitMove(chosen.r, chosen.c, r, c, path);
         }
 
+        // ===== РЕМОНТ / ПРОКАЧКА / НАЙМ =====
         window.repairTownHall = async function() {
             let coreKey = null;
             Object.keys(hexWorldData).forEach(k => { if (hexWorldData[k].owner === currentUsername && hexWorldData[k].type === 'core') coreKey = k; });
@@ -2166,6 +2222,7 @@
             try { await update(ref(db), updates); closeTownHallModal(); alert("Воїна найнято!"); } catch (err) { alert(err.message); }
         }
 
+        // ===== МІСТ =====
         function openBridgeModal(r, c) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
@@ -2189,6 +2246,9 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
+        // =====================================================================
+        // ===== 5.30.18: МЕНЮ ГЕКСА + ГОЛОВНА ПРАВКА — ZOC НА КУПІВЛЮ =====
+        // =====================================================================
         function openTerritoryModal(r, c, hexInfo) {
             hideAllModals();
             const modal = document.getElementById('territory-modal');
@@ -2198,6 +2258,7 @@
             const key = `${r}_${c}`;
             let cardHtml = '', actionBtns = '';
 
+            // ===== Табір варварів =====
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
                 const level = hexInfo.level || 'weak';
                 const levelNames = { weak: 'Слабкий', medium: 'Середній', strong: 'Сильний' };
@@ -2218,6 +2279,7 @@
                 return;
             }
 
+            // ===== Ворожа ратуша =====
             if (hexInfo && hexInfo.type === 'core' && hexInfo.owner && hexInfo.owner !== currentUsername) {
                 const level = hexInfo.level || 1;
                 const maxHp = getCoreMaxHp(level);
@@ -2230,19 +2292,39 @@
                 return;
             }
 
+            // =================================================================
+            // ===== 5.30.18: ПОРОЖНІЙ ГЕКС — КУПІВЛЯ З ПЕРЕВІРКОЮ ZOC =====
+            // =================================================================
             if (!hexInfo || !hexInfo.owner) {
                 title.innerText = "Придбати гекс";
+
+                const blockedByZOC = isHexInEnemyZOC(r, c);
+
                 cardHtml = `<div class="info-card">` +
                     `<b>Порожній гекс</b><br>` +
                     `<div class="hex-balance-row"><span class="hex-balance-label">Що на ній:</span><span class="hex-balance-value">Пусто</span></div>` +
                     `<div class="hex-balance-row"><span class="hex-balance-label">Ціна купівлі:</span><span class="hex-balance-value">10 золота</span></div>` +
-                    `<div class="hex-balance-row"><span class="hex-balance-label">Утримання після купівлі:</span><span class="hex-balance-value bad">-2 золота/хв</span></div>` +
-                    `</div>`;
-                actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити (10 золота)</button>`;
-                cardContainer.innerHTML = cardHtml; buttonsContainer.innerHTML = actionBtns; modal.style.display = 'block';
+                    `<div class="hex-balance-row"><span class="hex-balance-label">Утримання після купівлі:</span><span class="hex-balance-value bad">-2 золота/хв</span></div>`;
+                if (blockedByZOC) {
+                    cardHtml += `<div class="hex-balance-row" style="margin-top: 6px;"><span class="hex-balance-label">Зона контролю:</span><span class="hex-balance-value bad">Ворожа (купити не можна)</span></div>`;
+                }
+                cardHtml += `</div>`;
+                cardContainer.innerHTML = cardHtml;
+
+                if (blockedByZOC) {
+                    actionBtns = `<button class="btn-disabled" onclick="alert('Неможливо купити: гекс у зоні контролю ворожого юніта або ратуші!')">Зона контролю ворога</button>`;
+                    // ===== 5.30.18: підсвітка всіх ворожих ZOC на мапі =====
+                    showAllEnemyZOC = true;
+                    highlightAllEnemyZOC();
+                } else {
+                    actionBtns = `<button class="btn-confirm" onclick="buyTerritory(${r}, ${c})">Купити (10 золота)</button>`;
+                }
+                buttonsContainer.innerHTML = actionBtns;
+                modal.style.display = 'block';
                 return;
             }
 
+            // ===== Мій гекс =====
             const isStarter = hexInfo.type === 'starter';
             const isBridge = hexInfo.type === 'bridge';
             const isFarm = hexInfo.type === 'farm';
@@ -2311,6 +2393,30 @@
             document.getElementById('territory-modal').style.display = 'none';
             selectedHexCoords = null;
             activeSelection = null;
+            // ===== 5.30.18: вимикаємо ZOC-підсвітку при закритті =====
+            if (showAllEnemyZOC) {
+                showAllEnemyZOC = false;
+                clearZocHighlight();
+            }
+        }
+
+        // ===== 5.30.18: ГОЛОВНА ПРАВКА — КУПІВЛЯ З ПЕРЕВІРКОЮ ZOC =====
+        window.buyTerritory = async function(r, c) {
+            if (userGold < 10) { alert("Потрібно 10 золота."); return; }
+            const key = `${r}_${c}`;
+            if (hexWorldData[key]) { alert("Зайнято."); closeTerritoryModal(); return; }
+
+            // ===== ПЕРЕВІРКА ZOC =====
+            if (isHexInEnemyZOC(r, c)) {
+                alert("Неможливо купити гекс: він у зоні контролю ворожого юніта або ратуші!");
+                return;
+            }
+
+            const updates = {};
+            updates[`world_hexes/${key}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'purchased', isPurchased: true };
+            updates[`users/${currentUsername}/gold`] = userGold - 10;
+            updates[`users/${currentUsername}/lastOnline`] = Date.now();
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("Придбано!"); } catch (err) { alert(err.message); }
         }
 
         window.sellTerritory = async function(r, c) {
@@ -2409,12 +2515,20 @@
                 const svg = document.getElementById('hex-svg');
                 setTimeout(() => renderUnitRouteDots(svg, u, `${r}_${c}`), 30);
             }
+
+            // ===== 5.30.18: підсвітка ворожих ZOC коли відкрито меню юніта =====
+            showAllEnemyZOC = true;
+            highlightAllEnemyZOC();
         }
 
         window.closeUnitModal = function() {
             document.getElementById('unit-modal').style.display = 'none';
             activeSelection = null;
             clearRouteDots();
+            if (showAllEnemyZOC) {
+                showAllEnemyZOC = false;
+                clearZocHighlight();
+            }
             renderWorldData();
         }
 
@@ -2444,6 +2558,10 @@
                 modal.style.display = 'none';
                 activeSelection = null;
                 clearRouteDots();
+                if (showAllEnemyZOC) {
+                    showAllEnemyZOC = false;
+                    clearZocHighlight();
+                }
             }
         }
 
@@ -2508,17 +2626,6 @@
             const h = hexWorldData[key];
             if (!isMyUnit(h)) return;
             try { await update(ref(db), { [`world_hexes/${key}/unit`]: stopTravel(h.unit) }); closeUnitModal(); } catch (err) { alert(err.message); }
-        }
-
-        window.buyTerritory = async function(r, c) {
-            if (userGold < 10) { alert("Потрібно 10 золота."); return; }
-            const key = `${r}_${c}`;
-            if (hexWorldData[key]) { alert("Зайнято."); closeTerritoryModal(); return; }
-            const updates = {};
-            updates[`world_hexes/${key}`] = { owner: currentUsername, color: getPlayerColor(currentUsername), type: 'purchased', isPurchased: true };
-            updates[`users/${currentUsername}/gold`] = userGold - 10;
-            updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("Придбано!"); } catch (err) { alert(err.message); }
         }
 
         window.startMoveUnit = function(r, c) {
@@ -2684,7 +2791,6 @@
                 const cls = isOwn ? 'chat-msg own' : 'chat-msg';
                 return `<div class="${cls}"><span class="msg-author">${escapeHtml(m.author)}</span><span class="msg-time">${chatTimestampToTime(m.time)}</span><span class="msg-text">${escapeHtml(m.text)}</span></div>`;
             }).join('');
-            // ===== 5.30.17: оновлюємо lastSeen при відкритому чаті =====
             if (chatOpen) {
                 chatLastSeenTimestamp = Date.now();
             } else {
@@ -2786,13 +2892,14 @@
             }, 1000);
         }
 
-        // ===== SVG-РЕНДЕР =====
+        // ===== SVG-РЕНДЕР: БАЗОВІ ХЕЛПЕРИ =====
         function svgEl(tag, attrs) {
             const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
             for (const k in attrs) el.setAttribute(k, attrs[k]);
             return el;
         }
 
+        // ===== РАТУША =====
         function renderTownHallVector(svg, center, teamColor, level) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
@@ -2817,6 +2924,7 @@
             svg.appendChild(g);
         }
 
+        // ===== ФЕРМА =====
         function renderFarmVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
@@ -2835,6 +2943,7 @@
             svg.appendChild(g);
         }
 
+        // ===== ВІТРЯК =====
         function renderMillVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
@@ -2856,6 +2965,7 @@
             svg.appendChild(g);
         }
 
+        // ===== ТАБІР ВАРВАРІВ =====
         function renderBarbarianCampVector(svg, center, level) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
@@ -2873,6 +2983,7 @@
             svg.appendChild(g);
         }
 
+        // ===== МІСТ =====
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             g.appendChild(svgEl("line", { x1: center.x - 14, y1: center.y - 7, x2: center.x + 14, y2: center.y - 7, stroke: "#d97706", "stroke-width": "3" }));
@@ -2881,6 +2992,7 @@
             svg.appendChild(g);
         }
 
+        // ===== БОЙОВІ HP-БАРИ =====
         function renderBattleHPBars(svg) {
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
@@ -2934,6 +3046,7 @@
             svg.appendChild(hpText);
         }
 
+        // ===== ТОЧКИ МАРШРУТУ =====
         function renderUnitRouteDots(svg, unit, currentKey) {
             if (!unit || unit.state !== 'moving') return;
             if (!unit.path || !Array.isArray(unit.path)) return;
@@ -2967,6 +3080,7 @@
             return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
         }
 
+        // ===== ВОЇН =====
         function renderUnitBadge(svg, cx, cy, r, unit, teamColor, isBarbarian) {
             const k = r / 15;
             const g = svgEl("g", { class: "unit-badge" });
@@ -3034,6 +3148,9 @@
             svg.appendChild(g);
         }
 
+        // =====================================================================
+        // ===== 5.30.18: ГОЛОВНИЙ РЕНДЕР З LOD =====
+        // =====================================================================
         function renderWorldData() {
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge').forEach(el => el.remove());
@@ -3139,6 +3256,20 @@
                     else renderUnitBadge(svg, u.center.x + 11, u.center.y + 10, 10, u.unit, u.color, u.barbarian);
                 });
 
+                // ===== 5.30.18: ZOC-підсвітка =====
+                // Якщо showAllEnemyZOC — підсвічуємо всі ворожі ZOC
+                if (showAllEnemyZOC) {
+                    for (let rr = 0; rr < GRID_ROWS; rr++) {
+                        for (let cc = 0; cc < GRID_COLS; cc++) {
+                            if (isHexInEnemyZOC(rr, cc)) {
+                                const poly = document.getElementById(`hex-${rr}-${cc}`);
+                                if (poly) poly.classList.add('zoc-blocked');
+                            }
+                        }
+                    }
+                }
+
+                // ===== ZOC-підсвітка при меню юніта (як було) =====
                 if (activeSelection && activeSelection.layer === 'unit') {
                     const myHex = hexWorldData[activeSelection.key];
                     if (isMyUnit(myHex) && myHex.unit.state === 'idle') {
@@ -3159,6 +3290,7 @@
             }
         }
 
+        // ===== МІТКИ НАД РАТУШАМИ =====
         function renderLabel(svg, center, labelContent, damaged, hpPct, hp, maxHp) {
             const labelY = center.y - 40;
             const approxWidth = Math.max(70, labelContent.length * 7.2 + 14);
@@ -3221,6 +3353,7 @@
             }
         }
 
+        // ===== МІГРАЦІЯ HP РАТУШ =====
         async function migrateCoreHpIfNeeded() {
             if (normalizeCoreHp()) {
                 const updates = {};
@@ -3245,7 +3378,8 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 6/7 =====
 
-                function listenToWorldData() {
+                // ===== СЛУХАЧ СВІТУ =====
+        function listenToWorldData() {
             if (unsubWorld) unsubWorld();
             let renderScheduled = false;
             unsubWorld = onValue(ref(db, 'world_hexes'), (snapshot) => {
@@ -3283,7 +3417,7 @@
         startUnitTimeTick();
         startAutoHealLoop();
 
-        // ===== 5.30.17: обгортки zoom з коректним LOD-перерендером =====
+        // ===== 5.30.18: обгортки zoom з коректним LOD-перерендером =====
         const _origZoomIn = window.zoomIn;
         const _origZoomOut = window.zoomOut;
         const _origResetView = window.resetView;
