@@ -76,9 +76,6 @@
         #user-bar button:hover { background: #dc2626; }
         .btn-wipe { background: #b91c1c !important; border: 1px solid #f87171 !important; }
 
-        /* ===== кнопки zoom прибрано (функції залишено) ===== */
-
-        /* ===== модалки на телефоні — справа знизу ===== */
         .modal { display: none; position: fixed; background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto;
             top: 50%; right: 15px; transform: translateY(-50%); }
         .modal h3 { margin-bottom: 10px; color: #38bdf8; font-size: 18px; }
@@ -305,15 +302,12 @@
         const ADMIN_USERNAME = "admin";
         const CURRENT_VERSION = "5.30.21";
 
-        // ===== LOD поріг =====
         const LOD_ZOOM_THRESHOLD = 0.35;
 
-        // ===== Мапа 25x25 =====
         const GRID_ROWS = 25;
         const GRID_COLS = 25;
         const HEX_RADIUS = 26;
 
-        // ===== Табори варварів =====
         const BARBARIAN_TARGET_COUNT = 12;
 
         let mode = "login";
@@ -345,9 +339,6 @@
         function getCoreMaxHp(level) { return CORE_HP_BY_LEVEL[level] || CORE_HP_BY_LEVEL[1]; }
         function getCoreDmg(level) { return CORE_DMG_BY_LEVEL[level] || CORE_DMG_BY_LEVEL[1]; }
 
-        // ===== 5.30.21: єдиний тип табору (без рівнів) =====
-        // Стати взяті з колишнього "medium" варвара: HP 80, DMG 25
-        // Нагорода: 10-15 золота
         const BARBARIAN_CAMP = {
             hp: 80,
             dmg: 25,
@@ -356,10 +347,8 @@
         };
 
         const BARBARIAN_REGEN_MS = 3 * 60 * 1000;
-        // ===== 5.30.21: респавн раз на годину, 1 табір =====
         const RESPAWN_CHECK_MS = 60 * 60 * 1000;
 
-        // ===== 5.30.20: стати воїна =====
         const CLUBMAN_HP = 70;
         const CLUBMAN_DMG = 20;
 
@@ -368,7 +357,6 @@
         let gameLoopInterval = null;
         let respawnInterval = null;
 
-        // ===== стартовий zoom 0.75 =====
         let scale = 0.75;
         let panX = 0;
         let panY = 0;
@@ -486,7 +474,6 @@
             } catch (err) { console.error('[Міграція 60→25] Помилка:', err); }
         }
 
-        // ===== 5.30.21: міграція старих таборів (з рівнями) до єдиного типу =====
         async function migrateBarbarianCampsToUnified() {
             try {
                 const snap = await get(ref(db, 'world_hexes'));
@@ -497,7 +484,6 @@
                 Object.keys(world).forEach(key => {
                     const h = world[key];
                     if (!h || h.type !== 'barbarian_camp') return;
-                    // Якщо в таборі ще є level (стара структура) — переробити
                     if (h.level !== undefined) {
                         updates[`world_hexes/${key}`] = {
                             type: 'barbarian_camp',
@@ -523,7 +509,6 @@
             } catch (err) { console.error('[Міграція таборів] Помилка:', err); }
         }
 
-        // ===== 5.30.20: міграція моїх воїнів до нових статів (20/70) =====
         async function migrateMyUnitsToNewStats() {
             if (!currentUsername) return;
             try {
@@ -573,9 +558,7 @@
                     currentUsername = user;
 
                     await migrateWorldTo25Once();
-                    // ===== 5.30.21: міграція старих таборів =====
                     await migrateBarbarianCampsToUnified();
-                    // ===== 5.30.20: оновлюємо старих воїнів =====
                     await migrateMyUnitsToNewStats();
 
                     const userData = snapshot.val();
@@ -784,7 +767,7 @@
             }
         }
 
-        // ===== 5.30.21: ВАРВАРИ БЕЗ РІВНІВ (єдиний тип) =====
+        // ===== ВАРВАРИ БЕЗ РІВНІВ (єдиний тип) =====
         function makeBarbarianCamp() {
             return {
                 type: 'barbarian_camp',
@@ -804,7 +787,6 @@
 
         function generateInitialMap() {
             let mapData = {};
-            // ===== 20% прірв =====
             for (let r = 0; r < GRID_ROWS; r++) for (let c = 0; c < GRID_COLS; c++) if (Math.random() < 0.20) mapData[`${r}_${c}`] = { type: 'chasm' };
             for (let step = 0; step < 2; step++) {
                 let newMap = { ...mapData };
@@ -825,7 +807,7 @@
             return mapData;
         }
 
-        // ===== 5.30.21: респавн раз на годину, 1 табір, тільки на порожній нейтральний гекс =====
+        // ===== респавн раз на годину, 1 табір, тільки на порожній нейтральний гекс =====
         async function tryRespawnBarbarians() {
             if (!currentUsername) return;
             try {
@@ -833,27 +815,20 @@
                 if (!snap.exists()) return;
                 const world = snap.val();
 
-                // 1) рахуємо поточну кількість таборів
                 let campCount = 0;
                 Object.values(world).forEach(h => { if (h && h.type === 'barbarian_camp') campCount++; });
-                if (campCount >= BARBARIAN_TARGET_COUNT) {
-                    // ліміт досягнуто — не спавнимо
-                    return;
-                }
+                if (campCount >= BARBARIAN_TARGET_COUNT) return;
 
-                // 2) шукаємо ВИПАДКОВИЙ порожній нейтральний гекс
                 const candidates = [];
                 for (let r = 0; r < GRID_ROWS; r++) {
                     for (let c = 0; c < GRID_COLS; c++) {
                         const key = `${r}_${c}`;
                         const h = world[key];
-                        // гекс має бути ПОВНІСТЮ відсутній у БД
                         if (!h) candidates.push(key);
                     }
                 }
                 if (candidates.length === 0) return;
 
-                // вибираємо 1 випадковий
                 const chosenKey = candidates[Math.floor(Math.random() * candidates.length)];
                 const newCamp = makeBarbarianCamp();
 
@@ -996,15 +971,12 @@
             return null;
         }
 
-        // ===== 5.30.21: ZOC — варвари ТЕЖ створюють (прибрано виняток) =====
-        // ZOC не блокує рух, тільки захоплення та купівлю.
-        // Джерело ZOC: будь-який ворожий юніт (включно з варваром) АБО ворожа ратуша.
+        // ===== ZOC: ворожі юніти (включно з варварами) АБО ворожі ратуші =====
         function isHexInEnemyZOC(r, c) {
             const targetKey = `${r}_${c}`;
             const neighbors = getNeighbors(r, c);
             const checkHexes = [{ key: targetKey, r, c }, ...neighbors];
 
-            // Перевірка 1: ворожі юніти (включно з варварами)
             for (const cell of checkHexes) {
                 const h = hexWorldData[cell.key];
                 if (!h) continue;
@@ -1012,11 +984,9 @@
                 const unitOwner = h.unit.owner;
                 if (!unitOwner) continue;
                 if (unitOwner === currentUsername) continue;
-                // ===== 5.30.21: ВИДАЛЕНО рядок `if (unitOwner === '__barbarian__') continue;` =====
                 return true;
             }
 
-            // Перевірка 2: ворожі ратуші
             for (const cell of checkHexes) {
                 const h = hexWorldData[cell.key];
                 if (!h) continue;
@@ -1388,7 +1358,6 @@
                     if (defender.hp <= 0 && victimNewHp <= 0) {
                         _killUnit(hexUpdates, victim.srcKey, victim.unit.id, getHex, setHex, messages, pushMsgIfMine);
                         if (isCamp) {
-                            // ===== табір знищено, гекс стає НЕЙТРАЛЬНИМ =====
                             setHex(targetKey, null);
                         } else {
                             const tgtH = { ...(getHex(targetKey) || {}) };
@@ -1397,7 +1366,6 @@
                         }
                     } else if (defender.hp <= 0) {
                         if (isCamp) {
-                            // ===== табір зачищено, нагорода видається, гекс НЕЙТРАЛЬНИЙ =====
                             const reward = targetHex.reward || 10;
                             goldByOwner[victim.unit.owner] = (goldByOwner[victim.unit.owner] || 0) + reward;
                             setHex(targetKey, null);
@@ -1709,7 +1677,6 @@
             });
         }
 
-        // ===== 5.30.21: функції zoom залишаються (кнопок у HTML немає) =====
         window.zoomIn = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.min(2.5, scale + 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.zoomOut = function() { const vp = document.getElementById('hex-grid-viewport'); const cx = vp.clientWidth / 2, cy = vp.clientHeight / 2; const ns = Math.max(0.15, scale - 0.25); panX = cx - (cx - panX) * (ns / scale); panY = cy - (cy - panY) * (ns / scale); scale = ns; updateTransform(); }
         window.resetView = function() { const vp = document.getElementById('hex-grid-viewport'); const svg = document.getElementById('hex-svg'); scale = 0.75; panX = (vp.clientWidth - svg.getAttribute('width') * scale) / 2; panY = (vp.clientHeight - svg.getAttribute('height') * scale) / 2; updateTransform(); }
@@ -1986,7 +1953,23 @@
         function getHexIncomeBreakdown(hexInfo) {
             const result = { income: 0, upkeep: 0, balance: 0, description: '', extraLines: [] };
             if (!hexInfo) return result;
-            const type = hexInfo.type |        // ===== ОБРОБКА КЛІКІВ =====
+            const type = hexInfo.type || '';
+            const level = hexInfo.level || 1;
+            if (type === 'core') { result.income = getIncomeByLevel(level); result.description = `Ратуша (рівень ${level})`; }
+            else if (type === 'farm') { result.income = 1; result.description = 'Ферма'; }
+            else if (type === 'mill') { result.income = 0; result.description = 'Вітряк'; }
+            else if (type === 'bridge') { result.upkeep = 2; result.description = 'Міст'; }
+            else if (type === 'purchased') { result.upkeep = 2; result.description = 'Куплена земля'; }
+            else if (type === 'starter') { result.description = 'Стартова земля (безкоштовна)'; }
+            else if (type === 'barbarian_camp') { result.description = 'Табір варварів'; }
+            else { result.description = 'Пусто'; }
+            result.balance = result.income - result.upkeep;
+            return result;
+        }
+
+// ===== КІНЕЦЬ ЧАСТИНИ 4/7 =====
+
+                // ===== ОБРОБКА КЛІКІВ =====
         function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
@@ -2340,7 +2323,7 @@
             const key = `${r}_${c}`;
             let cardHtml = '', actionBtns = '';
 
-            // ===== 5.30.21: Табір варварів БЕЗ РІВНІВ =====
+            // ===== Табір варварів БЕЗ РІВНІВ =====
             if (hexInfo && hexInfo.type === 'barbarian_camp') {
                 const cfg = BARBARIAN_CAMP;
                 const curHp = hexInfo.unit ? Math.round(hexInfo.unit.hp) : cfg.hp;
@@ -2803,9 +2786,9 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Знесено!"); } catch (err) { alert(err.message); }
         }
 
-// ===== КІНЕЦЬ ЧАСТИНИ 5/7 =====| '';
+// ===== КІНЕЦЬ ЧАСТИНИ 5/7 =====
 
-                    // ===== ЧАТ =====
+                // ===== ЧАТ =====
         const CHAT_MAX_MESSAGES = 100;
         let chatUnreadCount = 0;
         let chatLastSeenTimestamp = 0;
@@ -3040,11 +3023,10 @@
             svg.appendChild(g);
         }
 
-        // ===== 5.30.21: ТАБІР ВАРВАРІВ БЕЗ РІВНІВ (один колір) =====
+        // ===== ТАБІР ВАРВАРІВ (без рівнів, один колір) =====
         function renderBarbarianCampVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
-            // Єдиний колір — як колишній "medium" (помаранчевий)
             const c = { tent: "#f59e0b", dark: "#451a03", flag: "#d97706" };
             g.appendChild(svgEl("ellipse", { cx, cy: cy + 8, rx: 15, ry: 4, fill: "rgba(0,0,0,0.5)" }));
             g.appendChild(svgEl("polygon", { points: `${cx - 4},${cy - 12} ${cx - 16},${cy + 6} ${cx + 8},${cy + 6}`, fill: c.tent, stroke: c.dark, "stroke-width": 1.5 }));
@@ -3264,7 +3246,6 @@
                 if (hexData.type === 'chasm') { polygon.classList.add('chasm-hex'); return; }
 
                 if (hexData.type === 'barbarian_camp') {
-                    // ===== 5.30.21: табір без рівнів — один колір =====
                     polygon.style.fill = "#78350f";
                     polygon.style.stroke = "#f59e0b";
 
@@ -3448,7 +3429,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 6/7 =====
 
-                    // ===== СЛУХАЧ СВІТУ =====
+                // ===== СЛУХАЧ СВІТУ =====
         function listenToWorldData() {
             if (unsubWorld) unsubWorld();
             let renderScheduled = false;
@@ -3517,19 +3498,3 @@
     </script>
 </body>
 </html>
-            const level = hexInfo.level || 1;
-            if (type === 'core') { result.income = getIncomeByLevel(level); result.description = `Ратуша (рівень ${level})`; }
-            else if (type === 'farm') { result.income = 1; result.description = 'Ферма'; }
-            else if (type === 'mill') { result.income = 0; result.description = 'Вітряк'; }
-            else if (type === 'bridge') { result.upkeep = 2; result.description = 'Міст'; }
-            else if (type === 'purchased') { result.upkeep = 2; result.description = 'Куплена земля'; }
-            else if (type === 'starter') { result.description = 'Стартова земля (безкоштовна)'; }
-            else if (type === 'barbarian_camp') { result.description = 'Табір варварів'; }
-            else { result.description = 'Пусто'; }
-            result.balance = result.income - result.upkeep;
-            return result;
-        }
-
-// ===== КІНЕЦЬ ЧАСТИНИ 4/7 =====
-
-        
