@@ -3,13 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.30.24</title>
+    <title>HexPolitics v5.30.25</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.30.24
+    ПОТОЧНА ВЕРСІЯ: v5.30.25
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.30.25: ВІЗУАЛ МОСТУ ТА БАНКУ
+               * Міст: фон як у пустого гексу, обводка кольору гравця
+               * Банк: заливка кольору гравця, нова модель без $
+               * Нова модель мосту (балки + перила + тінь прірви)
+               * Нова модель банку (колони + фронтон + монета)
     - v5.30.24: РОЗДІЛЕННЯ УТРИМАННЯ
                * analyzeHexEconomy: hexUpkeep + buildingUpkeep
                * Меню банку: окремо гекс і банк
@@ -54,9 +59,11 @@
         polygon.hex.occupied-core { stroke: #ffffff; stroke-width: 2.5; fill-opacity: 0.95; }
         polygon.hex.occupied-border { stroke-width: 1.5; fill-opacity: 0.55; }
         polygon.hex.chasm-hex { fill: #030712 !important; stroke: #030712 !important; fill-opacity: 0.95 !important; }
-        polygon.hex.bridge-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #78350f !important; fill-opacity: 0.85 !important; }
-        polygon.hex.bank-hex { stroke: #fbbf24 !important; stroke-width: 2.5 !important; fill: #422006 !important; fill-opacity: 0.9 !important; }
-        polygon.hex.bank-active-hex { stroke: #10b981 !important; stroke-width: 3 !important; fill: #422006 !important; fill-opacity: 0.9 !important; }
+        /* ===== v5.30.25: Міст — фон як пустий гекс, обводка кольору гравця (inline) ===== */
+        polygon.hex.bridge-hex { fill-opacity: 0.6 !important; }
+        /* ===== v5.30.25: Банк — заливка кольором гравця, обводка (inline) ===== */
+        polygon.hex.bank-hex { stroke-width: 1.5 !important; fill-opacity: 0.85 !important; }
+        polygon.hex.bank-active-hex { stroke: #10b981 !important; stroke-width: 2.5 !important; fill-opacity: 0.9 !important; }
         polygon.hex.zoc-blocked { stroke: #ef4444 !important; stroke-width: 2 !important; stroke-dasharray: 4 2; }
         polygon.hex.core-under-attack { stroke: #ef4444 !important; stroke-width: 3 !important; animation: corePulse 1s ease-in-out infinite; }
         @keyframes corePulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.4; } }
@@ -181,8 +188,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.30.24</h2>
-            <p id="loader-desc">Розділення утримання...</p>
+            <h2 id="loader-status">HexPolitics v5.30.25</h2>
+            <p id="loader-desc">Візуал мосту та банку...</p>
         </div>
     </div>
 
@@ -314,7 +321,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.30.24";
+        const CURRENT_VERSION = "5.30.25";
 
         const LOD_ZOOM_THRESHOLD = 0.35;
 
@@ -438,7 +445,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.24"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.30.25"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -654,7 +661,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 1/7 =====
 
-                // ===== ЛІМІТ КАЗНИ =====
+                        // ===== ЛІМІТ КАЗНИ =====
         function getGoldCap(username) {
             if (!username) return CORE_GOLD_CAP[1];
             let coreLevel = 1;
@@ -1027,7 +1034,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 2/7 =====
 
-                // ===== БІЙ ТА РУХ =====
+                        // ===== БІЙ ТА РУХ =====
         function stopTravel(unit) {
             const u = { ...unit, state: 'idle' };
             delete u.targetKey; delete u.arrivalTime; delete u.path; delete u.pathIndex; delete u.finalTargetKey;
@@ -1682,7 +1689,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 3/7 =====
 
-                // ===== ІНТЕРАКТИВ =====
+                        // ===== ІНТЕРАКТИВ =====
         function initHexGrid() {
             const svg = document.getElementById('hex-svg');
             svg.innerHTML = '';
@@ -1777,7 +1784,7 @@
                     scale = ns; updateTransform();
                     return;
                 }
-                if (!isDragging) return;
+                                if (!isDragging) return;
                 const dx = e.clientX - panX - dragStartX, dy = e.clientY - panY - dragStartY;
                 if (Math.abs(dx) > 6 || Math.abs(dy) > 6) isClick = false;
                 panX = e.clientX - dragStartX; panY = e.clientY - dragStartY;
@@ -1923,10 +1930,9 @@
 
             // 2) Утримання за гекс (куплена земля далеко від ратуші, міст)
             if (type === 'bridge') {
-                // міст — це і є гекс, утримання "за гекс"
                 result.hexUpkeep = 2;
             } else if (type === 'core') {
-                result.hexUpkeep = 0;  // ратуша — центр
+                result.hexUpkeep = 0;
             } else if (hexInfo.isPurchased === true || type === 'purchased') {
                 const nearMyCore = isAdjacentToMyCore(hexKey);
                 if (!nearMyCore) result.hexUpkeep = 2;
@@ -2041,9 +2047,7 @@
             return result;
         }
 
-// ===== КІНЕЦЬ ЧАСТИНИ 4/7 =====
-
-                // ===== ОБРОБКА КЛІКІВ =====
+        // ===== ОБРОБКА КЛІКІВ =====
         function handleHexClick(r, c) {
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
@@ -2189,7 +2193,6 @@
         }
 
         // ===== РАТУША =====
-        // 5.30.24: додано рядок "Утримання гекса: 0"
         function openTownHallModal(coreHex, r, c) {
             hideAllModals();
             activeSelection = { key: `${r}_${c}`, layer: 'townhall' };
@@ -2439,7 +2442,9 @@
             try { await update(ref(db), updates); closeTerritoryModal(); alert("Міст зведено!"); } catch (err) { alert(err.message); }
         }
 
-        // =====================================================================
+// ===== КІНЕЦЬ ЧАСТИНИ 4/7 =====
+
+                // =====================================================================
         // МЕНЮ ГЕКСА — з РОЗДІЛЕННЯМ утримання
         // =====================================================================
         function openTerritoryModal(r, c, hexInfo) {
@@ -2613,7 +2618,7 @@
             if (showAllEnemyZOC) { showAllEnemyZOC = false; clearZocHighlight(); }
         }
 
-        // ===== 5.30.24: refreshTerritoryModal =====
+        // ===== refreshTerritoryModal =====
         function refreshTerritoryModal() {
             const modal = document.getElementById('territory-modal');
             if (!modal || modal.style.display !== 'block') return;
@@ -2623,14 +2628,13 @@
             const [r, c] = activeSelection.key.split('_').map(Number);
             if (isNaN(r) || isNaN(c)) return;
             const hexData = hexWorldData[activeSelection.key];
-            // Перемальовуємо тільки свій гекс (щоб не закрити купівлю/табір)
             if (layer === 'cell') {
                 if (!hexData || !hexData.owner || hexData.owner !== currentUsername) return;
                 openTerritoryModal(r, c, hexData);
             }
         }
 
-        // ===== ПРОРИТЕТ БАНКУ =====
+        // ===== ПРІОРИТЕТ БАНКУ =====
         window.toggleBankPriority = async function(r, c, enable) {
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
@@ -2973,7 +2977,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 5/7 =====
 
-                // ===== ЧАТ =====
+                        // ===== ЧАТ =====
         const CHAT_MAX_MESSAGES = 100;
         let chatUnreadCount = 0;
         let chatLastSeenTimestamp = 0;
@@ -3134,7 +3138,7 @@
                     }
                 }
 
-                // ===== 5.30.24: оновлення модалки гекса (банк/ферма/вітряк) =====
+                // 3) оновлення модалки гекса (банк/ферма/вітряк)
                 const terrModal = document.getElementById('territory-modal');
                 if (terrModal && terrModal.style.display === 'block') {
                     refreshTerritoryModal();
@@ -3215,30 +3219,88 @@
             svg.appendChild(g);
         }
 
-        // ===== БАНК =====
+        // ===== БАНК (v5.30.25: без $, чистіша модель) =====
         function renderBankVector(svg, center, stored, capacity, accepting) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
+
+            // Тінь
             g.appendChild(svgEl("ellipse", { cx, cy: cy + 14, rx: 20, ry: 5, fill: "rgba(0,0,0,0.5)" }));
-            g.appendChild(svgEl("rect", { x: cx - 18, y: cy + 2, width: 36, height: 10, fill: "#78350f", stroke: "#451a03", "stroke-width": 1.5, rx: 1 }));
+
+            // Фундамент (сходинки)
+            g.appendChild(svgEl("rect", { x: cx - 20, y: cy + 10, width: 40, height: 4, fill: "#57534e", stroke: "#292524", "stroke-width": 1, rx: 1 }));
+            g.appendChild(svgEl("rect", { x: cx - 17, y: cy + 6, width: 34, height: 4, fill: "#78716c", stroke: "#292524", "stroke-width": 1, rx: 1 }));
+
+            // Основна будівля (колони)
+            g.appendChild(svgEl("rect", { x: cx - 15, y: cy - 6, width: 30, height: 14, fill: "#d6d3d1", stroke: "#292524", "stroke-width": 1.5, rx: 1 }));
+
+            // Колони (4 штуки)
             for (let i = 0; i < 4; i++) {
-                g.appendChild(svgEl("rect", { x: cx - 15 + i * 10, y: cy - 8, width: 4, height: 12, fill: "#a16207", stroke: "#451a03", "stroke-width": 1 }));
+                const colX = cx - 12 + i * 8;
+                g.appendChild(svgEl("rect", {
+                    x: colX, y: cy - 4, width: 3, height: 10,
+                    fill: "#e7e5e4", stroke: "#44403c", "stroke-width": 0.8
+                }));
             }
-            g.appendChild(svgEl("polygon", { points: `${cx - 20},${cy - 8} ${cx + 20},${cy - 8} ${cx},${cy - 18}`, fill: "#eab308", stroke: "#451a03", "stroke-width": 1.5 }));
-            const dollar = svgEl("text", { x: cx, y: cy - 11, "font-size": "10", "text-anchor": "middle", "font-weight": "bold", fill: "#451a03" });
-            dollar.textContent = "$";
-            g.appendChild(dollar);
+
+            // Двері (по центру)
+            g.appendChild(svgEl("rect", {
+                x: cx - 3, y: cy - 1, width: 6, height: 7,
+                fill: "#44403c", stroke: "#1c1917", "stroke-width": 1, rx: 0.5
+            }));
+
+            // Дах (трикутний фронтон)
+            g.appendChild(svgEl("polygon", {
+                points: `${cx - 18},${cy - 6} ${cx + 18},${cy - 6} ${cx},${cy - 18}`,
+                fill: "#a8a29e", stroke: "#292524", "stroke-width": 1.5, "stroke-linejoin": "round"
+            }));
+
+            // Внутрішній трикутник даху (акцент)
+            g.appendChild(svgEl("polygon", {
+                points: `${cx - 8},${cy - 7} ${cx + 8},${cy - 7} ${cx},${cy - 14}`,
+                fill: "#d6d3d1", stroke: "#57534e", "stroke-width": 0.8
+            }));
+
+            // Маленьке вікно-люк на даху (монета замість $)
+            g.appendChild(svgEl("circle", {
+                cx, cy: cy - 11, r: 2,
+                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
+            }));
+
+            // Прапорець на даху
+            g.appendChild(svgEl("line", {
+                x1: cx, y1: cy - 18, x2: cx, y2: cy - 24,
+                stroke: "#292524", "stroke-width": 1.2
+            }));
+            g.appendChild(svgEl("circle", {
+                cx, cy: cy - 24, r: 1.5,
+                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.6
+            }));
+
+            // ===== HP-бар заповнення =====
             const pct = Math.max(0, Math.min(1, stored / (capacity || 40)));
             const barW = 30, barH = 3;
             const bx = cx - barW / 2, by = cy + 15;
-            g.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, fill: "rgba(0,0,0,0.7)", stroke: "#451a03", "stroke-width": 0.5 }));
+
+            g.appendChild(svgEl("rect", {
+                x: bx, y: by, width: barW, height: barH, rx: barH / 2,
+                fill: "rgba(0,0,0,0.7)", stroke: "#292524", "stroke-width": 0.5
+            }));
+
             const fillColor = pct >= 0.95 ? '#fbbf24' : (pct > 0.5 ? '#f59e0b' : '#fcd34d');
-            g.appendChild(svgEl("rect", { x: bx, y: by, width: Math.max(0.5, barW * pct), height: barH, rx: barH / 2, fill: fillColor }));
+            g.appendChild(svgEl("rect", {
+                x: bx, y: by, width: Math.max(0.5, barW * pct), height: barH,
+                rx: barH / 2, fill: fillColor
+            }));
+
+            // Індикатор "приймає золото" — зелена крапка
             if (accepting) {
-                const check = svgEl("text", { x: cx + 15, y: cy - 14, "font-size": "10", "text-anchor": "middle", fill: "#10b981", "font-weight": "bold" });
-                check.textContent = "✅";
-                g.appendChild(check);
+                g.appendChild(svgEl("circle", {
+                    cx: cx + 17, cy: cy - 12, r: 2.5,
+                    fill: "#10b981", stroke: "#065f46", "stroke-width": 0.8
+                }));
             }
+
             svg.appendChild(g);
         }
 
@@ -3259,12 +3321,67 @@
             svg.appendChild(g);
         }
 
-        // ===== МІСТ =====
+        // ===== МІСТ (v5.30.25: балки + перила + тінь прірви) =====
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
-            g.appendChild(svgEl("line", { x1: center.x - 14, y1: center.y - 7, x2: center.x + 14, y2: center.y - 7, stroke: "#d97706", "stroke-width": "3" }));
-            g.appendChild(svgEl("line", { x1: center.x - 14, y1: center.y + 7, x2: center.x + 14, y2: center.y + 7, stroke: "#d97706", "stroke-width": "3" }));
-            for (let dx = -10; dx <= 10; dx += 5) g.appendChild(svgEl("line", { x1: center.x + dx, y1: center.y - 8, x2: center.x + dx, y2: center.y + 8, stroke: "#f59e0b", "stroke-width": "2" }));
+            const cx = center.x, cy = center.y;
+
+            // Тінь прірви під мостом
+            g.appendChild(svgEl("ellipse", {
+                cx, cy: cy + 2, rx: 18, ry: 8,
+                fill: "rgba(0, 0, 0, 0.55)"
+            }));
+
+            // Дві балки мосту
+            g.appendChild(svgEl("line", {
+                x1: cx - 16, y1: cy - 6, x2: cx + 16, y2: cy - 6,
+                stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round"
+            }));
+            g.appendChild(svgEl("line", {
+                x1: cx - 16, y1: cy + 6, x2: cx + 16, y2: cy + 6,
+                stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round"
+            }));
+
+            // Верхня світла смуга на кожній балці
+            g.appendChild(svgEl("line", {
+                x1: cx - 15, y1: cy - 7, x2: cx + 15, y2: cy - 7,
+                stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round"
+            }));
+            g.appendChild(svgEl("line", {
+                x1: cx - 15, y1: cy + 5, x2: cx + 15, y2: cy + 5,
+                stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round"
+            }));
+
+            // Поперечні дошки
+            for (let dx = -12; dx <= 12; dx += 4.8) {
+                g.appendChild(svgEl("line", {
+                    x1: cx + dx, y1: cy - 7, x2: cx + dx, y2: cy + 7,
+                    stroke: "#a16207", "stroke-width": 2, "stroke-linecap": "round"
+                }));
+            }
+
+            // Перила
+            g.appendChild(svgEl("line", {
+                x1: cx - 15, y1: cy - 10, x2: cx + 15, y2: cy - 10,
+                stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round"
+            }));
+            g.appendChild(svgEl("line", {
+                x1: cx - 15, y1: cy + 10, x2: cx + 15, y2: cy + 10,
+                stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round"
+            }));
+
+            // Стовпчики перил
+            for (let dx = -12; dx <= 12; dx += 8) {
+                g.appendChild(svgEl("line", {
+                    x1: cx + dx, y1: cy - 10, x2: cx + dx, y2: cy - 6,
+                    stroke: "#fbbf24", "stroke-width": 1
+                }));
+                g.appendChild(svgEl("line", {
+                    x1: cx + dx, y1: cy + 6, x2: cx + dx, y2: cy + 10,
+                    stroke: "#fbbf24", "stroke-width": 1
+                }));
+            }
+
             svg.appendChild(g);
         }
 
@@ -3433,6 +3550,7 @@
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
+                el.style.strokeWidth = '';
                 el.classList.remove('occupied-core', 'occupied-border', 'chasm-hex', 'bridge-hex', 'bank-hex', 'bank-active-hex', 'zoc-blocked', 'core-under-attack');
             });
 
@@ -3501,6 +3619,10 @@
                         labelQueue.push({ center, text: `${hexData.owner} [L${level}]`, damaged: hpPct < 60, hpPct, hp, maxHp });
                     }
                 } else if (hexData.type === 'bridge') {
+                    // ===== v5.30.25: Міст — фон як пустий гекс, обводка кольору гравця =====
+                    polygon.style.fill = '#1b263b';
+                    polygon.style.stroke = hexData.color;
+                    polygon.style.strokeWidth = '2.5';
                     polygon.classList.add('bridge-hex');
                     if (!isLODActive) renderBridgeVector(svg, center);
                 } else if (hexData.type === 'farm') {
@@ -3510,6 +3632,9 @@
                     polygon.classList.add('occupied-border');
                     if (!isLODActive) renderMillVector(svg, center);
                 } else if (hexData.type === 'bank') {
+                    // ===== v5.30.25: Банк — заливка і обводка кольору гравця =====
+                    polygon.style.fill = hexData.color;
+                    polygon.style.stroke = hexData.color;
                     if (hexData.acceptingGold === true) polygon.classList.add('bank-active-hex');
                     else polygon.classList.add('bank-hex');
                     if (!isLODActive) renderBankVector(svg, center, Math.floor(hexData.stored || 0), hexData.capacity || BANK_CAPACITY_SMALL, hexData.acceptingGold === true);
@@ -3636,7 +3761,7 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 6/7 =====
 
-                // ===== СЛУХАЧ СВІТУ =====
+                        // ===== СЛУХАЧ СВІТУ =====
         function listenToWorldData() {
             if (unsubWorld) unsubWorld();
             let renderScheduled = false;
@@ -3654,7 +3779,6 @@
                             updateGoldDisplay();
                         }
                         refreshUnitModal();
-                        // ===== 5.30.24: оновлення модалки гекса (банк/ферма/вітряк) =====
                         refreshTerritoryModal();
                         if (activeSelection && activeSelection.layer === 'unit') {
                             clearRouteDots();
