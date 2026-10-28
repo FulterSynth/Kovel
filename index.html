@@ -3,23 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.31.1</title>
+    <title>HexPolitics v5.31.2</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.31.1
+    ПОТОЧНА ВЕРСІЯ: v5.31.2
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.31.2: INBOX + ФІКСИ ЗНЕСЕННЯ
+               * Inbox: кнопка 📜, бейдж, історія повідомлень
+               * Гонець зникає після доставки, повідомлення в inbox
+               * Перехоплення: воїн забирає повідомлення собі
+               * Знесення будівлі/мосту зі своїм юнітом
     - v5.31.1: ФІКСИ ГІНЦЯ
-               * Гонець може йти на порожні (нейтральні) гекси
-               * Точки маршруту завжди зверху будівель
-    - v5.31.0: ВЕЛИКИЙ РЕЛІЗ
-               * Розділення юнітів на military / civilian
-               * Новий юніт: Гонець (messenger)
-               * Пограбування через military: банк / ферма / вітряк
-               * Міст можна знести
-               * Банк — симетричніша модель
-               * Прибрано чат
+    - v5.31.0: ВЕЛИКИЙ РЕЛІЗ (гінці, грабежі, розділення юнітів)
     - v5.30.25: ВІЗУАЛ МОСТУ ТА БАНКУ
     - v5.30.24: РОЗДІЛЕННЯ УТРИМАННЯ
     - v5.30.23: ФІКСИ БАНКІВ
@@ -97,6 +94,9 @@
         #user-bar button { padding: 5px 10px; border-radius: 6px; border: none; background: #ef4444; color: #fff; font-weight: bold; cursor: pointer; font-size: 11px; transition: background 0.2s; }
         #user-bar button:hover { background: #dc2626; }
         .btn-wipe { background: #b91c1c !important; border: 1px solid #f87171 !important; }
+        .btn-inbox { position: relative; background: #8b5cf6 !important; border: 1px solid #a78bfa !important; padding: 5px 10px !important; font-size: 14px !important; }
+        .btn-inbox:hover { background: #7c3aed !important; }
+        .inbox-badge { position: absolute; top: -4px; right: -6px; background: #ef4444; color: #fff; font-size: 10px; font-weight: bold; border-radius: 10px; padding: 1px 5px; min-width: 16px; text-align: center; }
 
         .modal { display: none; position: fixed; background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 20px; z-index: 1500; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 340px; max-width: calc(100vw - 30px); max-height: 80vh; overflow-y: auto;
             top: 50%; right: 15px; transform: translateY(-50%); }
@@ -175,8 +175,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.31.1</h2>
-            <p id="loader-desc">Фікси гінця: рух на нейтральні гекси...</p>
+            <h2 id="loader-status">HexPolitics v5.31.2</h2>
+            <p id="loader-desc">Inbox + фікси знесення...</p>
         </div>
     </div>
 
@@ -201,6 +201,9 @@
                 <div class="gold-display" id="gold-display-box">💰 <span id="user-gold-display">0</span> / <span id="gold-cap-display">30</span> <small style="opacity: 0.8;" id="income-speed-text">(+1/хв)</small></div>
             </div>
             <div class="user-actions">
+                <button id="inbox-btn" class="btn-inbox" onclick="openInboxModal()" title="Скринька повідомлень">
+                    📜 <span id="inbox-unread-badge" class="inbox-badge" style="display: none;">0</span>
+                </button>
                 <button id="admin-wipe-btn" class="btn-wipe" style="display: none;" onclick="triggerAdminWipe()">💥 Вайп</button>
                 <button onclick="logout()">Вийти</button>
             </div>
@@ -268,6 +271,14 @@
         </div>
     </div>
 
+    <div id="inbox-modal" class="modal" style="border-color: #8b5cf6;">
+        <h3 style="color: #a78bfa;">📜 Скринька повідомлень</h3>
+        <div id="inbox-list-container"></div>
+        <div style="margin-top: 8px;">
+            <button class="btn-cancel" onclick="closeInboxModal()">Закрити</button>
+        </div>
+    </div>
+
     <div id="message-modal">
         <h3 id="message-modal-title">📜 Повідомлення</h3>
         <div id="message-modal-body"></div>
@@ -297,7 +308,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.31.1";
+        const CURRENT_VERSION = "5.31.2";
 
         const LOD_ZOOM_THRESHOLD = 0.35;
 
@@ -316,8 +327,8 @@
         let selectedColor = null;
         let isSelectingMoveTarget = false;
         let movingUnitCoords = null;
-        let movingUnitKind = null; // 'military' | 'civilian'
-        let activeSelection = null; // { key, unitKind?, unitId?, layer }
+        let movingUnitKind = null;
+        let activeSelection = null;
         let hoveredUnitKey = null;
         let unsubWorld = null;
         let unsubUser = null;
@@ -371,7 +382,6 @@
         const MESSENGER_COST = 20;
         const MESSENGER_MAX_MSG = 200;
 
-        // ===== БОНУСИ ГРАБЕЖУ =====
         const ROB_FARM_HEAL = 20;
         const ROB_MILL_GOLD = 5;
 
@@ -391,8 +401,9 @@
         let transformRafPending = false;
         let showAllEnemyZOC = false;
 
-        // ===== КЕШ КОЛЬОРІВ (оптимізація) =====
         let playerColorCache = {};
+        let lastInboxCount = 0;
+        let inboxInitialized = false;
 
         function invalidateColorCache() { playerColorCache = {}; }
 
@@ -438,7 +449,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.31.1"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.31.2"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -527,7 +538,6 @@
             } catch (err) { console.error('[Міграція таборів] Помилка:', err); }
         }
 
-        // ===== МІГРАЦІЯ unit → units.military =====
         async function migrateUnitsToNewSchema() {
             try {
                 const snap = await get(ref(db, 'world_hexes'));
@@ -596,6 +606,8 @@
                     if (!snapshot.exists() || snapshot.val().password !== pass) { alert('Невірний логін або пароль!'); return; }
                     currentUsername = user;
                     invalidateColorCache();
+                    lastInboxCount = 0;
+                    inboxInitialized = false;
 
                     await migrateWorldTo25Once();
                     await migrateBarbarianCampsToUnified();
@@ -646,6 +658,8 @@
             hoveredUnitKey = null;
             activeSelection = null; selectedHexCoords = null; hexWorldData = {}; currentUsername = "";
             playerColorCache = {};
+            lastInboxCount = 0;
+            inboxInitialized = false;
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('username').value = '';
@@ -962,6 +976,17 @@
             }
         }
 
+        function updateInboxBadge(count) {
+            const badge = document.getElementById('inbox-unread-badge');
+            if (!badge) return;
+            if (count > 0) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
         function listenToUserData() {
             const userRef = ref(db, `users/${currentUsername}`);
             if (unsubUser) unsubUser();
@@ -973,6 +998,24 @@
                     userGoldCap = getGoldCap(currentUsername);
                     updateGoldDisplay();
                     updateIncomeDisplay();
+
+                    // v5.31.2: реагуємо на нові повідомлення в inbox
+                    const inbox = data.inbox || {};
+                    const inboxArr = Object.values(inbox);
+                    const unreadCount = inboxArr.filter(m => !m.read).length;
+                    updateInboxBadge(unreadCount);
+
+                    if (inboxInitialized && inboxArr.length > lastInboxCount) {
+                        const newOnes = inboxArr.filter(m => !m.read).slice(-1);
+                        if (newOnes.length > 0) {
+                            const m = newOnes[0];
+                            setTimeout(() => {
+                                alert(`📜 Нове повідомлення від ${m.from}!\n\n"${m.text}"\n\n(Переглянути всі — кнопка 📜 вгорі)`);
+                            }, 500);
+                        }
+                    }
+                    lastInboxCount = inboxArr.length;
+                    inboxInitialized = true;
                 }
             });
         }
@@ -1162,6 +1205,17 @@
             return result;
         }
 
+        // ===== v5.31.2: універсальна функція запису в inbox =====
+        async function writeToInbox(recipient, from, text) {
+            if (!recipient || recipient === '__barbarian__') return;
+            try {
+                const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                await update(ref(db, `users/${recipient}/inbox`), {
+                    [msgId]: { from: from, text: text, receivedAt: Date.now(), read: false }
+                });
+            } catch (err) { console.error('Помилка запису в inbox:', err); }
+        }
+
         async function handleCoreDestroyed(targetKey, targetHex, attackerSrcKey, attackerUnit, isOffline) {
             const messages = [];
             if (!targetHex || !targetHex.owner) {
@@ -1314,7 +1368,6 @@
                 // ЦИВІЛЬНИЙ ЮНІТ (Гонець)
                 // =====================================================================
                 if (kind === 'civilian') {
-                    // ===== v5.31.1: тільки прірва блокує рух. Порожній гекс (undefined) — ОК! =====
                     if (targetHex && targetHex.type === 'chasm') {
                         const h = { ...(getHex(srcKey) || {}) };
                         if (!h.units) h.units = { military: null, civilian: null };
@@ -1324,12 +1377,12 @@
                         continue;
                     }
 
-                    // ===== v5.31.1: безпечні перевірки (targetHex може бути undefined) =====
-                    // ПЕРЕХОПЛЕННЯ: ворожий military на цільовому гексі
+                    // ===== v5.31.2: ПЕРЕХОПЛЕННЯ — воїн забирає повідомлення собі в inbox =====
                     if (targetHex && targetHex.units && targetHex.units.military && targetHex.units.military.owner !== unitOwner && targetHex.units.military.owner !== '__barbarian__') {
                         const interceptor = targetHex.units.military.owner;
                         const msgText = unit.message || '(порожнє)';
-                        pushMsgIfMine(interceptor, `📜 Ви перехопили гінця від ${unitOwner}! Повідомлення: "${msgText}"`);
+                        await writeToInbox(interceptor, unitOwner, msgText);
+                        pushMsgIfMine(interceptor, `📜 Ви перехопили гінця від ${unitOwner}! Повідомлення додано до скриньки (📜).`);
                         pushMsgIfMine(unitOwner, `💀 Вашого гінця перехопив гравець ${interceptor}! Повідомлення втрачено.`);
                         const srcH = { ...(getHex(srcKey) || {}) };
                         if (!srcH.units) srcH.units = { military: null, civilian: null };
@@ -1339,42 +1392,22 @@
                         continue;
                     }
 
-                    // ДОСТАВКА: прибіг на ворожу ратушу
+                    // ===== v5.31.2: ДОСТАВКА — запис в inbox + гонець зникає =====
                     if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== unitOwner && targetHex.owner !== '__barbarian__') {
                         const recipient = targetHex.owner;
                         const msgText = unit.message || '(порожнє)';
-                        pushMsgIfMine(recipient, `📜 Вам приніс повідомлення гонець від ${unitOwner}!\n\n"${msgText}"\n\nГонець тепер ваш — стоїть біля вашої ратуші.`);
+                        await writeToInbox(recipient, unitOwner, msgText);
                         pushMsgIfMine(unitOwner, `✅ Ваш гонець доставив повідомлення гравцю ${recipient}.`);
-
-                        const [tr, tc] = targetKey.split('_').map(Number);
-                        let landingKey = null;
-                        for (const n of getNeighbors(tr, tc)) {
-                            const nh = getHex(n.key);
-                            if (!nh || nh.type === 'chasm') continue;
-                            if (nh.units && nh.units.military) continue;
-                            if (nh.units && nh.units.civilian) continue;
-                            landingKey = n.key;
-                            break;
-                        }
 
                         const srcH = { ...(getHex(srcKey) || {}) };
                         if (!srcH.units) srcH.units = { military: null, civilian: null };
                         srcH.units.civilian = null;
                         setHex(srcKey, srcH);
-
-                        if (landingKey) {
-                            const newUnit = { ...stopTravel(unit), owner: recipient, message: '' };
-                            const landH = { ...(getHex(landingKey) || {}) };
-                            if (!landH.units) landH.units = { military: null, civilian: null };
-                            landH.units.civilian = newUnit;
-                            setHex(landingKey, landH);
-                        }
                         processedUnits.add(unit.id);
                         continue;
                     }
 
                     // ЗВИЧАЙНИЙ РУХ
-                    // v5.31.1: безпечна перевірка, targetHex може бути undefined
                     if (targetHex && targetHex.units && targetHex.units.civilian) {
                         const h = { ...(getHex(srcKey) || {}) };
                         if (!h.units) h.units = { military: null, civilian: null };
@@ -2333,7 +2366,7 @@
         }
 
         function hideAllModals() {
-            ['base-modal', 'townhall-modal', 'territory-modal', 'unit-modal', 'enemy-core-modal', 'message-modal'].forEach(id => {
+            ['base-modal', 'townhall-modal', 'territory-modal', 'unit-modal', 'enemy-core-modal', 'message-modal', 'inbox-modal'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
@@ -2722,6 +2755,61 @@
             return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         }
 
+        // ===== v5.31.2: INBOX (скринька повідомлень) =====
+        window.openInboxModal = async function() {
+            hideAllModals();
+            const modal = document.getElementById('inbox-modal');
+            const container = document.getElementById('inbox-list-container');
+
+            try {
+                const snap = await get(ref(db, `users/${currentUsername}/inbox`));
+                const inbox = snap.exists() ? snap.val() : {};
+                const entries = Object.entries(inbox).map(([id, m]) => ({ id, ...m })).sort((a, b) => b.receivedAt - a.receivedAt);
+
+                if (entries.length === 0) {
+                    container.innerHTML = `<div class="info-card" style="text-align: center; color: #94a3b8;">📭 Скринька порожня.<br><br>Коли хтось пришле вам гінця — повідомлення з'явиться тут.</div>`;
+                } else {
+                    container.innerHTML = entries.map(m => {
+                        const date = new Date(m.receivedAt);
+                        const dateStr = `${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                        return `<div class="info-card" style="border-color: ${m.read ? '#334155' : '#8b5cf6'};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span><b style="color: #a78bfa;">📜 Від: ${escapeHtml(m.from)}</b>${!m.read ? ' <span style="color: #fbbf24; font-size: 10px;">● нове</span>' : ''}</span>
+                                <span style="font-size: 10px; color: #64748b;">${dateStr}</span>
+                            </div>
+                            <div style="background: #020617; border-radius: 6px; padding: 8px; margin-top: 4px; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(m.text)}</div>
+                            <button class="btn-demolish" style="margin-top: 8px; padding: 6px 10px; font-size: 11px;" onclick="deleteInboxMessage('${m.id}')">🗑 Видалити</button>
+                        </div>`;
+                    }).join('');
+                }
+
+                const unreadIds = entries.filter(m => !m.read).map(m => m.id);
+                if (unreadIds.length > 0) {
+                    const updates = {};
+                    unreadIds.forEach(id => { updates[id] = { ...inbox[id], read: true }; });
+                    await update(ref(db, `users/${currentUsername}/inbox`), updates);
+                }
+
+                modal.style.display = 'block';
+            } catch (err) {
+                console.error('Помилка завантаження inbox:', err);
+                container.innerHTML = `<div class="info-card" style="color: #f87171;">Помилка: ${err.message}</div>`;
+                modal.style.display = 'block';
+            }
+        }
+
+        window.closeInboxModal = function() {
+            document.getElementById('inbox-modal').style.display = 'none';
+        }
+
+        window.deleteInboxMessage = async function(msgId) {
+            if (!confirm('Видалити це повідомлення?')) return;
+            try {
+                await update(ref(db, `users/${currentUsername}/inbox`), { [msgId]: null });
+                openInboxModal();
+            } catch (err) { alert('Помилка: ' + err.message); }
+        }
+
         // ===== МІСТ =====
         function openBridgeModal(r, c) {
             hideAllModals();
@@ -3035,28 +3123,77 @@
             } catch (err) { alert(err.message); }
         }
 
-        // ===== ЗНЕСЕННЯ МОСТУ =====
+        // ===== v5.31.2: ЗНЕСЕННЯ МОСТУ (свій юніт не блокує) =====
         window.demolishBridge = async function(r, c) {
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
             if (!hex || hex.type !== 'bridge') { alert("Це не міст."); return; }
             if (hex.owner !== currentUsername) { alert("Це не ваш міст."); return; }
+
             const hasMil = hex.units && hex.units.military;
             const hasCiv = hex.units && hex.units.civilian;
-            if (hasMil || hasCiv) { alert("Спочатку приберіть юнітів з мосту."); return; }
+            const isMilMine = hasMil && hex.units.military.owner === currentUsername;
+            const isCivMine = hasCiv && hex.units.civilian.owner === currentUsername;
+            if ((hasMil && !isMilMine) || (hasCiv && !isCivMine)) {
+                alert("На мості стоїть чужий юніт. Спочатку проженіть його!");
+                return;
+            }
+
             if (!confirm(`Знести міст? Повернеться ${BRIDGE_SELL_REFUND} золота. Гекс стане прірвою.`)) return;
+
+            const [tr, tc] = key.split('_').map(Number);
+            const neighborKeys = getNeighbors(tr, tc).map(n => n.key);
+            const freeForMil = neighborKeys.find(k => {
+                const h = hexWorldData[k];
+                if (!h || h.type === 'chasm') return false;
+                return !(h.units && h.units.military);
+            });
+            const freeForCiv = neighborKeys.find(k => {
+                const h = hexWorldData[k];
+                if (!h || h.type === 'chasm') return false;
+                return !(h.units && h.units.civilian);
+            });
+
+            if (hasMil && isMilMine && !freeForMil) { alert("Немає вільного сусіднього гекса для воїна. Звільніть місце!"); return; }
+            if (hasCiv && isCivMine && !freeForCiv) { alert("Немає вільного сусіднього гекса для гінця. Звільніть місце!"); return; }
+
             const updates = {};
             updates[`world_hexes/${key}`] = { type: 'chasm' };
             updates[`users/${currentUsername}/gold`] = userGold + BRIDGE_SELL_REFUND;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
+
+            if (hasMil && isMilMine && freeForMil) {
+                const milUnit = hex.units.military;
+                const destH = hexWorldData[freeForMil] || {};
+                updates[`world_hexes/${freeForMil}`] = {
+                    ...destH,
+                    units: {
+                        military: milUnit,
+                        civilian: (destH.units && destH.units.civilian) || null
+                    }
+                };
+            }
+            if (hasCiv && isCivMine && freeForCiv) {
+                const civUnit = hex.units.civilian;
+                const destH = updates[`world_hexes/${freeForCiv}`] || hexWorldData[freeForCiv] || {};
+                const existingUnits = destH.units || { military: null, civilian: null };
+                updates[`world_hexes/${freeForCiv}`] = {
+                    ...destH,
+                    units: {
+                        military: existingUnits.military || null,
+                        civilian: civUnit
+                    }
+                };
+            }
+
             try {
                 await update(ref(db), updates);
                 closeTerritoryModal();
-                alert(`Міст знесено! +${BRIDGE_SELL_REFUND} золота`);
+                alert(`Міст знесено! +${BRIDGE_SELL_REFUND} золота.${hasMil || hasCiv ? ' Юнітів перенесено на сусідній гекс.' : ''}`);
             } catch (err) { alert(err.message); }
         }
 
-        // ===== ВИБІР ЮНІТА (якщо на гексі обидва) =====
+        // ===== ВИБІР ЮНІТА =====
         function openUnitSelectionModal(r, c, hexInfo) {
             hideAllModals();
             const modal = document.getElementById('unit-modal');
@@ -3481,22 +3618,43 @@
             } catch (err) { alert(err.message); }
         }
 
+        // ===== v5.31.2: ЗНЕСЕННЯ БУДІВЛІ (свій юніт не блокує) =====
         window.demolishBuilding = async function(r, c) {
             if (userGold < 5) { alert("Потрібно 5 золота."); return; }
             const key = `${r}_${c}`;
             const hexInfo = hexWorldData[key];
             if (!hexInfo || hexInfo.owner !== currentUsername) return;
-            if (hexInfo.units && (hexInfo.units.military || hexInfo.units.civilian)) { alert("Спочатку приберіть юнітів з гекса!"); return; }
+
+            const hasMil = hexInfo.units && hexInfo.units.military;
+            const hasCiv = hexInfo.units && hexInfo.units.civilian;
+            const isMilMine = hasMil && hexInfo.units.military.owner === currentUsername;
+            const isCivMine = hasCiv && hexInfo.units.civilian.owner === currentUsername;
+            if ((hasMil && !isMilMine) || (hasCiv && !isCivMine)) {
+                alert("На гексі стоїть чужий юніт. Спочатку проженіть його!");
+                return;
+            }
+
             const wasPurchased = hexInfo.isPurchased === true;
             const restoredType = wasPurchased ? 'purchased' : 'starter';
             const updates = {};
             if (hexInfo.type === 'bank' && (hexInfo.stored || 0) > 0) {
                 if (!confirm(`У банку ${Math.floor(hexInfo.stored)} золота. При знесенні воно зникне. Продовжити?`)) return;
             }
-            updates[`world_hexes/${key}`] = { owner: hexInfo.owner, color: hexInfo.color, type: restoredType, isPurchased: wasPurchased, units: { military: null, civilian: null } };
+
+            updates[`world_hexes/${key}`] = {
+                owner: hexInfo.owner,
+                color: hexInfo.color,
+                type: restoredType,
+                isPurchased: wasPurchased,
+                units: {
+                    military: (hexInfo.units && hexInfo.units.military) || null,
+                    civilian: (hexInfo.units && hexInfo.units.civilian) || null
+                }
+            };
             updates[`users/${currentUsername}/gold`] = userGold - 5;
             updates[`users/${currentUsername}/lastOnline`] = Date.now();
-            try { await update(ref(db), updates); closeTerritoryModal(); alert("Знесено!"); } catch (err) { alert(err.message); }
+            try { await update(ref(db), updates); closeTerritoryModal(); alert("Знесено!"); }
+            catch (err) { alert(err.message); }
         }
 
 // ===== КІНЕЦЬ ЧАСТИНИ 5/7 =====
@@ -4069,7 +4227,6 @@
             });
 
             if (!isLODActive) {
-                // ===== РЕНДЕР ЮНІТІВ: military справа, civilian зліва =====
                 unitQueue.forEach(u => {
                     if (u.kind === 'military') {
                         const rx = u.big ? 15 : 10;
@@ -4110,7 +4267,7 @@
                 renderBattleHPBars(svg);
                 labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged, l.hpPct, l.hp, l.maxHp));
 
-                // ===== v5.31.1: ТОЧКИ МАРШРУТУ В КІНЦІ — ЩОБ БУЛИ ЗВЕРХУ БУДІВЕЛЬ =====
+                // Точки маршруту — в кінці, щоб були зверху будівель
                 if (activeSelection && activeSelection.layer === 'unit') {
                     let movingUnit = null, movingUnitKey = null;
                     if (activeSelection.unitKind === 'military' && activeSelection.unitId) {
@@ -4228,7 +4385,6 @@
                         }
                         refreshUnitModal();
                         refreshTerritoryModal();
-                        // v5.31.1: точки маршруту тепер рендеряться всередині renderWorldData (в кінці)
                         renderScheduled = false;
                     });
                 }
