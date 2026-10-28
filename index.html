@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HexPolitics v5.31.0</title>
+    <title>HexPolitics v5.31.1</title>
     <!--
     ============================================
     HexPolitics — браузерна гекс-стратегія
-    ПОТОЧНА ВЕРСІЯ: v5.31.0
+    ПОТОЧНА ВЕРСІЯ: v5.31.1
 
     ЩО ЗМІНИЛОСЬ:
+    - v5.31.1: ФІКСИ ГІНЦЯ
+               * Гонець може йти на порожні (нейтральні) гекси
+               * Точки маршруту завжди зверху будівель
     - v5.31.0: ВЕЛИКИЙ РЕЛІЗ
-               * Розділення юнітів на military / civilian (hex.units)
-               * Новий юніт: Гонець (messenger) — доставка повідомлень
+               * Розділення юнітів на military / civilian
+               * Новий юніт: Гонець (messenger)
                * Пограбування через military: банк / ферма / вітряк
                * Міст можна знести
                * Банк — симетричніша модель
                * Прибрано чат
-               * Оптимізація рендеру
     - v5.30.25: ВІЗУАЛ МОСТУ ТА БАНКУ
     - v5.30.24: РОЗДІЛЕННЯ УТРИМАННЯ
     - v5.30.23: ФІКСИ БАНКІВ
@@ -173,8 +175,8 @@
     <div id="update-loader">
         <div class="loader-content">
             <div class="spinner"></div>
-            <h2 id="loader-status">HexPolitics v5.31.0</h2>
-            <p id="loader-desc">Великий реліз: гінці, грабежі, розділення юнітів...</p>
+            <h2 id="loader-status">HexPolitics v5.31.1</h2>
+            <p id="loader-desc">Фікси гінця: рух на нейтральні гекси...</p>
         </div>
     </div>
 
@@ -295,7 +297,7 @@
         const db = getDatabase(app);
 
         const ADMIN_USERNAME = "admin";
-        const CURRENT_VERSION = "5.31.0";
+        const CURRENT_VERSION = "5.31.1";
 
         const LOD_ZOOM_THRESHOLD = 0.35;
 
@@ -436,7 +438,7 @@
         }
 
         function hideLoader() { const l = document.getElementById('update-loader'); l.style.opacity = '0'; setTimeout(() => l.style.display = 'none', 500); }
-        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.31.0"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
+        function showUpdateScreen() { const l = document.getElementById('update-loader'); document.getElementById('loader-status').innerText = "HexPolitics v5.31.1"; document.getElementById('loader-desc').innerText = "Оновлення..."; l.style.display = 'flex'; l.style.opacity = '1'; }
 
         function checkAutoUpdate() {
             fetch(window.location.href + '?t=' + new Date().getTime(), { cache: "no-store" })
@@ -525,7 +527,7 @@
             } catch (err) { console.error('[Міграція таборів] Помилка:', err); }
         }
 
-        // ===== v5.31.0: МІГРАЦІЯ unit → units.military =====
+        // ===== МІГРАЦІЯ unit → units.military =====
         async function migrateUnitsToNewSchema() {
             try {
                 const snap = await get(ref(db, 'world_hexes'));
@@ -536,7 +538,6 @@
                 Object.keys(world).forEach(key => {
                     const h = world[key];
                     if (!h) return;
-                    // Якщо є старий h.unit, але немає h.units — мігруємо
                     if (h.unit && !h.units) {
                         let oldUnit = h.unit;
                         if (h.unit.owner === currentUsername && h.unit.type === 'clubman') {
@@ -546,7 +547,6 @@
                         updates[`world_hexes/${key}/unit`] = null;
                         count++;
                     }
-                    // Якщо немає ні unit, ні units — нічого не робимо
                 });
                 if (count > 0) {
                     console.log(`[Міграція юнітів] Оновлено ${count} гексів`);
@@ -766,9 +766,7 @@
                     }
                     if (h.type === 'bank') totalUpkeep += getBankUpkeep(h);
                 }
-                // утримання за military clubman
                 if (h.units && h.units.military && h.units.military.type === 'clubman' && h.units.military.owner === username) totalUpkeep += 1;
-                // цивільні юніти (гонець) — без утримання
             });
             let baseIncome = getIncomeByLevel(baseLevel) + farmsCount;
             Object.keys(worldHexes).forEach(key => {
@@ -1197,7 +1195,6 @@
                 };
             });
 
-            // Вбиваємо всіх military власника
             const defenderMilitary = findAllMilitaryOfOwner(defenderOwner);
             let killedCount = 0;
             defenderMilitary.forEach(({ srcKey, unit }) => {
@@ -1209,7 +1206,6 @@
                 newHexesForWinner[srcKey] = cleaned;
                 killedCount++;
             });
-            // Вбиваємо всіх civilian власника
             const defenderCivilian = findAllCivilianOfOwner(defenderOwner);
             defenderCivilian.forEach(({ srcKey, unit }) => {
                 if (newHexesForWinner[srcKey]) {
@@ -1277,19 +1273,16 @@
                 if (unitOwner === currentUsername) messages.push(text);
             };
 
-            // ===== ЗБИРАЄМО ПОДІЇ: military + civilian =====
             const events = [];
             Object.keys(hexWorldData).forEach(key => {
                 const h = hexWorldData[key];
                 if (!h || !h.units) return;
-                // military
                 if (h.units.military) {
                     const u = h.units.military;
                     if (u.owner !== '__barbarian__' && (u.state === 'moving' || u.state === 'fighting') && u.arrivalTime && now >= u.arrivalTime) {
                         events.push({ srcKey: key, unit: u, kind: 'military', arrival: u.arrivalTime });
                     }
                 }
-                // civilian
                 if (h.units.civilian) {
                     const u = h.units.civilian;
                     if (u.state === 'moving' && u.arrivalTime && now >= u.arrivalTime) {
@@ -1321,8 +1314,8 @@
                 // ЦИВІЛЬНИЙ ЮНІТ (Гонець)
                 // =====================================================================
                 if (kind === 'civilian') {
-                    if (!targetHex || targetHex.type === 'chasm') {
-                        // Не можемо рухатись — стаємо
+                    // ===== v5.31.1: тільки прірва блокує рух. Порожній гекс (undefined) — ОК! =====
+                    if (targetHex && targetHex.type === 'chasm') {
                         const h = { ...(getHex(srcKey) || {}) };
                         if (!h.units) h.units = { military: null, civilian: null };
                         h.units.civilian = stopTravel(unit);
@@ -1331,13 +1324,13 @@
                         continue;
                     }
 
-                    // ===== ПЕРЕХОПЛЕННЯ: ворожий military на цільовому гексі =====
-                    if (targetHex.units && targetHex.units.military && targetHex.units.military.owner !== unitOwner && targetHex.units.military.owner !== '__barbarian__') {
+                    // ===== v5.31.1: безпечні перевірки (targetHex може бути undefined) =====
+                    // ПЕРЕХОПЛЕННЯ: ворожий military на цільовому гексі
+                    if (targetHex && targetHex.units && targetHex.units.military && targetHex.units.military.owner !== unitOwner && targetHex.units.military.owner !== '__barbarian__') {
                         const interceptor = targetHex.units.military.owner;
                         const msgText = unit.message || '(порожнє)';
                         pushMsgIfMine(interceptor, `📜 Ви перехопили гінця від ${unitOwner}! Повідомлення: "${msgText}"`);
                         pushMsgIfMine(unitOwner, `💀 Вашого гінця перехопив гравець ${interceptor}! Повідомлення втрачено.`);
-                        // Гонець зникає
                         const srcH = { ...(getHex(srcKey) || {}) };
                         if (!srcH.units) srcH.units = { military: null, civilian: null };
                         srcH.units.civilian = null;
@@ -1346,17 +1339,15 @@
                         continue;
                     }
 
-                    // ===== ДОСТАВКА: прибіг на ворожу ратушу =====
-                    if (targetHex.type === 'core' && targetHex.owner && targetHex.owner !== unitOwner && targetHex.owner !== '__barbarian__') {
+                    // ДОСТАВКА: прибіг на ворожу ратушу
+                    if (targetHex && targetHex.type === 'core' && targetHex.owner && targetHex.owner !== unitOwner && targetHex.owner !== '__barbarian__') {
                         const recipient = targetHex.owner;
                         const msgText = unit.message || '(порожнє)';
                         pushMsgIfMine(recipient, `📜 Вам приніс повідомлення гонець від ${unitOwner}!\n\n"${msgText}"\n\nГонець тепер ваш — стоїть біля вашої ратуші.`);
                         pushMsgIfMine(unitOwner, `✅ Ваш гонець доставив повідомлення гравцю ${recipient}.`);
 
-                        // Гонець переходить до отримувача і стає біля його ратуші
                         const [tr, tc] = targetKey.split('_').map(Number);
                         let landingKey = null;
-                        // Шукаємо вільний сусідній гекс (без civilian, без military)
                         for (const n of getNeighbors(tr, tc)) {
                             const nh = getHex(n.key);
                             if (!nh || nh.type === 'chasm') continue;
@@ -1366,7 +1357,6 @@
                             break;
                         }
 
-                        // Видаляємо гонця зі старого місця
                         const srcH = { ...(getHex(srcKey) || {}) };
                         if (!srcH.units) srcH.units = { military: null, civilian: null };
                         srcH.units.civilian = null;
@@ -1383,9 +1373,9 @@
                         continue;
                     }
 
-                    // ===== ЗВИЧАЙНИЙ РУХ =====
-                    if (targetHex.units && targetHex.units.civilian) {
-                        // Зайнято іншим civilian — стаємо
+                    // ЗВИЧАЙНИЙ РУХ
+                    // v5.31.1: безпечна перевірка, targetHex може бути undefined
+                    if (targetHex && targetHex.units && targetHex.units.civilian) {
                         const h = { ...(getHex(srcKey) || {}) };
                         if (!h.units) h.units = { military: null, civilian: null };
                         h.units.civilian = stopTravel(unit);
@@ -1399,8 +1389,6 @@
                     const nextIndex = (moved.pathIndex || 0) + 1;
                     const existingHexData = targetHex ? { ...targetHex } : {};
                     if (!existingHexData.units) existingHexData.units = { military: null, civilian: null };
-                    // Не чіпаємо military на цільовому гексі
-                    const prevCiv = existingHexData.units.civilian;
 
                     const srcH = { ...(getHex(srcKey) || {}) };
                     if (!srcH.units) srcH.units = { military: null, civilian: null };
@@ -1429,7 +1417,6 @@
 
                 // ФАЗА БОЮ
                 if (unit.state === 'fighting') {
-                    // ===== грабіж банку =====
                     if (targetHex && targetHex.type === 'bank' && targetHex.owner && targetHex.owner !== unitOwner) {
                         const stored = Math.floor(targetHex.stored || 0);
                         if (stored > 0) {
@@ -1446,19 +1433,16 @@
                         continue;
                     }
 
-                    // ===== грабіж ферми (зцілення) =====
                     if (targetHex && targetHex.type === 'farm' && targetHex.owner && targetHex.owner !== unitOwner) {
                         const healed = { ...unit, hp: Math.min(unit.maxHp, (unit.hp || 0) + ROB_FARM_HEAL) };
                         pushMsgIfMine(unitOwner, `🌾 Ферму пограбовано! +${Math.min(ROB_FARM_HEAL, unit.maxHp - unit.hp)} HP`);
                         pushMsgIfMine(targetHex.owner, `💥 Вашу ферму пограбовано гравцем ${unitOwner}!`);
-                        // Ферма стає пустою (нейтральна земля)
                         setHex(targetKey, null);
                         setHex(targetKey, { units: { military: stopTravel(healed), civilian: null } });
                         processedUnits.add(unit.id);
                         continue;
                     }
 
-                    // ===== грабіж вітряка (золото) =====
                     if (targetHex && targetHex.type === 'mill' && targetHex.owner && targetHex.owner !== unitOwner) {
                         const reward = ROB_MILL_GOLD;
                         goldByOwner[unitOwner] = (goldByOwner[unitOwner] || 0) + reward;
@@ -1678,7 +1662,6 @@
                         continue;
                     }
 
-                    // ===== воїн приходить на ворожий банк =====
                     if (targetHex && targetHex.type === 'bank' && targetHex.owner && targetHex.owner !== unitOwner) {
                         if (!targetMil) {
                             const srcH = { ...(getHex(srcKey) || {}) };
@@ -1776,7 +1759,6 @@
                     const nextIndex = (moved.pathIndex || 0) + 1;
                     const existingHexData = targetHex ? { ...targetHex } : {};
                     if (!existingHexData.units) existingHexData.units = { military: null, civilian: null };
-                    const prevCiv = existingHexData.units.civilian;
 
                     const srcH = { ...(getHex(srcKey) || {}) };
                     if (!srcH.units) srcH.units = { military: null, civilian: null };
@@ -2281,10 +2263,8 @@
                 return;
             }
 
-            // Клік по гексу з моїми юнітами
             if (isMyMilitary(hexInfo) || isMyCivilian(hexInfo)) {
                 if (activeSelection && activeSelection.key === key) {
-                    // Розкриваємо меню гекса (якщо вже в меню юніта — перемикаємось)
                     if (activeSelection.layer === 'unit') {
                         openCellForHex(r, c, hexInfo);
                     } else {
@@ -2932,7 +2912,6 @@
                 }
                 actionBtns += `<button class="btn-demolish" onclick="demolishBuilding(${r}, ${c})">Знести (5 золота)</button>`;
             } else if (isBridge) {
-                // ===== v5.31.0: Знесення мосту =====
                 actionBtns += `<button class="btn-demolish" onclick="demolishBridge(${r}, ${c})">Знести міст (поверне ${BRIDGE_SELL_REFUND})</button>`;
             } else if (isStarter || isPurchased) {
                 actionBtns += `<button class="btn-farm" onclick="buildBuilding(${r}, ${c}, 'farm')">Ферма (10)</button>`;
@@ -3056,7 +3035,7 @@
             } catch (err) { alert(err.message); }
         }
 
-        // ===== ЗНЕСЕННЯ МОСТУ (v5.31.0) =====
+        // ===== ЗНЕСЕННЯ МОСТУ =====
         window.demolishBridge = async function(r, c) {
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
@@ -3100,7 +3079,6 @@
             const unitId = hexInfo.units.military.id;
             activeSelection = { key: `${r}_${c}`, unitKind: 'military', unitId: unitId, layer: 'unit' };
             const u = hexInfo.units.military;
-            const targetKey = `${r}_${c}`;
             const hexOwner = hexInfo.owner;
             const hexType = hexInfo.type;
 
@@ -3116,7 +3094,6 @@
                              `<b>Всього:</b> ${formatDuration(rem.total)}`;
             }
 
-            // ===== ДОДАТКОВА ІНФО ПРО БУДІВЛЮ, НА ЯКІЙ СТОЇТЬ =====
             let buildingHtml = '';
             if (hexOwner && hexOwner !== currentUsername) {
                 if (hexType === 'bank') {
@@ -3145,7 +3122,6 @@
                     else btns += `<button class="btn-disabled" disabled>Лікування тільки на своїй землі</button>`;
                 }
 
-                // ===== ПОГРАБУВАННЯ (v5.31.0) =====
                 if (hexOwner && hexOwner !== currentUsername) {
                     if (hexType === 'bank') {
                         const stored = Math.floor(hexInfo.stored || 0);
@@ -3156,7 +3132,6 @@
                     } else if (hexType === 'mill') {
                         btns += `<button class="btn-rob" onclick="robMill(${r}, ${c})">💨 Пограбувати вітряк (+${ROB_MILL_GOLD} золота)</button>`;
                     } else if (hexType === 'core') {
-                        // Атака ратуші вже через меню гекса, але можна додати
                         btns += `<button class="btn-attack-core" onclick="attackCoreFromUnit(${r}, ${c})">⚔️ Атакувати ратушу</button>`;
                     }
 
@@ -3414,7 +3389,7 @@
             } catch (err) { alert(err.message); }
         }
 
-        // ===== ПОГРАБУВАННЯ (v5.31.0) =====
+        // ===== ПОГРАБУВАННЯ =====
         window.robBank = async function(r, c) {
             const key = `${r}_${c}`;
             const hex = hexWorldData[key];
@@ -3463,12 +3438,9 @@
         }
 
         window.attackCoreFromUnit = function(r, c) {
-            // Просто переходимо в режим руху — воїн уже на місці, треба "атакувати"
             const hex = hexWorldData[`${r}_${c}`];
             if (!isMyMilitary(hex)) { alert("Тут немає вашого воїна!"); return; }
             if (hex.units.military.state !== 'idle') { alert("Воїн зайнятий."); return; }
-            // Робимо перший крок атаки — просто ставимо fighting і targetKey = поточний key
-            // (Ратуша на цьому ж гексі? Ні, ратуша ворожа — треба рухатись на неї)
             alert("Щоб атакувати ратушу — оберіть її гекс на карті та натисніть 'Атакувати ратушу'.");
         }
 
@@ -3529,12 +3501,11 @@
 
 // ===== КІНЕЦЬ ЧАСТИНИ 5/7 =====
 
-                // ===== ТІК (кожну секунду) =====
+                        // ===== ТІК (кожну секунду) =====
         let unitTimeTickInterval = null;
         function startUnitTimeTick() {
             if (unitTimeTickInterval) clearInterval(unitTimeTickInterval);
             unitTimeTickInterval = setInterval(() => {
-                // 1) оновлення модалки юніта
                 const unitModal = document.getElementById('unit-modal');
                 if (unitModal && unitModal.style.display === 'block' && activeSelection && activeSelection.layer === 'unit') {
                     let found = null;
@@ -3584,7 +3555,6 @@
                     }
                 }
 
-                // 2) оновлення модалки ратуші
                 const thModal = document.getElementById('townhall-modal');
                 if (thModal && thModal.style.display === 'block') {
                     let coreHex = null;
@@ -3622,7 +3592,6 @@
                     }
                 }
 
-                // 3) оновлення модалки гекса
                 const terrModal = document.getElementById('territory-modal');
                 if (terrModal && terrModal.style.display === 'block') {
                     refreshTerritoryModal();
@@ -3703,88 +3672,33 @@
             svg.appendChild(g);
         }
 
-        // ===== БАНК (v5.31.0: симетричніша модель) =====
+        // ===== БАНК =====
         function renderBankVector(svg, center, stored, capacity, accepting) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
-
-            // Тінь
             g.appendChild(svgEl("ellipse", { cx, cy: cy + 14, rx: 20, ry: 5, fill: "rgba(0,0,0,0.5)" }));
-
-            // Фундамент (сходинки) — симетричні
             g.appendChild(svgEl("rect", { x: cx - 20, y: cy + 10, width: 40, height: 4, fill: "#57534e", stroke: "#292524", "stroke-width": 1, rx: 1 }));
             g.appendChild(svgEl("rect", { x: cx - 17, y: cy + 6, width: 34, height: 4, fill: "#78716c", stroke: "#292524", "stroke-width": 1, rx: 1 }));
-
-            // Основна будівля
             g.appendChild(svgEl("rect", { x: cx - 15, y: cy - 6, width: 30, height: 14, fill: "#d6d3d1", stroke: "#292524", "stroke-width": 1.5, rx: 1 }));
-
-            // 4 колони симетрично: -12, -4, 4, 12 відносно cx
             const colOffsets = [-11, -3.5, 3.5, 11];
             colOffsets.forEach(off => {
-                g.appendChild(svgEl("rect", {
-                    x: cx + off - 1.5, y: cy - 4, width: 3, height: 10,
-                    fill: "#e7e5e4", stroke: "#44403c", "stroke-width": 0.8
-                }));
+                g.appendChild(svgEl("rect", { x: cx + off - 1.5, y: cy - 4, width: 3, height: 10, fill: "#e7e5e4", stroke: "#44403c", "stroke-width": 0.8 }));
             });
-
-            // Двері по центру
-            g.appendChild(svgEl("rect", {
-                x: cx - 3, y: cy - 1, width: 6, height: 7,
-                fill: "#44403c", stroke: "#1c1917", "stroke-width": 1, rx: 0.5
-            }));
-
-            // Дах (фронтон) — симетричний
-            g.appendChild(svgEl("polygon", {
-                points: `${cx - 18},${cy - 6} ${cx + 18},${cy - 6} ${cx},${cy - 18}`,
-                fill: "#a8a29e", stroke: "#292524", "stroke-width": 1.5, "stroke-linejoin": "round"
-            }));
-
-            // Внутрішній трикутник — симетричний
-            g.appendChild(svgEl("polygon", {
-                points: `${cx - 8},${cy - 7} ${cx + 8},${cy - 7} ${cx},${cy - 14}`,
-                fill: "#d6d3d1", stroke: "#57534e", "stroke-width": 0.8
-            }));
-
-            // Монета на даху (замість $)
-            g.appendChild(svgEl("circle", {
-                cx, cy: cy - 11, r: 2,
-                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8
-            }));
-
-            // Прапорець по центру
-            g.appendChild(svgEl("line", {
-                x1: cx, y1: cy - 18, x2: cx, y2: cy - 24,
-                stroke: "#292524", "stroke-width": 1.2
-            }));
-            g.appendChild(svgEl("circle", {
-                cx, cy: cy - 24, r: 1.5,
-                fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.6
-            }));
-
-            // HP-бар заповнення — симетричний
+            g.appendChild(svgEl("rect", { x: cx - 3, y: cy - 1, width: 6, height: 7, fill: "#44403c", stroke: "#1c1917", "stroke-width": 1, rx: 0.5 }));
+            g.appendChild(svgEl("polygon", { points: `${cx - 18},${cy - 6} ${cx + 18},${cy - 6} ${cx},${cy - 18}`, fill: "#a8a29e", stroke: "#292524", "stroke-width": 1.5, "stroke-linejoin": "round" }));
+            g.appendChild(svgEl("polygon", { points: `${cx - 8},${cy - 7} ${cx + 8},${cy - 7} ${cx},${cy - 14}`, fill: "#d6d3d1", stroke: "#57534e", "stroke-width": 0.8 }));
+            g.appendChild(svgEl("circle", { cx, cy: cy - 11, r: 2, fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.8 }));
+            g.appendChild(svgEl("line", { x1: cx, y1: cy - 18, x2: cx, y2: cy - 24, stroke: "#292524", "stroke-width": 1.2 }));
+            g.appendChild(svgEl("circle", { cx, cy: cy - 24, r: 1.5, fill: "#fbbf24", stroke: "#78350f", "stroke-width": 0.6 }));
             const pct = Math.max(0, Math.min(1, stored / (capacity || 40)));
             const barW = 30, barH = 3;
             const bx = cx - barW / 2, by = cy + 15;
-
-            g.appendChild(svgEl("rect", {
-                x: bx, y: by, width: barW, height: barH, rx: barH / 2,
-                fill: "rgba(0,0,0,0.7)", stroke: "#292524", "stroke-width": 0.5
-            }));
-
+            g.appendChild(svgEl("rect", { x: bx, y: by, width: barW, height: barH, rx: barH / 2, fill: "rgba(0,0,0,0.7)", stroke: "#292524", "stroke-width": 0.5 }));
             const fillColor = pct >= 0.95 ? '#fbbf24' : (pct > 0.5 ? '#f59e0b' : '#fcd34d');
-            g.appendChild(svgEl("rect", {
-                x: bx, y: by, width: Math.max(0.5, barW * pct), height: barH,
-                rx: barH / 2, fill: fillColor
-            }));
-
-            // Індикатор "приймає" — зелена крапка збоку
+            g.appendChild(svgEl("rect", { x: bx, y: by, width: Math.max(0.5, barW * pct), height: barH, rx: barH / 2, fill: fillColor }));
             if (accepting) {
-                g.appendChild(svgEl("circle", {
-                    cx: cx + 17, cy: cy - 12, r: 2.5,
-                    fill: "#10b981", stroke: "#065f46", "stroke-width": 0.8
-                }));
+                g.appendChild(svgEl("circle", { cx: cx + 17, cy: cy - 12, r: 2.5, fill: "#10b981", stroke: "#065f46", "stroke-width": 0.8 }));
             }
-
             svg.appendChild(g);
         }
 
@@ -3809,57 +3723,20 @@
         function renderBridgeVector(svg, center) {
             const g = svgEl("g", { class: "map-icon" });
             const cx = center.x, cy = center.y;
-
-            g.appendChild(svgEl("ellipse", {
-                cx, cy: cy + 2, rx: 18, ry: 8,
-                fill: "rgba(0, 0, 0, 0.55)"
-            }));
-
-            g.appendChild(svgEl("line", {
-                x1: cx - 16, y1: cy - 6, x2: cx + 16, y2: cy - 6,
-                stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round"
-            }));
-            g.appendChild(svgEl("line", {
-                x1: cx - 16, y1: cy + 6, x2: cx + 16, y2: cy + 6,
-                stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round"
-            }));
-
-            g.appendChild(svgEl("line", {
-                x1: cx - 15, y1: cy - 7, x2: cx + 15, y2: cy - 7,
-                stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round"
-            }));
-            g.appendChild(svgEl("line", {
-                x1: cx - 15, y1: cy + 5, x2: cx + 15, y2: cy + 5,
-                stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round"
-            }));
-
+            g.appendChild(svgEl("ellipse", { cx, cy: cy + 2, rx: 18, ry: 8, fill: "rgba(0, 0, 0, 0.55)" }));
+            g.appendChild(svgEl("line", { x1: cx - 16, y1: cy - 6, x2: cx + 16, y2: cy - 6, stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round" }));
+            g.appendChild(svgEl("line", { x1: cx - 16, y1: cy + 6, x2: cx + 16, y2: cy + 6, stroke: "#92400e", "stroke-width": 3.5, "stroke-linecap": "round" }));
+            g.appendChild(svgEl("line", { x1: cx - 15, y1: cy - 7, x2: cx + 15, y2: cy - 7, stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round" }));
+            g.appendChild(svgEl("line", { x1: cx - 15, y1: cy + 5, x2: cx + 15, y2: cy + 5, stroke: "#d97706", "stroke-width": 1.5, "stroke-linecap": "round" }));
             for (let dx = -12; dx <= 12; dx += 4.8) {
-                g.appendChild(svgEl("line", {
-                    x1: cx + dx, y1: cy - 7, x2: cx + dx, y2: cy + 7,
-                    stroke: "#a16207", "stroke-width": 2, "stroke-linecap": "round"
-                }));
+                g.appendChild(svgEl("line", { x1: cx + dx, y1: cy - 7, x2: cx + dx, y2: cy + 7, stroke: "#a16207", "stroke-width": 2, "stroke-linecap": "round" }));
             }
-
-            g.appendChild(svgEl("line", {
-                x1: cx - 15, y1: cy - 10, x2: cx + 15, y2: cy - 10,
-                stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round"
-            }));
-            g.appendChild(svgEl("line", {
-                x1: cx - 15, y1: cy + 10, x2: cx + 15, y2: cy + 10,
-                stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round"
-            }));
-
+            g.appendChild(svgEl("line", { x1: cx - 15, y1: cy - 10, x2: cx + 15, y2: cy - 10, stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round" }));
+            g.appendChild(svgEl("line", { x1: cx - 15, y1: cy + 10, x2: cx + 15, y2: cy + 10, stroke: "#fbbf24", "stroke-width": 1, "stroke-linecap": "round" }));
             for (let dx = -12; dx <= 12; dx += 8) {
-                g.appendChild(svgEl("line", {
-                    x1: cx + dx, y1: cy - 10, x2: cx + dx, y2: cy - 6,
-                    stroke: "#fbbf24", "stroke-width": 1
-                }));
-                g.appendChild(svgEl("line", {
-                    x1: cx + dx, y1: cy + 6, x2: cx + dx, y2: cy + 10,
-                    stroke: "#fbbf24", "stroke-width": 1
-                }));
+                g.appendChild(svgEl("line", { x1: cx + dx, y1: cy - 10, x2: cx + dx, y2: cy - 6, stroke: "#fbbf24", "stroke-width": 1 }));
+                g.appendChild(svgEl("line", { x1: cx + dx, y1: cy + 6, x2: cx + dx, y2: cy + 10, stroke: "#fbbf24", "stroke-width": 1 }));
             }
-
             svg.appendChild(g);
         }
 
@@ -4033,23 +3910,17 @@
             if (isMoving) extraClass = ' unit-badge-bounce';
             if (isSelected) extraClass += ' unit-badge-selected';
 
-            // Кругле тло (як military, але з фіолетовим/своїм кольором)
             g.appendChild(svgEl("circle", {
                 cx, cy, r, fill: circleFill, stroke: circleStroke,
                 "stroke-width": 2.5 * k,
                 "stroke-dasharray": isMoving ? `${4 * k} ${3 * k}` : 'none'
             }));
 
-            // Свиток (📜) — вертикальний сувій
             const scrollG = svgEl("g", {});
             scrollG.setAttribute("transform", `translate(${cx}, ${cy}) scale(${k * 1.0})`);
-            // Тіло сувою
             scrollG.appendChild(svgEl("rect", { x: -5, y: -7, width: 10, height: 14, fill: "#fef3c7", stroke: "#78350f", "stroke-width": 0.8, rx: 0.5 }));
-            // Верхній валик
             scrollG.appendChild(svgEl("ellipse", { cx: 0, cy: -7, rx: 5.5, ry: 1.8, fill: "#e7e5e4", stroke: "#78350f", "stroke-width": 0.6 }));
-            // Нижній валик
             scrollG.appendChild(svgEl("ellipse", { cx: 0, cy: 7, rx: 5.5, ry: 1.8, fill: "#e7e5e4", stroke: "#78350f", "stroke-width": 0.6 }));
-            // Лінії тексту
             scrollG.appendChild(svgEl("line", { x1: -3, y1: -3, x2: 3, y2: -3, stroke: "#92400e", "stroke-width": 0.5 }));
             scrollG.appendChild(svgEl("line", { x1: -3, y1: 0, x2: 3, y2: 0, stroke: "#92400e", "stroke-width": 0.5 }));
             scrollG.appendChild(svgEl("line", { x1: -3, y1: 3, x2: 3, y2: 3, stroke: "#92400e", "stroke-width": 0.5 }));
@@ -4082,6 +3953,7 @@
             const svg = document.getElementById('hex-svg');
             document.querySelectorAll('.map-icon, .owner-label-bg, .owner-label-text, .unit-badge, .unit-name-tooltip').forEach(el => el.remove());
             document.querySelectorAll('.battle-hp-bar-bg, .battle-hp-bar-fill, .battle-hp-label').forEach(el => el.remove());
+            document.querySelectorAll('.route-dots-group').forEach(el => el.remove());
             document.querySelectorAll('polygon.hex').forEach(el => {
                 el.style.fill = '#1b263b';
                 el.style.stroke = '#1b263b';
@@ -4205,7 +4077,6 @@
                         const oy = u.big ? 0 : 10;
                         renderMilitaryBadge(svg, u.center.x + ox, u.center.y + oy, rx, u.unit, u.color, u.barbarian, u.key);
                     } else {
-                        // civilian — зліва
                         const rx = u.big ? 15 : 10;
                         const ox = u.big ? 0 : -11;
                         const oy = u.big ? 0 : 10;
@@ -4238,6 +4109,27 @@
 
                 renderBattleHPBars(svg);
                 labelQueue.forEach(l => renderLabel(svg, l.center, l.text, l.damaged, l.hpPct, l.hp, l.maxHp));
+
+                // ===== v5.31.1: ТОЧКИ МАРШРУТУ В КІНЦІ — ЩОБ БУЛИ ЗВЕРХУ БУДІВЕЛЬ =====
+                if (activeSelection && activeSelection.layer === 'unit') {
+                    let movingUnit = null, movingUnitKey = null;
+                    if (activeSelection.unitKind === 'military' && activeSelection.unitId) {
+                        const found = findMyMilitaryById(activeSelection.unitId);
+                        if (found && found.hex.units.military.state === 'moving') {
+                            movingUnit = found.hex.units.military;
+                            movingUnitKey = found.key;
+                        }
+                    } else if (activeSelection.unitKind === 'civilian' && activeSelection.unitId) {
+                        const found = findMyCivilianById(activeSelection.unitId);
+                        if (found && found.hex.units.civilian.state === 'moving') {
+                            movingUnit = found.hex.units.civilian;
+                            movingUnitKey = found.key;
+                        }
+                    }
+                    if (movingUnit && movingUnitKey) {
+                        renderUnitRouteDots(svg, movingUnit, movingUnitKey);
+                    }
+                }
             }
         }
 
@@ -4336,21 +4228,7 @@
                         }
                         refreshUnitModal();
                         refreshTerritoryModal();
-                        if (activeSelection && activeSelection.layer === 'unit') {
-                            clearRouteDots();
-                            let unit = null, unitKey = null;
-                            if (activeSelection.unitKind === 'military' && activeSelection.unitId) {
-                                const found = findMyMilitaryById(activeSelection.unitId);
-                                if (found) { unit = found.hex.units.military; unitKey = found.key; }
-                            } else if (activeSelection.unitKind === 'civilian' && activeSelection.unitId) {
-                                const found = findMyCivilianById(activeSelection.unitId);
-                                if (found) { unit = found.hex.units.civilian; unitKey = found.key; }
-                            }
-                            if (unit && unit.state === 'moving') {
-                                const svg = document.getElementById('hex-svg');
-                                renderUnitRouteDots(svg, unit, unitKey);
-                            }
-                        }
+                        // v5.31.1: точки маршруту тепер рендеряться всередині renderWorldData (в кінці)
                         renderScheduled = false;
                     });
                 }
