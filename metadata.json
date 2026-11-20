@@ -1,0 +1,6 @@
+{
+  "name": "Ковель Воксель Ферма",
+  "description": "3D ізометрична воксельна багатокористувацька ферма на єдиній землі з інвентарем, покращенням інструментів, купівлею ділянок та чатом у реальному часі.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,11 +1,23 @@
-<div align="center">
+# Ковель Воксель Ферма (3D Ізометрична Гра)
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+3D ізометрична воксельна багатокористувацька ферма на **Three.js + React + Vite + Firebase Auth / Realtime Database**.
 
-  <h1>Built with AI Studio</h2>
+## Готові ZIP-архіви
+- **`kovel-farm-github-pages.zip`** — готова статична збірка (`index.html` + `assets/*`). Достатньо розпакувати в корінь репозиторію GitHub і увімкнути **Settings → Pages → Deploy from a branch (`main` / `root`)**!
+- **`kovel-farm-source.zip`** — повний вихідний код проєкту з готовим workflow `.github/workflows/deploy.yml` (автоматична збірка і публікація на GitHub Pages при `git push`) та конфігурацією Firebase (`firebase.json`, `database.rules.json`).
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Налаштування Firebase (`kovel-game`)
+1. У Firebase Console → **Authentication → Sign-in method** увімкніть **Email/Password**.
+2. У **Realtime Database → Rules** застосуйте правила з файлу `database.rules.json` (або запустіть `firebase deploy --only database,hosting`).
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Локальний запуск
+```bash
+npm install
+npm run dev
+```
 
-</div>
+## Збірка
+```bash
+npm run build
+```
+Готові статичні файли з'являться в папці `dist/`.

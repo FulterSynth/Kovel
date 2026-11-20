@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "players": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "plots": {
+      ".read": "auth != null",
+      "$plotKey": {
+        ".write": "auth != null && (!data.exists() || data.child('ownerId').val() == null || data.child('ownerId').val() === auth.uid)"
+      }
+    },
+    "chat": {
+      ".read": "auth != null",
+      "$msgId": {
+        ".write": "auth != null"
+      }
+    }
+  }
+}
