@@ -271,6 +271,14 @@ export function InventoryModal({
                       </span>
                     </div>
                   )}
+                  {selectedItem.stats.areaVoxels !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-stone-400">Вокселів за удар:</span>
+                      <span className="font-bold text-amber-200 tabular-nums">
+                        {selectedItem.stats.areaVoxels} з 9
+                      </span>
+                    </div>
+                  )}
                   {selectedItem.stats.durabilityLabel && (
                     <div className="flex justify-between">
                       <span className="text-stone-400">Матеріал / Стан:</span>
@@ -319,7 +327,7 @@ export function InventoryModal({
                         <span className="font-extrabold text-amber-100">{nextUpgradeDef.name}</span>
                       </div>
                       <div className="text-[11px] text-emerald-300">
-                        Нові характеристики: ×{nextUpgradeDef.speedMultiplier.toFixed(2)} швидкість · +{nextUpgradeDef.yieldBonusPct}% врожай
+                        Нові характеристики: {nextUpgradeDef.areaVoxels} вокселів за удар · ×{nextUpgradeDef.speedMultiplier.toFixed(2)} швидкість · +{nextUpgradeDef.yieldBonusPct}% врожай
                       </div>
                       <button
                         type="button"

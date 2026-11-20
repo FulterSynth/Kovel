@@ -1,17 +1,30 @@
-import type { CropDefinition, CropId, InventoryItem, LandSquare, PlayerProfile, ToolDefinition } from './types';
+import type {
+  CropDefinition,
+  CropId,
+  InventoryItem,
+  LandSquare,
+  PlayerProfile,
+  SoilState,
+  ToolDefinition,
+  VoxelCell,
+} from './types';
 
-export const GRID_SIZE = 16; // 16x16 shared world grid (256 city squares)
-export const GRID_MIN = -8;
-export const GRID_MAX = 7;
-export const TILE_SIZE = 2.6; // World units per land square
+export const GRID_SIZE = 24; // 24x24 shared world grid (576 city squares, 5184 voxels)
+export const GRID_MIN = -12;
+export const GRID_MAX = 11;
+export const VOXELS_PER_SIDE = 3; // 3x3 = 9 voxels per land square
+export const VOXELS_PER_PLOT = 9;
+export const VOXEL_SIZE = 1.0;
+export const TILE_SIZE = VOXELS_PER_SIDE * VOXEL_SIZE; // 3.0 world units per land square
 
+export const STARTER_FREE_PLOTS = 4;
 export const STARTING_COINS = 20;
 
 export const TOWN_PLAZA_BOUNDS = {
-  minGx: -8,
-  maxGx: -5,
-  minGz: -8,
-  maxGz: -5,
+  minGx: -12,
+  maxGx: -9,
+  minGz: -12,
+  maxGz: -9,
 };
 
 export const PLAYER_PALETTE = [
@@ -37,8 +50,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: 25,
     speedMultiplier: 1.0,
     yieldBonusPct: 0,
+    areaVoxels: 1,
     durabilityLabel: 'Зношена (100%)',
-    description: 'Стара іржавіла мотика за 10 монет. Достатньо гостра, щоб скопати першу грядку та зібрати врожай.',
+    description: 'Стара іржавіла мотика за 10 монет. Обробляє 1 воксель за удар, ідеальна для старту.',
   },
   iron_hoe: {
     itemId: 'iron_hoe',
@@ -51,8 +65,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: 55,
     speedMultiplier: 1.4,
     yieldBonusPct: 25,
+    areaVoxels: 3,
     durabilityLabel: 'Міцна загартована',
-    description: 'Кована мотика ковельських майстрів. Працює на 40% швидше та дає +25% шанс додаткового врожаю.',
+    description: 'Кована мотика ковельських майстрів. Обробляє 3 вокселі за раз та дає +25% бонусу врожаю.',
   },
   steel_hoe: {
     itemId: 'steel_hoe',
@@ -65,8 +80,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: 110,
     speedMultiplier: 1.85,
     yieldBonusPct: 60,
+    areaVoxels: 6,
     durabilityLabel: 'Високовуглецева',
-    description: 'Збалансована булатна мотика. Миттєво розпушує ґрунт та дає +60% бонусного врожаю.',
+    description: 'Збалансована булатна мотика. Захоплює 6 вокселів за раз і дає +60% бонусного врожаю.',
   },
   golden_hoe: {
     itemId: 'golden_hoe',
@@ -79,8 +95,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: null,
     speedMultiplier: 2.5,
     yieldBonusPct: 100,
+    areaVoxels: 9,
     durabilityLabel: 'Легендарна (вічна)',
-    description: 'Майстерна золота мотика. Гарантує подвійний врожай (+100%) та блискавичну обробку землі.',
+    description: 'Майстерна золота мотика. Миттєво обробляє всю ділянку (усі 9 вокселів) та подвоює врожай!',
   },
   wooden_can: {
     itemId: 'wooden_can',
@@ -93,8 +110,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: 22,
     speedMultiplier: 1.35,
     yieldBonusPct: 0,
+    areaVoxels: 1,
     durabilityLabel: 'Дубові клепки',
-    description: 'Проста лійка для поливу засіяних грядок. Полив прискорює дозрівання культур на 35%.',
+    description: 'Проста лійка для поливу воксельних грядок. Полив прискорює дозрівання культур на 35%.',
   },
   copper_can: {
     itemId: 'copper_can',
@@ -107,8 +125,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: 50,
     speedMultiplier: 1.65,
     yieldBonusPct: 15,
+    areaVoxels: 3,
     durabilityLabel: 'Полірована мідь',
-    description: 'Містка мідна лійка. Прискорює ріст на 65% і додає +15% до якості плодів.',
+    description: 'Містка мідна лійка. Поливає 3 вокселі одразу та прискорює ріст на 65%.',
   },
   crystal_can: {
     itemId: 'crystal_can',
@@ -121,8 +140,9 @@ export const TOOL_CATALOG: Record<string, ToolDefinition> = {
     upgradeCost: null,
     speedMultiplier: 2.2,
     yieldBonusPct: 35,
+    areaVoxels: 9,
     durabilityLabel: 'Магічний кварц',
-    description: 'Насичує ґрунт життєвою вологою: ріст у 2.2 раза швидший та +35% бонус до врожайності.',
+    description: 'Живить усю ділянку з 9 вокселів за раз: ріст у 2.2 раза швидший та +35% бонус до врожаю.',
   },
 };
 
@@ -133,11 +153,11 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
     cropItemId: 'crop_radish',
     seedName: 'Насіння редиски',
     cropName: 'Стигла редиска',
-    seedPrice: 4,
-    sellPrice: 9,
+    seedPrice: 2,
+    sellPrice: 5,
     growthSeconds: 8,
     rarity: 'common',
-    description: 'Швидка стартова культура. Дозріває за 8 секунд і чудово підходить для перших монет.',
+    description: 'Швидка стартова культура. За 2 монети дає 5 монет виторгу вже за 8 секунд.',
     voxelColor: '#d94862',
     accentColor: '#4da852',
   },
@@ -147,8 +167,8 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
     cropItemId: 'crop_wheat',
     seedName: 'Насіння пшениці',
     cropName: 'Золота пшениця',
-    seedPrice: 5,
-    sellPrice: 12,
+    seedPrice: 3,
+    sellPrice: 8,
     growthSeconds: 12,
     rarity: 'common',
     description: 'Традиційна волинська пшениця. Стабільний прибуток за 12 секунд росту.',
@@ -161,11 +181,11 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
     cropItemId: 'crop_carrot',
     seedName: 'Насіння моркви',
     cropName: 'Солодка морква',
-    seedPrice: 8,
-    sellPrice: 19,
+    seedPrice: 5,
+    sellPrice: 13,
     growthSeconds: 16,
     rarity: 'uncommon',
-    description: 'Хрустка солодка морква. Потребує більше часу, але цінується на міському ринку.',
+    description: 'Хрустка солодка морква. Потребує більше часу, але гарно цінується на міському ринку.',
     voxelColor: '#f97316',
     accentColor: '#22c55e',
   },
@@ -175,8 +195,8 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
     cropItemId: 'crop_sunflower',
     seedName: 'Насіння соняшника',
     cropName: 'Яскравий соняшник',
-    seedPrice: 14,
-    sellPrice: 34,
+    seedPrice: 9,
+    sellPrice: 24,
     growthSeconds: 22,
     rarity: 'rare',
     description: 'Висока сонячна квітка, що прикрашає ферму та дає щедрий виторг.',
@@ -189,8 +209,8 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
     cropItemId: 'crop_pumpkin',
     seedName: 'Насіння гарбуза',
     cropName: 'Великий гарбуз',
-    seedPrice: 22,
-    sellPrice: 58,
+    seedPrice: 15,
+    sellPrice: 42,
     growthSeconds: 28,
     rarity: 'epic',
     description: 'Великий воксельний гарбуз. Найвища ціна на ринку Ковеля!',
@@ -202,8 +222,18 @@ export const CROP_CATALOG: Record<CropId, CropDefinition> = {
 export const CROP_LIST: CropDefinition[] = Object.values(CROP_CATALOG);
 
 export function getLandSquarePrice(ownedCount: number): number {
-  if (ownedCount <= 0) return 0; // First square is free!
-  return 15 + ownedCount * 10; // 2nd = 25, 3rd = 35, 4th = 45...
+  if (ownedCount < STARTER_FREE_PLOTS) return 0; // First 4 adjacent squares are FREE!
+  return 20 + (ownedCount - STARTER_FREE_PLOTS) * 12; // 5th = 20, 6th = 32, 7th = 44...
+}
+
+export function createEmptyVoxels(): VoxelCell[] {
+  return Array.from({ length: VOXELS_PER_PLOT }, () => ({
+    soil: 'grass' as SoilState,
+    cropId: null,
+    plantedAt: null,
+    wateredAt: null,
+    growthBoost: 1,
+  }));
 }
 
 export function createToolInventoryItem(itemId: string): InventoryItem {
@@ -216,12 +246,13 @@ export function createToolInventoryItem(itemId: string): InventoryItem {
     quantity: 1,
     tier: def.tier,
     rarity: def.rarity,
-    value: def.buyPrice ?? (def.tier * 25),
+    value: def.buyPrice ?? def.tier * 25,
     toolFamily: def.toolFamily,
     description: def.description,
     stats: {
       speedMultiplier: def.speedMultiplier,
       yieldBonusPct: def.yieldBonusPct,
+      areaVoxels: def.areaVoxels,
       durabilityLabel: def.durabilityLabel,
     },
   };
@@ -279,6 +310,25 @@ export function isTownPlazaTile(gx: number, gz: number): boolean {
   );
 }
 
+function makeFilledVoxels(
+  soil: SoilState,
+  cropId: CropId | null,
+  plantedAt: number | null,
+  growthBoost: number,
+  sparseCount = 9,
+): VoxelCell[] {
+  return Array.from({ length: VOXELS_PER_PLOT }, (_, idx) => {
+    const hasCrop = cropId !== null && idx < sparseCount;
+    return {
+      soil,
+      cropId: hasCrop ? cropId : null,
+      plantedAt: hasCrop ? plantedAt : null,
+      wateredAt: soil === 'watered' ? plantedAt : null,
+      growthBoost,
+    };
+  });
+}
+
 export function createSeededWorldPlots(nowMs: number): Record<string, LandSquare> {
   const plots: Record<string, LandSquare> = {};
   for (let gx = GRID_MIN; gx <= GRID_MAX; gx++) {
@@ -292,38 +342,38 @@ export function createSeededWorldPlots(nowMs: number): Record<string, LandSquare
         ownerId: null,
         ownerName: null,
         ownerColor: null,
-        soil: 'grass',
-        cropId: null,
-        plantedAt: null,
-        wateredAt: null,
-        growthBoost: 1,
+        voxels: createEmptyVoxels(),
       };
     }
   }
 
-  // Deterministic neighboring farmer plots so the shared land feels alive and explorable
+  // Deterministic neighboring farmer clusters across the expanded 24x24 world
   const neighborSeeds: Array<{
     gx: number;
     gz: number;
     ownerId: string;
     ownerName: string;
     ownerColor: string;
-    soil: 'tilled' | 'watered';
+    soil: SoilState;
     cropId: CropId | null;
     ageMs: number;
+    voxelCount: number;
   }> = [
-    // Олег_Агро farm cluster
-    { gx: 3, gz: -2, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'watered', cropId: 'wheat', ageMs: 14000 },
-    { gx: 4, gz: -2, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'tilled', cropId: 'sunflower', ageMs: 24000 },
-    { gx: 3, gz: -1, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'watered', cropId: 'carrot', ageMs: 9000 },
-    { gx: 4, gz: -1, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'tilled', cropId: 'wheat', ageMs: 6000 },
-    // Марія_Сад farm cluster
-    { gx: -3, gz: 3, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'watered', cropId: 'pumpkin', ageMs: 30000 },
-    { gx: -2, gz: 3, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'watered', cropId: 'sunflower', ageMs: 18000 },
-    { gx: -3, gz: 4, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'tilled', cropId: 'radish', ageMs: 9000 },
-    // Тарас_Волинь farm cluster
-    { gx: -6, gz: 0, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'tilled', cropId: 'carrot', ageMs: 17000 },
-    { gx: -5, gz: 0, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'watered', cropId: 'radish', ageMs: 4000 },
+    // Олег_Агро (4 adjacent squares on East meadow)
+    { gx: 4, gz: -3, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'watered', cropId: 'wheat', ageMs: 15000, voxelCount: 9 },
+    { gx: 5, gz: -3, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'tilled', cropId: 'sunflower', ageMs: 25000, voxelCount: 7 },
+    { gx: 4, gz: -2, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'watered', cropId: 'carrot', ageMs: 11000, voxelCount: 9 },
+    { gx: 5, gz: -2, ownerId: 'npc_oleg', ownerName: 'Олег_Агро', ownerColor: '#3b82f6', soil: 'tilled', cropId: 'wheat', ageMs: 6000, voxelCount: 6 },
+    // Марія_Сад (4 adjacent squares on South meadow)
+    { gx: -4, gz: 4, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'watered', cropId: 'pumpkin', ageMs: 32000, voxelCount: 6 },
+    { gx: -3, gz: 4, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'watered', cropId: 'sunflower', ageMs: 20000, voxelCount: 9 },
+    { gx: -4, gz: 5, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'tilled', cropId: 'radish', ageMs: 10000, voxelCount: 9 },
+    { gx: -3, gz: 5, ownerId: 'npc_maria', ownerName: 'Марія_Сад', ownerColor: '#ec4899', soil: 'tilled', cropId: 'carrot', ageMs: 14000, voxelCount: 8 },
+    // Тарас_Волинь (4 adjacent squares near Town Plaza)
+    { gx: -7, gz: -2, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'tilled', cropId: 'carrot', ageMs: 18000, voxelCount: 9 },
+    { gx: -6, gz: -2, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'watered', cropId: 'radish', ageMs: 9500, voxelCount: 9 },
+    { gx: -7, gz: -1, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'tilled', cropId: 'wheat', ageMs: 7000, voxelCount: 5 },
+    { gx: -6, gz: -1, ownerId: 'npc_taras', ownerName: 'Тарас_Волинь', ownerColor: '#f59e0b', soil: 'grass', cropId: null, ageMs: 0, voxelCount: 0 },
   ];
 
   for (const s of neighborSeeds) {
@@ -334,11 +384,13 @@ export function createSeededWorldPlots(nowMs: number): Record<string, LandSquare
         ownerId: s.ownerId,
         ownerName: s.ownerName,
         ownerColor: s.ownerColor,
-        soil: s.soil,
-        cropId: s.cropId,
-        plantedAt: s.cropId ? nowMs - s.ageMs : null,
-        wateredAt: s.soil === 'watered' ? nowMs - 2000 : null,
-        growthBoost: s.soil === 'watered' ? 1.35 : 1,
+        voxels: makeFilledVoxels(
+          s.soil,
+          s.cropId,
+          s.cropId ? nowMs - s.ageMs : null,
+          s.soil === 'watered' ? 1.35 : 1,
+          s.voxelCount,
+        ),
       };
     }
   }
@@ -351,15 +403,16 @@ export function createSeededNpcPlayers(nowMs: number): Record<string, PlayerProf
     npc_oleg: {
       uid: 'npc_oleg',
       nickname: 'Олег_Агро',
-      coins: 94,
-      x: 3.5 * TILE_SIZE,
-      z: -1.5 * TILE_SIZE,
+      coins: 112,
+      x: 4.5 * TILE_SIZE,
+      z: -2.2 * TILE_SIZE,
       yaw: 0.6,
       color: '#3b82f6',
       isMoving: false,
       activeSlotItemId: 'iron_hoe',
       ownedCount: 4,
-      totalHarvested: 28,
+      freeClaimsRemaining: 0,
+      totalHarvested: 54,
       bestToolTier: 2,
       lastSeen: nowMs,
       isOnline: true,
@@ -368,15 +421,16 @@ export function createSeededNpcPlayers(nowMs: number): Record<string, PlayerProf
     npc_maria: {
       uid: 'npc_maria',
       nickname: 'Марія_Сад',
-      coins: 148,
-      x: -2.5 * TILE_SIZE,
-      z: 3.5 * TILE_SIZE,
+      coins: 168,
+      x: -3.5 * TILE_SIZE,
+      z: 4.5 * TILE_SIZE,
       yaw: -0.9,
       color: '#ec4899',
       isMoving: false,
       activeSlotItemId: 'steel_hoe',
-      ownedCount: 3,
-      totalHarvested: 42,
+      ownedCount: 4,
+      freeClaimsRemaining: 0,
+      totalHarvested: 78,
       bestToolTier: 3,
       lastSeen: nowMs,
       isOnline: true,
@@ -385,15 +439,16 @@ export function createSeededNpcPlayers(nowMs: number): Record<string, PlayerProf
     npc_taras: {
       uid: 'npc_taras',
       nickname: 'Тарас_Волинь',
-      coins: 52,
-      x: -5.5 * TILE_SIZE,
-      z: 0.5 * TILE_SIZE,
+      coins: 64,
+      x: -6.5 * TILE_SIZE,
+      z: -1.5 * TILE_SIZE,
       yaw: 1.8,
       color: '#f59e0b',
       isMoving: false,
       activeSlotItemId: 'rusty_hoe',
-      ownedCount: 2,
-      totalHarvested: 11,
+      ownedCount: 4,
+      freeClaimsRemaining: 0,
+      totalHarvested: 24,
       bestToolTier: 1,
       lastSeen: nowMs,
       isOnline: true,

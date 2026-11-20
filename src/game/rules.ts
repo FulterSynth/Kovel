@@ -2,9 +2,14 @@ import {
   CROP_CATALOG,
   GRID_MAX,
   GRID_MIN,
+  STARTER_FREE_PLOTS,
   TILE_SIZE,
   TOOL_CATALOG,
+  VOXELS_PER_PLOT,
+  VOXELS_PER_SIDE,
+  VOXEL_SIZE,
   createCropInventoryItem,
+  createEmptyVoxels,
   createSeedInventoryItem,
   createToolInventoryItem,
   getLandSquarePrice,
@@ -18,6 +23,7 @@ import type {
   ItemRarity,
   LandSquare,
   PlayerProfile,
+  VoxelCell,
 } from './types';
 
 export function worldToGrid(x: number, z: number): { gx: number; gz: number } {
@@ -33,18 +39,77 @@ export function gridToWorldCenter(gx: number, gz: number): { x: number; z: numbe
   };
 }
 
-export function findFreeStarterPlot(plots: Record<string, LandSquare>): LandSquare | null {
-  // Prefer central ring near (0,0) -> spiral outward
-  const candidates: LandSquare[] = Object.values(plots).filter(
-    (p) => !p.ownerId && !isTownPlazaTile(p.gx, p.gz),
-  );
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => {
-    const distA = Math.abs(a.gx) + Math.abs(a.gz);
-    const distB = Math.abs(b.gx) + Math.abs(b.gz);
-    return distA - distB;
-  });
-  return candidates[0];
+export function worldToVoxel(x: number, z: number): {
+  gx: number;
+  gz: number;
+  vx: number;
+  vz: number;
+  vIdx: number;
+} {
+  const { gx, gz } = worldToGrid(x, z);
+  const localX = x - gx * TILE_SIZE;
+  const localZ = z - gz * TILE_SIZE;
+  const vx = Math.max(0, Math.min(VOXELS_PER_SIDE - 1, Math.floor(localX / VOXEL_SIZE)));
+  const vz = Math.max(0, Math.min(VOXELS_PER_SIDE - 1, Math.floor(localZ / VOXEL_SIZE)));
+  return { gx, gz, vx, vz, vIdx: vz * VOXELS_PER_SIDE + vx };
+}
+
+export function voxelToWorldCenter(gx: number, gz: number, vIdx: number): { x: number; z: number } {
+  const vx = vIdx % VOXELS_PER_SIDE;
+  const vz = Math.floor(vIdx / VOXELS_PER_SIDE);
+  return {
+    x: gx * TILE_SIZE + (vx + 0.5) * VOXEL_SIZE,
+    z: gz * TILE_SIZE + (vz + 0.5) * VOXEL_SIZE,
+  };
+}
+
+export function normalizePlot(plot: LandSquare): LandSquare {
+  if (Array.isArray(plot.voxels) && plot.voxels.length === VOXELS_PER_PLOT) {
+    return plot;
+  }
+  return {
+    ...plot,
+    voxels: createEmptyVoxels(),
+  };
+}
+
+export function findFreeStarterCluster(
+  plots: Record<string, LandSquare>,
+  count = STARTER_FREE_PLOTS,
+): LandSquare[] {
+  // Search outward from center (0, 0) for a connected cluster of `count` unowned plots
+  const allFree = Object.values(plots)
+    .filter((p) => !p.ownerId && !isTownPlazaTile(p.gx, p.gz))
+    .sort((a, b) => Math.abs(a.gx) + Math.abs(a.gz) - (Math.abs(b.gx) + Math.abs(b.gz)));
+
+  for (const seed of allFree) {
+    const picked: LandSquare[] = [seed];
+    const pickedSet = new Set<string>([seed.key]);
+    while (picked.length < count) {
+      let added = false;
+      for (const p of picked) {
+        const dirs = [
+          gridKey(p.gx + 1, p.gz),
+          gridKey(p.gx - 1, p.gz),
+          gridKey(p.gx, p.gz + 1),
+          gridKey(p.gx, p.gz - 1),
+        ];
+        for (const nk of dirs) {
+          const cand = plots[nk];
+          if (cand && !cand.ownerId && !pickedSet.has(nk)) {
+            picked.push(cand);
+            pickedSet.add(nk);
+            added = true;
+            break;
+          }
+        }
+        if (added) break;
+      }
+      if (!added) break;
+    }
+    if (picked.length === count) return picked;
+  }
+  return allFree.slice(0, count);
 }
 
 export function isPlotAdjacentToOwned(
@@ -54,7 +119,7 @@ export function isPlotAdjacentToOwned(
   plots: Record<string, LandSquare>,
 ): boolean {
   const owned = Object.values(plots).filter((p) => p.ownerId === uid);
-  if (owned.length === 0) return true; // First plot can be claimed anywhere unowned
+  if (owned.length === 0) return true; // Very first plot can be picked anywhere unowned!
   const neighbors = [
     gridKey(gx + 1, gz),
     gridKey(gx - 1, gz),
@@ -70,11 +135,7 @@ export function getPurchasableAdjacentPlots(
 ): LandSquare[] {
   return Object.values(plots)
     .filter((p) => !p.ownerId && isPlotAdjacentToOwned(p.gx, p.gz, uid, plots))
-    .sort((a, b) => {
-      const da = Math.abs(a.gx) + Math.abs(a.gz);
-      const db = Math.abs(b.gx) + Math.abs(b.gz);
-      return da - db;
-    });
+    .sort((a, b) => Math.abs(a.gx) + Math.abs(a.gz) - (Math.abs(b.gx) + Math.abs(b.gz)));
 }
 
 export interface ActionResult<T = unknown> {
@@ -87,34 +148,51 @@ export function purchaseLandSquare(
   player: PlayerProfile,
   targetKey: string,
   plots: Record<string, LandSquare>,
-): ActionResult<{ player: PlayerProfile; plot: LandSquare; price: number }> {
+): ActionResult<{ player: PlayerProfile; plot: LandSquare; price: number; isFreeStarter: boolean }> {
   const plot = plots[targetKey];
   if (!plot) {
     return { ok: false, error: 'Цю ділянку не знайдено на карті.' };
   }
   if (plot.ownerId) {
-    return { ok: false, error: `Ця земля вже належить гравцю ${plot.ownerName ?? 'іншому фермеру'}.` };
+    return {
+      ok: false,
+      error: `Ця земля вже належить гравцю ${plot.ownerName ?? 'іншому фермеру'}.`,
+    };
   }
   const ownedCount = Object.values(plots).filter((p) => p.ownerId === player.uid).length;
   if (ownedCount > 0 && !isPlotAdjacentToOwned(plot.gx, plot.gz, player.uid, plots)) {
-    return { ok: false, error: 'Купувати можна лише сусідній квадрат біля вашої ділянки.' };
+    return {
+      ok: false,
+      error:
+        ownedCount < STARTER_FREE_PLOTS
+          ? 'Стартові 4 ділянки мають бути по сусідству! Оберіть квадрат поруч із вашим.'
+          : 'Купувати можна лише сусідній квадрат біля вашої ділянки.',
+    };
   }
-  const price = getLandSquarePrice(ownedCount);
+
+  const isFreeStarter = ownedCount < STARTER_FREE_PLOTS || player.freeClaimsRemaining > 0;
+  const price = isFreeStarter ? 0 : getLandSquarePrice(ownedCount);
   if (player.coins < price) {
     return { ok: false, error: `Недостатньо монет! Потрібно ${price} монет.` };
   }
+
   const updatedPlot: LandSquare = {
-    ...plot,
+    ...normalizePlot(plot),
     ownerId: player.uid,
     ownerName: player.nickname,
     ownerColor: player.color,
   };
+  const nextFree = Math.max(0, player.freeClaimsRemaining - (isFreeStarter ? 1 : 0));
   const updatedPlayer: PlayerProfile = {
     ...player,
     coins: player.coins - price,
     ownedCount: ownedCount + 1,
+    freeClaimsRemaining: nextFree,
   };
-  return { ok: true, data: { player: updatedPlayer, plot: updatedPlot, price } };
+  return {
+    ok: true,
+    data: { player: updatedPlayer, plot: updatedPlot, price, isFreeStarter },
+  };
 }
 
 export function buyShopItem(
@@ -127,7 +205,6 @@ export function buyShopItem(
     return { ok: false, error: 'Кількість має бути більшою за 0.' };
   }
 
-  // Tool purchase
   const toolDef = TOOL_CATALOG[itemId];
   if (toolDef) {
     if (toolDef.buyPrice === null) {
@@ -146,7 +223,6 @@ export function buyShopItem(
     return { ok: true, data: { coins: coins - toolDef.buyPrice, inventory: nextInventory } };
   }
 
-  // Seed purchase
   const cropDef = Object.values(CROP_CATALOG).find((c) => c.seedItemId === itemId);
   if (cropDef) {
     const totalCost = cropDef.seedPrice * quantity;
@@ -257,16 +333,16 @@ export function sortInventory(
   return copy;
 }
 
-export function computeCropGrowth(
-  plot: LandSquare,
+export function computeVoxelGrowth(
+  cell: VoxelCell,
   nowMs: number,
 ): { stage: 0 | 1 | 2 | 3; progress: number; ready: boolean } {
-  if (!plot.cropId || !plot.plantedAt) {
+  if (!cell.cropId || !cell.plantedAt) {
     return { stage: 0, progress: 0, ready: false };
   }
-  const def = CROP_CATALOG[plot.cropId];
-  const boost = Math.max(1, plot.growthBoost || 1);
-  const elapsedSec = Math.max(0, (nowMs - plot.plantedAt) / 1000) * boost;
+  const def = CROP_CATALOG[cell.cropId];
+  const boost = Math.max(1, cell.growthBoost || 1);
+  const elapsedSec = Math.max(0, (nowMs - cell.plantedAt) / 1000) * boost;
   const progress = Math.min(1, elapsedSec / def.growthSeconds);
   if (progress >= 1) return { stage: 3, progress: 1, ready: true };
   if (progress >= 0.62) return { stage: 2, progress, ready: false };
@@ -274,142 +350,263 @@ export function computeCropGrowth(
   return { stage: 0, progress, ready: false };
 }
 
-export function tillPlot(
+export function summarizePlotVoxels(
+  plot: LandSquare,
+  nowMs: number,
+): {
+  grassCount: number;
+  tilledCount: number;
+  wateredCount: number;
+  plantedCount: number;
+  readyCount: number;
+  maxProgress: number;
+  sampleCropId: CropId | null;
+} {
+  const norm = normalizePlot(plot);
+  let grassCount = 0;
+  let tilledCount = 0;
+  let wateredCount = 0;
+  let plantedCount = 0;
+  let readyCount = 0;
+  let maxProgress = 0;
+  let sampleCropId: CropId | null = null;
+
+  for (const v of norm.voxels) {
+    if (v.soil === 'grass') grassCount++;
+    else if (v.soil === 'tilled') tilledCount++;
+    else wateredCount++;
+    if (v.cropId) {
+      plantedCount++;
+      sampleCropId = sampleCropId || v.cropId;
+      const g = computeVoxelGrowth(v, nowMs);
+      if (g.ready) readyCount++;
+      if (g.progress > maxProgress) maxProgress = g.progress;
+    }
+  }
+  return { grassCount, tilledCount, wateredCount, plantedCount, readyCount, maxProgress, sampleCropId };
+}
+
+function getVoxelOrderFromTarget(centerVIdx: number): number[] {
+  const cx = centerVIdx % VOXELS_PER_SIDE;
+  const cz = Math.floor(centerVIdx / VOXELS_PER_SIDE);
+  const indices = Array.from({ length: VOXELS_PER_PLOT }, (_, i) => i);
+  indices.sort((a, b) => {
+    const ax = a % VOXELS_PER_SIDE;
+    const az = Math.floor(a / VOXELS_PER_SIDE);
+    const bx = b % VOXELS_PER_SIDE;
+    const bz = Math.floor(b / VOXELS_PER_SIDE);
+    const da = Math.abs(ax - cx) + Math.abs(az - cz);
+    const db = Math.abs(bx - cx) + Math.abs(bz - cz);
+    return da - db || a - b;
+  });
+  return indices;
+}
+
+export function tillVoxelsOnPlot(
   plot: LandSquare,
   uid: string,
   hoeItem: InventoryItem | undefined,
-): ActionResult<LandSquare> {
+  centerVIdx = 4,
+): ActionResult<{ plot: LandSquare; tilledCount: number }> {
   if (plot.ownerId !== uid) {
     return { ok: false, error: 'Можна обробляти лише власну землю!' };
   }
   if (!hoeItem || hoeItem.kind !== 'tool' || hoeItem.toolFamily !== 'hoe') {
-    return { ok: false, error: 'Оберіть мотику в руках, щоб скопати землю.' };
+    return { ok: false, error: 'Оберіть мотику в руках, щоб скопати вокселі землі.' };
   }
-  if (plot.soil !== 'grass') {
-    return { ok: false, error: 'Цей квадрат землі вже скопаний.' };
+  const norm = normalizePlot(plot);
+  const area = Math.max(1, hoeItem.stats.areaVoxels ?? 1);
+  const order = getVoxelOrderFromTarget(centerVIdx);
+  const nextVoxels = norm.voxels.map((v) => ({ ...v }));
+
+  let tilledCount = 0;
+  for (const idx of order) {
+    if (nextVoxels[idx].soil === 'grass') {
+      nextVoxels[idx].soil = 'tilled';
+      tilledCount++;
+      if (tilledCount >= area) break;
+    }
+  }
+  if (tilledCount === 0) {
+    return { ok: false, error: 'Усі 9 вокселів цієї ділянки вже скопані.' };
   }
   return {
     ok: true,
     data: {
-      ...plot,
-      soil: 'tilled',
+      plot: { ...norm, voxels: nextVoxels },
+      tilledCount,
     },
   };
 }
 
-export function waterPlot(
+export function waterVoxelsOnPlot(
   plot: LandSquare,
   uid: string,
   canItem: InventoryItem | undefined,
+  centerVIdx: number,
   nowMs: number,
-): ActionResult<LandSquare> {
+): ActionResult<{ plot: LandSquare; wateredCount: number }> {
   if (plot.ownerId !== uid) {
     return { ok: false, error: 'Це ділянка іншого гравця.' };
   }
   if (!canItem || canItem.kind !== 'tool' || canItem.toolFamily !== 'watering_can') {
     return { ok: false, error: 'Оберіть лійку, щоб полити грядку.' };
   }
-  if (plot.soil === 'grass') {
-    return { ok: false, error: 'Спочатку скопайте землю мотикою.' };
-  }
+  const norm = normalizePlot(plot);
+  const area = Math.max(1, canItem.stats.areaVoxels ?? 1);
   const speed = canItem.stats.speedMultiplier ?? 1.35;
+  const order = getVoxelOrderFromTarget(centerVIdx);
+  const nextVoxels = norm.voxels.map((v) => ({ ...v }));
+
+  let wateredCount = 0;
+  for (const idx of order) {
+    if (nextVoxels[idx].soil === 'tilled') {
+      nextVoxels[idx].soil = 'watered';
+      nextVoxels[idx].wateredAt = nowMs;
+      nextVoxels[idx].growthBoost = Math.max(nextVoxels[idx].growthBoost || 1, speed);
+      wateredCount++;
+      if (wateredCount >= area) break;
+    }
+  }
+  if (wateredCount === 0) {
+    return { ok: false, error: 'Спочатку скопайте вокселі мотикою (або вже полито).' };
+  }
   return {
     ok: true,
     data: {
-      ...plot,
-      soil: 'watered',
-      wateredAt: nowMs,
-      growthBoost: Math.max(plot.growthBoost || 1, speed),
+      plot: { ...norm, voxels: nextVoxels },
+      wateredCount,
     },
   };
 }
 
-export function plantSeedOnPlot(
+export function plantVoxelOnPlot(
   plot: LandSquare,
   uid: string,
   inventory: InventoryItem[],
   cropId: CropId,
+  centerVIdx: number,
   nowMs: number,
-): ActionResult<{ plot: LandSquare; inventory: InventoryItem[] }> {
+): ActionResult<{ plot: LandSquare; inventory: InventoryItem[]; plantedVIdx: number }> {
   if (plot.ownerId !== uid) {
     return { ok: false, error: 'Можна сіяти лише на власній ділянці!' };
-  }
-  if (plot.soil === 'grass') {
-    return { ok: false, error: 'Земля не оброблена! Скопайте її мотикою.' };
-  }
-  if (plot.cropId) {
-    return { ok: false, error: 'Тут вже росте культура.' };
   }
   const def = CROP_CATALOG[cropId];
   const seedIdx = inventory.findIndex((i) => i.itemId === def.seedItemId && i.quantity > 0);
   if (seedIdx < 0) {
     return { ok: false, error: `У вас закінчилося "${def.seedName}".` };
   }
+
+  const norm = normalizePlot(plot);
+  const order = getVoxelOrderFromTarget(centerVIdx);
+  const targetIdx = order.find((idx) => norm.voxels[idx].soil !== 'grass' && !norm.voxels[idx].cropId);
+  if (targetIdx === undefined) {
+    const hasGrass = norm.voxels.some((v) => v.soil === 'grass');
+    return {
+      ok: false,
+      error: hasGrass
+        ? 'Спочатку скопайте вокселі мотикою!'
+        : 'Усі 9 вокселів цієї ділянки вже засіяні.',
+    };
+  }
+
+  const nextVoxels = norm.voxels.map((v, i) =>
+    i === targetIdx ? { ...v, cropId, plantedAt: nowMs } : { ...v },
+  );
   const nextInventory = inventory
     .map((item, idx) => (idx === seedIdx ? { ...item, quantity: item.quantity - 1 } : item))
     .filter((item) => item.quantity > 0);
+
   return {
     ok: true,
     data: {
-      plot: {
-        ...plot,
-        cropId,
-        plantedAt: nowMs,
-      },
+      plot: { ...norm, voxels: nextVoxels },
       inventory: nextInventory,
+      plantedVIdx: targetIdx,
     },
   };
 }
 
-export function harvestPlot(
+export function harvestVoxelsOnPlot(
   plot: LandSquare,
   uid: string,
   inventory: InventoryItem[],
   hoeItem: InventoryItem | undefined,
+  centerVIdx: number,
   nowMs: number,
   rngRoll = Math.random(),
-): ActionResult<{ plot: LandSquare; inventory: InventoryItem[]; harvestedQty: number; cropName: string }> {
+): ActionResult<{
+  plot: LandSquare;
+  inventory: InventoryItem[];
+  harvestedQty: number;
+  harvestedVoxels: number;
+  summaryText: string;
+}> {
   if (plot.ownerId !== uid) {
     return { ok: false, error: 'Не можна збирати чужий врожай!' };
   }
-  if (!plot.cropId) {
-    return { ok: false, error: 'На цій ділянці нічого не посаджено.' };
-  }
-  const growth = computeCropGrowth(plot, nowMs);
-  if (!growth.ready) {
-    return { ok: false, error: `Культура ще росте (${Math.round(growth.progress * 100)}%).` };
-  }
-
-  const def = CROP_CATALOG[plot.cropId];
+  const norm = normalizePlot(plot);
+  const area = Math.max(1, hoeItem?.stats.areaVoxels ?? 1);
+  const order = getVoxelOrderFromTarget(centerVIdx);
+  const nextVoxels = norm.voxels.map((v) => ({ ...v }));
   const bonusPct = hoeItem?.stats.yieldBonusPct ?? 0;
-  let qty = 1 + Math.floor(bonusPct / 100);
-  const remPct = bonusPct % 100;
-  if (remPct > 0 && rngRoll * 100 < remPct) {
-    qty += 1;
+
+  let harvestedVoxels = 0;
+  let totalQty = 0;
+  const countsByCrop = new Map<CropId, number>();
+
+  for (const idx of order) {
+    const v = nextVoxels[idx];
+    if (!v.cropId) continue;
+    const g = computeVoxelGrowth(v, nowMs);
+    if (!g.ready) continue;
+
+    let qty = 1 + Math.floor(bonusPct / 100);
+    const remPct = bonusPct % 100;
+    if (remPct > 0 && rngRoll * 100 < remPct) qty += 1;
+
+    countsByCrop.set(v.cropId, (countsByCrop.get(v.cropId) || 0) + qty);
+    totalQty += qty;
+    harvestedVoxels++;
+    nextVoxels[idx] = {
+      soil: 'tilled',
+      cropId: null,
+      plantedAt: null,
+      wateredAt: null,
+      growthBoost: 1,
+    };
+    if (harvestedVoxels >= area) break;
   }
 
-  const existingIdx = inventory.findIndex((i) => i.itemId === def.cropItemId);
+  if (harvestedVoxels === 0) {
+    const anyPlanted = norm.voxels.some((v) => v.cropId !== null);
+    if (!anyPlanted) {
+      return { ok: false, error: 'На цій ділянці немає посаджених культур.' };
+    }
+    return { ok: false, error: 'Культури на цій ділянці ще дозрівають!' };
+  }
+
   const nextInventory = inventory.map((item) => ({ ...item }));
-  if (existingIdx >= 0) {
-    nextInventory[existingIdx].quantity += qty;
-  } else {
-    nextInventory.push(createCropInventoryItem(plot.cropId, qty));
+  const labelParts: string[] = [];
+  for (const [cropId, qty] of countsByCrop.entries()) {
+    const def = CROP_CATALOG[cropId];
+    labelParts.push(`${def.cropName} ×${qty}`);
+    const existingIdx = nextInventory.findIndex((i) => i.itemId === def.cropItemId);
+    if (existingIdx >= 0) {
+      nextInventory[existingIdx].quantity += qty;
+    } else {
+      nextInventory.push(createCropInventoryItem(cropId, qty));
+    }
   }
 
   return {
     ok: true,
     data: {
-      plot: {
-        ...plot,
-        soil: 'tilled',
-        cropId: null,
-        plantedAt: null,
-        wateredAt: null,
-        growthBoost: 1,
-      },
+      plot: { ...norm, voxels: nextVoxels },
       inventory: nextInventory,
-      harvestedQty: qty,
-      cropName: def.cropName,
+      harvestedQty: totalQty,
+      harvestedVoxels,
+      summaryText: labelParts.join(', '),
     },
   };
 }
@@ -420,7 +617,7 @@ export function resolvePlayerMovement(
   dx: number,
   dz: number,
   dt: number,
-  speed = 6.2,
+  speed = 6.8,
 ): { x: number; z: number; yaw: number; moved: boolean } {
   const len = Math.hypot(dx, dz);
   if (len < 0.001) {
@@ -435,14 +632,13 @@ export function resolvePlayerMovement(
   let nextX = Math.max(minBound, Math.min(maxBound, x + nx * step));
   let nextZ = Math.max(minBound, Math.min(maxBound, z + nz * step));
 
-  // Town Hall solid footprint collision box in the NW plaza corner
-  const hallMinX = -7.6 * TILE_SIZE;
-  const hallMaxX = -5.4 * TILE_SIZE;
-  const hallMinZ = -7.6 * TILE_SIZE;
-  const hallMaxZ = -5.8 * TILE_SIZE;
+  // Town Hall solid footprint in NW plaza (-12..-9)
+  const hallMinX = -11.5 * TILE_SIZE;
+  const hallMaxX = -9.4 * TILE_SIZE;
+  const hallMinZ = -11.5 * TILE_SIZE;
+  const hallMaxZ = -9.7 * TILE_SIZE;
 
   if (nextX > hallMinX && nextX < hallMaxX && nextZ > hallMinZ && nextZ < hallMaxZ) {
-    // Push out along shallower penetration axis so movement slides cleanly
     const penLeft = Math.abs(nextX - hallMinX);
     const penRight = Math.abs(hallMaxX - nextX);
     const penTop = Math.abs(nextZ - hallMinZ);

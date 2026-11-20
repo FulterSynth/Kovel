@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Navigation, Sprout, Award } from 'lucide-react';
+import { normalizePlot } from '../game/rules';
 import type { LandSquare, PlayerProfile } from '../game/types';
 import { CoinSvg, LandPlotSvg } from './VoxelIcons';
 
@@ -28,7 +29,9 @@ export function NeighborsModal({
     Object.values(plots).filter((p) => p.ownerId === uid).length;
 
   const countActiveCropsFor = (uid: string) =>
-    Object.values(plots).filter((p) => p.ownerId === uid && p.cropId !== null).length;
+    Object.values(plots)
+      .filter((p) => p.ownerId === uid)
+      .reduce((acc, p) => acc + normalizePlot(p).voxels.filter((v) => v.cropId !== null).length, 0);
 
   return (
     <div

@@ -11,10 +11,15 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
+  Sun,
+  Moon,
+  Sunrise,
+  Sunset,
+  Sparkles,
 } from 'lucide-react';
-import { CROP_CATALOG, getLandSquarePrice } from '../game/catalog';
-import { computeCropGrowth, isPlotAdjacentToOwned } from '../game/rules';
-import type { ChatMessage, InventoryItem, LandSquare, PlayerProfile } from '../game/types';
+import { CROP_CATALOG, STARTER_FREE_PLOTS, getLandSquarePrice } from '../game/catalog';
+import { isPlotAdjacentToOwned, summarizePlotVoxels } from '../game/rules';
+import type { ChatMessage, DayTimeMode, InventoryItem, LandSquare, PlayerProfile } from '../game/types';
 import { CoinSvg, HoeSvg, LandPlotSvg, SeedSvg, WaterCanSvg } from './VoxelIcons';
 
 interface GameHUDProps {
@@ -23,11 +28,16 @@ interface GameHUDProps {
   plots: Record<string, LandSquare>;
   activeSlotItemId: string | null;
   focusedSquareKey: string | null;
+  focusedVoxelIdx: number;
+  dayTimeMode: DayTimeMode;
+  dayPhaseLabel: string;
   chatMessages: ChatMessage[];
   muted: boolean;
   toastMessage: string | null;
   onSelectActiveSlot: (itemId: string) => void;
   onActionAtFocused: () => void;
+  onAutoClaimStarter: () => void;
+  onCycleDayTime: () => void;
   onOpenShop: (tab?: 'tools' | 'seeds' | 'land') => void;
   onOpenInventory: () => void;
   onOpenNeighbors: () => void;
@@ -37,17 +47,38 @@ interface GameHUDProps {
   onSendChat: (text: string) => void;
 }
 
+const MODE_LABELS: Record<DayTimeMode, string> = {
+  auto: 'Авто',
+  dawn: 'Світанок',
+  day: 'День',
+  sunset: 'Захід',
+  night: 'Ніч',
+};
+
+function DayTimeIcon({ mode, phaseLabel }: { mode: DayTimeMode; phaseLabel: string }) {
+  const effective = mode === 'auto' ? phaseLabel : MODE_LABELS[mode];
+  if (effective.includes('Ніч')) return <Moon className="w-4 h-4 text-indigo-300" />;
+  if (effective.includes('Захід')) return <Sunset className="w-4 h-4 text-orange-400" />;
+  if (effective.includes('Світанок')) return <Sunrise className="w-4 h-4 text-rose-300" />;
+  return <Sun className="w-4 h-4 text-amber-300" />;
+}
+
 export function GameHUD({
   player,
   inventory,
   plots,
   activeSlotItemId,
   focusedSquareKey,
+  focusedVoxelIdx,
+  dayTimeMode,
+  dayPhaseLabel,
   chatMessages,
   muted,
   toastMessage,
   onSelectActiveSlot,
   onActionAtFocused,
+  onAutoClaimStarter,
+  onCycleDayTime,
   onOpenShop,
   onOpenInventory,
   onOpenNeighbors,
@@ -62,7 +93,6 @@ export function GameHUD({
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Refresh crop progress readout at ~2Hz while HUD is mounted
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 500);
     return () => clearInterval(id);
@@ -74,7 +104,6 @@ export function GameHUD({
     }
   }, [chatMessages.length, chatOpen]);
 
-  // Press Enter to focus chat input when not already typing
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -92,51 +121,58 @@ export function GameHUD({
   const focusedPlot = focusedSquareKey ? plots[focusedSquareKey] : null;
   const activeItem = inventory.find((i) => i.itemId === activeSlotItemId) ?? null;
 
-  // Compute contextual hint for focused square
   let squareStatusText = '';
   let actionButtonLabel: string | null = null;
   if (focusedPlot) {
+    const sum = summarizePlotVoxels(focusedPlot, nowTick);
+    const vNum = focusedVoxelIdx + 1;
     if (focusedPlot.ownerId === player.uid) {
-      if (focusedPlot.cropId) {
-        const growth = computeCropGrowth(focusedPlot, nowTick);
-        const def = CROP_CATALOG[focusedPlot.cropId];
-        if (growth.ready) {
-          squareStatusText = `Ваша ділянка · ${def.cropName} готова до збору!`;
-          actionButtonLabel = '[E] Зібрати врожай';
-        } else {
-          squareStatusText = `Ваша ділянка · ${def.cropName} (${Math.round(growth.progress * 100)}%)`;
-          if (activeItem?.toolFamily === 'watering_can' && focusedPlot.soil !== 'watered') {
-            actionButtonLabel = '[E] Полити грядку';
-          }
+      if (sum.readyCount > 0) {
+        const cropName = sum.sampleCropId ? CROP_CATALOG[sum.sampleCropId].cropName : 'Урожай';
+        squareStatusText = `Ваша ділянка (вокс. ${vNum}/9) · ${cropName}: готово ${sum.readyCount} вокс.!`;
+        actionButtonLabel = '[E] Зібрати врожай';
+      } else if (sum.plantedCount > 0 && sum.grassCount === 0 && sum.plantedCount === 9) {
+        const cropName = sum.sampleCropId ? CROP_CATALOG[sum.sampleCropId].cropName : 'Культури';
+        squareStatusText = `Ваша ділянка · ${cropName} росте (${Math.round(sum.maxProgress * 100)}%)`;
+        if (activeItem?.toolFamily === 'watering_can' && sum.tilledCount > 0) {
+          actionButtonLabel = '[E] Полити грядку';
         }
-      } else if (focusedPlot.soil === 'grass') {
-        squareStatusText = 'Ваша вільна земля · Потрібно скопати мотикою';
-        actionButtonLabel = '[E] Скопати землю';
-      } else {
-        squareStatusText =
-          focusedPlot.soil === 'watered'
-            ? 'Ваша полита грядка · Готова до посіву'
-            : 'Ваша скопана грядка · Готова до посіву';
-        actionButtonLabel =
-          activeItem?.kind === 'seed' ? `[E] Посіяти ${activeItem.name}` : '[E] Посіяти / Полити';
+      } else if (sum.tilledCount + sum.wateredCount > sum.plantedCount) {
+        squareStatusText = `Ваша ділянка (вокс. ${vNum}/9) · Скопано ${sum.tilledCount + sum.wateredCount}/9 · Посіяно ${sum.plantedCount}/9`;
+        if (activeItem?.toolFamily === 'watering_can' && sum.tilledCount > 0) {
+          actionButtonLabel = '[E] Полити вокселі';
+        } else if (activeItem?.kind === 'seed') {
+          actionButtonLabel = `[E] Посіяти ${activeItem.name}`;
+        } else {
+          actionButtonLabel = '[E] Посіяти / Обрати насіння';
+        }
+      } else if (sum.grassCount > 0) {
+        squareStatusText = `Ваша ділянка (вокс. ${vNum}/9) · Цілина: ${sum.grassCount}/9 · Скопано: ${9 - sum.grassCount}/9`;
+        actionButtonLabel = '[E] Скопати мотикою';
       }
     } else if (focusedPlot.ownerId) {
       const ownerLabel = focusedPlot.ownerName || 'Сусід';
-      if (focusedPlot.cropId) {
-        const growth = computeCropGrowth(focusedPlot, nowTick);
-        const def = CROP_CATALOG[focusedPlot.cropId];
-        squareStatusText = `Ферма ${ownerLabel} · ${def.cropName} (${Math.round(growth.progress * 100)}%)`;
+      if (sum.plantedCount > 0) {
+        const cropName = sum.sampleCropId ? CROP_CATALOG[sum.sampleCropId].cropName : 'Культура';
+        squareStatusText = `Ферма ${ownerLabel} · ${cropName} (${sum.plantedCount}/9 вокс., ${Math.round(sum.maxProgress * 100)}%)`;
       } else {
-        squareStatusText = `Ферма ${ownerLabel} · Ділянка (${focusedPlot.gx}, ${focusedPlot.gz})`;
+        squareStatusText = `Ферма ${ownerLabel} · Ділянка (${focusedPlot.gx}, ${focusedPlot.gz}) · 9 вокселів`;
       }
     } else {
       const adj = isPlotAdjacentToOwned(focusedPlot.gx, focusedPlot.gz, player.uid, plots);
-      const price = getLandSquarePrice(player.ownedCount);
+      const isFree = player.freeClaimsRemaining > 0;
+      const price = isFree ? 0 : getLandSquarePrice(player.ownedCount);
       if (adj) {
-        squareStatusText = `Міська земля (${focusedPlot.gx}, ${focusedPlot.gz}) · Доступно за ${price} монет`;
-        actionButtonLabel = `[E] Купити квадрат (${price} 🪙)`;
+        squareStatusText = isFree
+          ? `Вільна земля (${focusedPlot.gx}, ${focusedPlot.gz}) · 9 вокселів · Безкоштовно!`
+          : `Міська земля (${focusedPlot.gx}, ${focusedPlot.gz}) · 9 вокселів за ${price} монет`;
+        actionButtonLabel = isFree
+          ? '[E] Зайняти ділянку безкоштовно'
+          : `[E] Купити ділянку (${price} 🪙)`;
       } else {
-        squareStatusText = `Міська земля (${focusedPlot.gx}, ${focusedPlot.gz}) · Купіть спершу сусідній квадрат`;
+        squareStatusText = isFree
+          ? `Міська земля (${focusedPlot.gx}, ${focusedPlot.gz}) · Оберіть квадрат ПО СУСІДСТВУ з вашим!`
+          : `Міська земля (${focusedPlot.gx}, ${focusedPlot.gz}) · Спершу розширюйтесь по сусідству`;
       }
     }
   }
@@ -149,6 +185,8 @@ export function GameHUD({
     setChatInput('');
     chatInputRef.current?.blur();
   };
+
+  const dayButtonText = dayTimeMode === 'auto' ? `${dayPhaseLabel}` : MODE_LABELS[dayTimeMode];
 
   return (
     <div className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 sm:p-4">
@@ -180,14 +218,39 @@ export function GameHUD({
               </span>
               <span className="flex items-center gap-1 text-xs font-bold text-emerald-300 leading-none">
                 <LandPlotSvg className="w-3.5 h-3.5" />
-                <span data-testid="hud-plots">{player.ownedCount}</span> кв.
+                <span data-testid="hud-plots">{player.ownedCount}</span> діл. ({player.ownedCount * 9} вокс.)
               </span>
             </div>
           </div>
         </div>
 
-        {/* Top-Center: Focused Plot / Toast Banner */}
-        <div className="hidden md:flex flex-col items-center gap-1.5 max-w-md">
+        {/* Top-Center: Starter 4-Plot Claim Banner + Plot Status + Toast */}
+        <div className="hidden md:flex flex-col items-center gap-1.5 max-w-lg">
+          {player.freeClaimsRemaining > 0 && (
+            <div
+              data-testid="starter-claim-banner"
+              className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-xl border-2 shadow-lg"
+              style={{
+                backgroundColor: 'rgba(20, 48, 30, 0.95)',
+                borderColor: '#4ade80',
+                color: '#ecfccb',
+              }}
+            >
+              <span className="text-xs font-extrabold">
+                Оберіть {STARTER_FREE_PLOTS} сусідні ділянки (по 9 вокселів): залишилось{' '}
+                <strong className="text-amber-300">{player.freeClaimsRemaining}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={onAutoClaimStarter}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-stone-950 text-[11px] font-black cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-3 h-3" />
+                Автовибір поруч
+              </button>
+            </div>
+          )}
+
           {squareStatusText && (
             <div
               className="px-4 py-1.5 rounded-xl border text-xs font-bold shadow-md text-center"
@@ -217,6 +280,23 @@ export function GameHUD({
 
         {/* Top-Right: Utility & Feature Buttons */}
         <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onCycleDayTime();
+            }}
+            data-testid="day-time-toggle"
+            aria-label={`Час доби: ${dayButtonText} [T]`}
+            title="Перемкнути час доби (шейдер освітлення) [T]"
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl border-2 text-xs font-extrabold cursor-pointer shadow-md bg-stone-900 hover:bg-stone-800 border-amber-600/60 text-amber-100"
+          >
+            <DayTimeIcon mode={dayTimeMode} phaseLabel={dayPhaseLabel} />
+            <span className="hidden lg:inline">{dayButtonText}</span>
+            <span className="text-[10px] opacity-75">[T]</span>
+          </button>
+
           <button
             type="button"
             tabIndex={-1}
@@ -269,7 +349,7 @@ export function GameHUD({
               e.currentTarget.blur();
               onRotateCamera();
             }}
-            aria-label="Повернути камеру [E/Q]"
+            aria-label="Повернути камеру [Q]"
             title="Повернути камеру [Q]"
             className="p-2 rounded-xl border-2 bg-stone-900 hover:bg-stone-800 border-stone-700 text-amber-200 cursor-pointer shadow-md"
           >
@@ -304,12 +384,26 @@ export function GameHUD({
         </div>
       </div>
 
-      {/* Mobile toast fallback */}
-      {toastMessage && (
-        <div className="md:hidden self-center px-3 py-1 rounded-lg bg-emerald-900 border border-emerald-400 text-xs font-bold text-emerald-100">
-          {toastMessage}
-        </div>
-      )}
+      {/* Mobile starter/toast fallback */}
+      <div className="md:hidden flex flex-col items-center gap-1.5">
+        {player.freeClaimsRemaining > 0 && (
+          <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950 border border-emerald-400 text-xs font-bold text-emerald-100">
+            <span>Оберіть {player.freeClaimsRemaining} сусідні діл.</span>
+            <button
+              type="button"
+              onClick={onAutoClaimStarter}
+              className="px-2 py-0.5 rounded bg-amber-400 text-stone-950 text-[11px] font-black cursor-pointer"
+            >
+              Авто
+            </button>
+          </div>
+        )}
+        {toastMessage && (
+          <div className="px-3 py-1 rounded-lg bg-emerald-900 border border-emerald-400 text-xs font-bold text-emerald-100">
+            {toastMessage}
+          </div>
+        )}
+      </div>
 
       {/* Bottom Perimeter Row: Chat on Left, Hotbar in Center */}
       <div className="flex items-end justify-between gap-3">

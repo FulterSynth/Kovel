@@ -6,21 +6,37 @@ import { PauseModal } from './components/PauseModal';
 import { ShopModal } from './components/ShopModal';
 import { TitleAuthOverlay } from './components/TitleAuthOverlay';
 import { soundEngine } from './game/audio';
-import { createSeededNpcPlayers, createSeededWorldPlots, getLandSquarePrice } from './game/catalog';
+import {
+  STARTER_FREE_PLOTS,
+  createSeededNpcPlayers,
+  createSeededWorldPlots,
+  getLandSquarePrice,
+} from './game/catalog';
 import {
   buyShopItem,
-  computeCropGrowth,
+  findFreeStarterCluster,
+  getPurchasableAdjacentPlots,
   gridToWorldCenter,
-  harvestPlot,
+  harvestVoxelsOnPlot,
   isPlotAdjacentToOwned,
-  plantSeedOnPlot,
+  normalizePlot,
+  plantVoxelOnPlot,
   purchaseLandSquare,
   sellCropFromInventory,
-  tillPlot,
+  summarizePlotVoxels,
+  tillVoxelsOnPlot,
   upgradeToolInInventory,
-  waterPlot,
+  voxelToWorldCenter,
+  waterVoxelsOnPlot,
 } from './game/rules';
-import type { ChatMessage, GamePhase, InventoryItem, LandSquare, PlayerProfile } from './game/types';
+import type {
+  ChatMessage,
+  DayTimeMode,
+  GamePhase,
+  InventoryItem,
+  LandSquare,
+  PlayerProfile,
+} from './game/types';
 import { WorldSceneController } from './game/WorldScene';
 import {
   WorldSyncChannel,
@@ -35,6 +51,15 @@ import {
 } from './services/firebaseClient';
 
 type ActiveModal = 'none' | 'inventory' | 'shop' | 'neighbors';
+
+const DAY_MODE_ORDER: DayTimeMode[] = ['auto', 'dawn', 'day', 'sunset', 'night'];
+const DAY_MODE_TOAST: Record<DayTimeMode, string> = {
+  auto: 'Автоматична зміна дня і ночі',
+  dawn: 'Освітлення: Світанок',
+  day: 'Освітлення: Ясний день',
+  sunset: 'Освітлення: Захід сонця',
+  night: 'Освітлення: Зоряна ніч',
+};
 
 export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
@@ -62,19 +87,22 @@ export default function App() {
       id: 'welcome_1',
       uid: 'npc_oleg',
       nickname: 'Олег_Агро',
-      text: 'Вітаю у Ковелі! Бери ржаву мотику за 10 монет і засівай свій перший квадрат!',
+      text: 'Вітаю у Ковелі! Обери 4 сусідні ділянки (по 9 вокселів) і бери ржаву мотику за 10 монет!',
       timestamp: Date.now() - 30000,
       color: '#3b82f6',
     },
   ]);
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [hoveredVIdx, setHoveredVIdx] = useState<number>(4);
   const [standingKey, setStandingKey] = useState<string | null>(null);
+  const [standingVIdx, setStandingVIdx] = useState<number>(4);
+  const [dayTimeMode, setDayTimeMode] = useState<DayTimeMode>('auto');
+  const [dayPhaseLabel, setDayPhaseLabel] = useState<string>('День');
   const [muted, setMuted] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<number>(0);
 
-  // Refs for latest state inside imperative Three.js callbacks
   const stateRef = useRef({
     phase,
     localPlayer,
@@ -82,7 +110,9 @@ export default function App() {
     plots,
     players,
     hoveredKey,
+    hoveredVIdx,
     standingKey,
+    standingVIdx,
   });
   stateRef.current = {
     phase,
@@ -91,16 +121,17 @@ export default function App() {
     plots,
     players,
     hoveredKey,
+    hoveredVIdx,
     standingKey,
+    standingVIdx,
   };
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 3200);
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 3400);
   }, []);
 
-  // Mirror phase to document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = phase;
     worldRef.current?.setPhase(phase);
@@ -109,7 +140,6 @@ export default function App() {
     }
   }, [phase]);
 
-  // Sync players & plots to Three.js scene whenever state updates
   useEffect(() => {
     if (!worldRef.current) return;
     const mergedPlayers = { ...players };
@@ -123,7 +153,8 @@ export default function App() {
     worldRef.current?.syncPlots(plots);
   }, [plots]);
 
-  const handleSquareActionRef = useRef<(key: string) => void>(() => {});
+  const handleSquareActionRef = useRef<(key: string, vIdx: number) => void>(() => {});
+  const handleCycleDayTimeRef = useRef<() => void>(() => {});
 
   const enterWorldSession = useCallback((session: SessionInitData) => {
     syncRef.current?.stop();
@@ -152,7 +183,13 @@ export default function App() {
         });
       },
       onPlots: (remotePlots) => {
-        setPlots((prev) => ({ ...prev, ...remotePlots }));
+        setPlots((prev) => {
+          const next = { ...prev };
+          for (const [k, rp] of Object.entries(remotePlots)) {
+            if (rp) next[k] = normalizePlot(rp);
+          }
+          return next;
+        });
       },
       onChat: (incoming) => {
         setChatMessages((prev) => {
@@ -174,13 +211,19 @@ export default function App() {
     document.body.dataset.state = 'playing';
   }, []);
 
-  // Mount Three.js WorldSceneController once
   useEffect(() => {
     if (!canvasMountRef.current) return;
     const controller = new WorldSceneController(canvasMountRef.current, badgeLayerRef.current, {
-      onHoverSquare: (key) => setHoveredKey(key),
-      onSelectSquare: (key) => handleSquareActionRef.current(key),
-      onStandingSquareChange: (key) => setStandingKey(key),
+      onHoverSquare: (key, vIdx) => {
+        setHoveredKey(key);
+        setHoveredVIdx(vIdx);
+      },
+      onSelectSquare: (key, vIdx) => handleSquareActionRef.current(key, vIdx),
+      onStandingSquareChange: (key, vIdx) => {
+        setStandingKey(key);
+        setStandingVIdx(vIdx);
+      },
+      onDayPhaseLabelChange: (label) => setDayPhaseLabel(label),
       onLocalPlayerMove: (x, z, yaw, isMoving) => {
         const cur = stateRef.current.localPlayer;
         if (!cur) return;
@@ -195,7 +238,6 @@ export default function App() {
     controller.syncPlots(stateRef.current.plots);
     controller.syncPlayers(stateRef.current.players);
 
-    // Check ?autostart=1 for automated testability / instant entry
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
       const demo = createDemoSession('Коваль_Фермер');
@@ -209,7 +251,6 @@ export default function App() {
     };
   }, [enterWorldSession]);
 
-  // Listen to Firebase Auth state (only auto-enters if user was already logged in and not ?autostart=1)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') return;
@@ -237,15 +278,80 @@ export default function App() {
     [],
   );
 
-  // Core plot interaction handler (till, plant, water, harvest, or buy city land)
+  const handleCycleDayTime = useCallback(() => {
+    setDayTimeMode((prev) => {
+      const idx = DAY_MODE_ORDER.indexOf(prev);
+      const next = DAY_MODE_ORDER[(idx + 1) % DAY_MODE_ORDER.length];
+      worldRef.current?.setDayTimeMode(next);
+      if (worldRef.current) {
+        setDayPhaseLabel(worldRef.current.getDayPhaseLabel());
+      }
+      showToast(DAY_MODE_TOAST[next]);
+      return next;
+    });
+  }, [showToast]);
+
+  handleCycleDayTimeRef.current = handleCycleDayTime;
+
+  const handleAutoClaimStarter = useCallback(() => {
+    const { localPlayer: p, inventory: inv, plots: allPlots } = stateRef.current;
+    if (!p || p.freeClaimsRemaining <= 0) return;
+
+    let currentPlayer = p;
+    const currentPlots = { ...allPlots };
+    let firstClaimed: LandSquare | null = null;
+
+    if (currentPlayer.ownedCount === 0) {
+      const cluster = findFreeStarterCluster(currentPlots, STARTER_FREE_PLOTS);
+      for (const target of cluster) {
+        const res = purchaseLandSquare(currentPlayer, target.key, currentPlots);
+        if (res.ok && res.data) {
+          currentPlayer = res.data.player;
+          currentPlots[target.key] = res.data.plot;
+          if (!firstClaimed) firstClaimed = res.data.plot;
+          syncRef.current?.syncPlot(res.data.plot);
+        }
+      }
+    } else {
+      while (currentPlayer.freeClaimsRemaining > 0) {
+        const adj = getPurchasableAdjacentPlots(currentPlayer.uid, currentPlots);
+        if (adj.length === 0) break;
+        const target = adj[0];
+        const res = purchaseLandSquare(currentPlayer, target.key, currentPlots);
+        if (!res.ok || !res.data) break;
+        currentPlayer = res.data.player;
+        currentPlots[target.key] = res.data.plot;
+        if (!firstClaimed) firstClaimed = res.data.plot;
+        syncRef.current?.syncPlot(res.data.plot);
+      }
+    }
+
+    if (firstClaimed) {
+      const c = gridToWorldCenter(firstClaimed.gx, firstClaimed.gz);
+      currentPlayer = { ...currentPlayer, x: c.x, z: c.z };
+      worldRef.current?.teleportLocalPlayer(c.x, c.z);
+      worldRef.current?.spawnParticles(c.x, c.z, '#4ade80', 22);
+    }
+
+    setPlots(currentPlots);
+    persistProfileAndInventory(currentPlayer, inv);
+    soundEngine.playCoin();
+    showToast(
+      `Обрано ${currentPlayer.ownedCount} сусідні ділянки (${currentPlayer.ownedCount * 9} вокселів)! Купуйте мотику у Крамниці [B].`,
+    );
+  }, [persistProfileAndInventory, showToast]);
+
+  // Core 9-voxel plot & land claiming handler
   const handleSquareAction = useCallback(
-    (key: string) => {
+    (key: string, vIdx = 4) => {
       const { localPlayer: p, inventory: inv, plots: allPlots } = stateRef.current;
       if (!p) return;
-      const plot = allPlots[key];
-      if (!plot) return;
+      const rawPlot = allPlots[key];
+      if (!rawPlot) return;
+      const plot = normalizePlot(rawPlot);
 
       const center = gridToWorldCenter(plot.gx, plot.gz);
+      const voxelCenter = voxelToWorldCenter(plot.gx, plot.gz, vIdx);
       const now = Date.now();
       const activeItem = inv.find((i) => i.itemId === p.activeSlotItemId);
       const bestHoe = inv
@@ -255,50 +361,69 @@ export default function App() {
         .filter((i) => i.kind === 'tool' && i.toolFamily === 'watering_can')
         .sort((a, b) => b.tier - a.tier)[0];
 
-      // 1. Unowned city square -> try buying if adjacent
+      // 1. Unowned land -> free starter adjacent claim OR paid expansion
       if (!plot.ownerId) {
         if (!isPlotAdjacentToOwned(plot.gx, plot.gz, p.uid, allPlots)) {
           soundEngine.playError();
-          showToast('Можна купувати лише сусідній квадрат біля вашої ферми!');
+          showToast(
+            p.freeClaimsRemaining > 0
+              ? 'Стартові 4 ділянки мають бути по сусідству! Клікніть поруч із вашою.'
+              : 'Можна купувати лише сусідню ділянку біля вашої ферми!',
+          );
           return;
         }
         const buyRes = purchaseLandSquare(p, key, allPlots);
         if (!buyRes.ok || !buyRes.data) {
           soundEngine.playError();
-          showToast(buyRes.error || 'Не вистачає монет.');
+          showToast(buyRes.error || 'Не вдалося зайняти ділянку.');
           return;
         }
-        const nextPlots = { ...allPlots, [key]: buyRes.data.plot };
-        setPlots(nextPlots);
-        persistProfileAndInventory(buyRes.data.player, inv);
+        let nextPlayer = buyRes.data.player;
+        if (buyRes.data.isFreeStarter && p.ownedCount === 0) {
+          nextPlayer = { ...nextPlayer, x: center.x, z: center.z };
+          worldRef.current?.teleportLocalPlayer(center.x, center.z);
+        }
+        setPlots((prev) => ({ ...prev, [key]: buyRes.data!.plot }));
+        persistProfileAndInventory(nextPlayer, inv);
         syncRef.current?.syncPlot(buyRes.data.plot);
         soundEngine.playCoin();
-        worldRef.current?.spawnParticles(center.x, center.z, '#facc15', 16);
-        showToast(`Куплено новий квадрат землі за ${buyRes.data.price} монет!`);
+        worldRef.current?.spawnParticles(center.x, center.z, '#4ade80', 18);
+
+        if (buyRes.data.isFreeStarter) {
+          if (nextPlayer.freeClaimsRemaining > 0) {
+            showToast(
+              `Ділянку зайнято (9 вокселів)! Оберіть ще ${nextPlayer.freeClaimsRemaining} по сусідству.`,
+            );
+          } else {
+            showToast('Усі 4 стартові сусідні ділянки (36 вокселів) готові! Купіть мотику в Крамниці [B].');
+          }
+        } else {
+          showToast(`Куплено нову ділянку (9 вокселів) за ${buyRes.data.price} монет!`);
+        }
         return;
       }
 
       // 2. Neighbor's square -> inspect progress
       if (plot.ownerId !== p.uid) {
-        if (plot.cropId) {
-          const g = computeCropGrowth(plot, now);
-          showToast(`Ферма ${plot.ownerName}: росте культура (${Math.round(g.progress * 100)}%)`);
+        const sum = summarizePlotVoxels(plot, now);
+        if (sum.plantedCount > 0) {
+          showToast(
+            `Ферма ${plot.ownerName}: посіяно ${sum.plantedCount}/9 вокс. (${Math.round(sum.maxProgress * 100)}%)`,
+          );
         } else {
-          showToast(`Ділянка гравця ${plot.ownerName}.`);
+          showToast(`Ділянка гравця ${plot.ownerName} (9 вокселів).`);
         }
         return;
       }
 
-      // 3. Own square with crop -> harvest if ready, else water if watering can available
-      if (plot.cropId) {
-        const g = computeCropGrowth(plot, now);
-        if (g.ready) {
-          const harv = harvestPlot(plot, p.uid, inv, bestHoe, now);
-          if (!harv.ok || !harv.data) {
-            soundEngine.playError();
-            showToast(harv.error || 'Не вдалося зібрати врожай.');
-            return;
-          }
+      // 3. Own square -> act across the 9 voxels!
+      const sum = summarizePlotVoxels(plot, now);
+      const targetedCell = plot.voxels[vIdx] ?? plot.voxels[4];
+
+      // 3a. Ready crops to harvest?
+      if (sum.readyCount > 0) {
+        const harv = harvestVoxelsOnPlot(plot, p.uid, inv, bestHoe, vIdx, now);
+        if (harv.ok && harv.data) {
           const updatedPlayer: PlayerProfile = {
             ...p,
             totalHarvested: p.totalHarvested + harv.data.harvestedQty,
@@ -307,98 +432,126 @@ export default function App() {
           persistProfileAndInventory(updatedPlayer, harv.data.inventory);
           syncRef.current?.syncPlot(harv.data.plot);
           worldRef.current?.triggerToolSwing(p.uid);
-          worldRef.current?.spawnParticles(center.x, center.z, '#facc15', 16);
+          worldRef.current?.spawnParticles(voxelCenter.x, voxelCenter.z, '#facc15', 16);
           soundEngine.playHarvest();
-          showToast(`Зібрано: ${harv.data.cropName} ×${harv.data.harvestedQty}!`);
+          showToast(`Зібрано (${harv.data.harvestedVoxels} вокс.): ${harv.data.summaryText}!`);
           return;
         }
-
-        if (plot.soil !== 'watered' && bestCan) {
-          const wat = waterPlot(plot, p.uid, bestCan, now);
-          if (wat.ok && wat.data) {
-            setPlots((prev) => ({ ...prev, [key]: wat.data! }));
-            syncRef.current?.syncPlot(wat.data);
-            worldRef.current?.triggerToolSwing(p.uid);
-            worldRef.current?.spawnParticles(center.x, center.z, '#38bdf8', 12);
-            soundEngine.playWater();
-            showToast('Грядку полито! Культура росте швидше.');
-            return;
-          }
-        }
-        showToast(`Культура ще росте (${Math.round(g.progress * 100)}%).`);
-        return;
       }
 
-      // 4. Own grass square -> till with hoe
-      if (plot.soil === 'grass') {
+      // 3b. Explicitly holding a Watering Can & there are tilled voxels
+      if (activeItem?.toolFamily === 'watering_can' && sum.tilledCount > 0) {
+        const wat = waterVoxelsOnPlot(plot, p.uid, activeItem, vIdx, now);
+        if (wat.ok && wat.data) {
+          setPlots((prev) => ({ ...prev, [key]: wat.data!.plot }));
+          syncRef.current?.syncPlot(wat.data.plot);
+          worldRef.current?.triggerToolSwing(p.uid);
+          worldRef.current?.spawnParticles(voxelCenter.x, voxelCenter.z, '#38bdf8', 12);
+          soundEngine.playWater();
+          showToast(`Полито вокселів: ${wat.data.wateredCount}! Культура росте швидше.`);
+          return;
+        }
+      }
+
+      // 3c. Explicitly holding Seed & there is tilled/watered empty space
+      if (activeItem?.kind === 'seed' && activeItem.cropId && sum.tilledCount + sum.wateredCount > sum.plantedCount) {
+        const plantRes = plantVoxelOnPlot(plot, p.uid, inv, activeItem.cropId, vIdx, now);
+        if (plantRes.ok && plantRes.data) {
+          const vc = voxelToWorldCenter(plot.gx, plot.gz, plantRes.data.plantedVIdx);
+          setPlots((prev) => ({ ...prev, [key]: plantRes.data!.plot }));
+          persistProfileAndInventory(p, plantRes.data.inventory);
+          syncRef.current?.syncPlot(plantRes.data.plot);
+          worldRef.current?.triggerToolSwing(p.uid);
+          worldRef.current?.spawnParticles(vc.x, vc.z, '#4ade80', 10);
+          soundEngine.playPlant();
+          showToast(`Посіяно ${activeItem.name} у воксель ${plantRes.data.plantedVIdx + 1}/9!`);
+          return;
+        }
+      }
+
+      // 3d. Till grass voxel(s) with Hoe if target voxel is grass OR hoe active with grass left
+      if ((targetedCell.soil === 'grass' || (activeItem?.toolFamily === 'hoe' && sum.grassCount > 0)) && sum.grassCount > 0) {
         if (!bestHoe) {
           soundEngine.playError();
           showToast('Спочатку купіть ржаву погану мотику (10 монет) у Крамниці [B]!');
           return;
         }
-        const res = tillPlot(plot, p.uid, bestHoe);
-        if (!res.ok || !res.data) {
-          soundEngine.playError();
-          showToast(res.error || 'Не вдалося скопати.');
-          return;
-        }
-        const updatedPlayer: PlayerProfile = {
-          ...p,
-          activeSlotItemId: activeItem?.kind === 'tool' ? activeItem.itemId : bestHoe.itemId,
-        };
-        setPlots((prev) => ({ ...prev, [key]: res.data! }));
-        persistProfileAndInventory(updatedPlayer, inv);
-        syncRef.current?.syncPlot(res.data);
-        worldRef.current?.triggerToolSwing(p.uid);
-        worldRef.current?.spawnParticles(center.x, center.z, '#92400e', 12);
-        soundEngine.playTill();
-        showToast('Землю скопано! Оберіть насіння для посіву.');
-        return;
-      }
-
-      // 5. Own tilled/watered empty square -> water if holding can, else plant seed
-      if (activeItem?.toolFamily === 'watering_can' && plot.soil === 'tilled') {
-        const wat = waterPlot(plot, p.uid, activeItem, now);
-        if (wat.ok && wat.data) {
-          setPlots((prev) => ({ ...prev, [key]: wat.data! }));
-          syncRef.current?.syncPlot(wat.data);
+        const tillRes = tillVoxelsOnPlot(plot, p.uid, bestHoe, vIdx);
+        if (tillRes.ok && tillRes.data) {
+          const updatedPlayer: PlayerProfile = {
+            ...p,
+            activeSlotItemId: activeItem?.kind === 'tool' ? activeItem.itemId : bestHoe.itemId,
+          };
+          setPlots((prev) => ({ ...prev, [key]: tillRes.data!.plot }));
+          persistProfileAndInventory(updatedPlayer, inv);
+          syncRef.current?.syncPlot(tillRes.data.plot);
           worldRef.current?.triggerToolSwing(p.uid);
-          worldRef.current?.spawnParticles(center.x, center.z, '#38bdf8', 12);
-          soundEngine.playWater();
-          showToast('Грядку зволожено!');
+          worldRef.current?.spawnParticles(voxelCenter.x, voxelCenter.z, '#92400e', 12);
+          soundEngine.playTill();
+          showToast(`Скопано вокселів: ${tillRes.data.tilledCount}! Оберіть насіння для посіву.`);
           return;
         }
       }
 
-      const seedToPlant =
-        activeItem?.kind === 'seed'
-          ? activeItem
-          : inv.find((i) => i.kind === 'seed' && i.quantity > 0);
-      if (!seedToPlant || !seedToPlant.cropId) {
+      // 3e. Any empty tilled/watered voxel -> try planting with first available seed
+      if (sum.tilledCount + sum.wateredCount > sum.plantedCount) {
+        const seedToPlant =
+          activeItem?.kind === 'seed'
+            ? activeItem
+            : inv.find((i) => i.kind === 'seed' && i.quantity > 0);
+        if (seedToPlant && seedToPlant.cropId) {
+          const plantRes = plantVoxelOnPlot(plot, p.uid, inv, seedToPlant.cropId, vIdx, now);
+          if (plantRes.ok && plantRes.data) {
+            const vc = voxelToWorldCenter(plot.gx, plot.gz, plantRes.data.plantedVIdx);
+            setPlots((prev) => ({ ...prev, [key]: plantRes.data!.plot }));
+            persistProfileAndInventory(p, plantRes.data.inventory);
+            syncRef.current?.syncPlot(plantRes.data.plot);
+            worldRef.current?.triggerToolSwing(p.uid);
+            worldRef.current?.spawnParticles(vc.x, vc.z, '#4ade80', 10);
+            soundEngine.playPlant();
+            showToast(`Посіяно ${seedToPlant.name}!`);
+            return;
+          }
+        } else if (bestCan && sum.tilledCount > 0) {
+          const wat = waterVoxelsOnPlot(plot, p.uid, bestCan, vIdx, now);
+          if (wat.ok && wat.data) {
+            setPlots((prev) => ({ ...prev, [key]: wat.data!.plot }));
+            syncRef.current?.syncPlot(wat.data.plot);
+            worldRef.current?.triggerToolSwing(p.uid);
+            worldRef.current?.spawnParticles(voxelCenter.x, voxelCenter.z, '#38bdf8', 12);
+            soundEngine.playWater();
+            showToast(`Полито вокселів: ${wat.data.wateredCount}!`);
+            return;
+          }
+        }
         soundEngine.playError();
-        showToast('У вас немає насіння. Купіть культури для посіву в Крамниці [B]!');
+        showToast('Купіть насіння у Крамниці [B], щоб засіяти скопані вокселі!');
         return;
       }
-      const plantRes = plantSeedOnPlot(plot, p.uid, inv, seedToPlant.cropId, now);
-      if (!plantRes.ok || !plantRes.data) {
-        soundEngine.playError();
-        showToast(plantRes.error || 'Не вдалося посіяти.');
-        return;
+
+      // 3f. All planted, maybe water or show growth
+      if (bestCan && sum.tilledCount > 0) {
+        const wat = waterVoxelsOnPlot(plot, p.uid, bestCan, vIdx, now);
+        if (wat.ok && wat.data) {
+          setPlots((prev) => ({ ...prev, [key]: wat.data!.plot }));
+          syncRef.current?.syncPlot(wat.data.plot);
+          worldRef.current?.triggerToolSwing(p.uid);
+          worldRef.current?.spawnParticles(voxelCenter.x, voxelCenter.z, '#38bdf8', 12);
+          soundEngine.playWater();
+          showToast(`Полито вокселів: ${wat.data.wateredCount}!`);
+          return;
+        }
       }
-      setPlots((prev) => ({ ...prev, [key]: plantRes.data!.plot }));
-      persistProfileAndInventory(p, plantRes.data.inventory);
-      syncRef.current?.syncPlot(plantRes.data.plot);
-      worldRef.current?.triggerToolSwing(p.uid);
-      worldRef.current?.spawnParticles(center.x, center.z, '#4ade80', 10);
-      soundEngine.playPlant();
-      showToast(`Посіяно ${seedToPlant.name}!`);
+
+      if (sum.plantedCount > 0) {
+        showToast(`Культури на цій ділянці ще ростуть (${Math.round(sum.maxProgress * 100)}%).`);
+      }
     },
     [persistProfileAndInventory, showToast],
   );
 
   handleSquareActionRef.current = handleSquareAction;
 
-  // Global keyboard shortcuts for modals, hotbar, mute, pause
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (phase === 'title') return;
@@ -430,6 +583,9 @@ export default function App() {
       } else if (e.code === 'KeyN') {
         e.preventDefault();
         setActiveModal((m) => (m === 'neighbors' ? 'none' : 'neighbors'));
+      } else if (e.code === 'KeyT') {
+        e.preventDefault();
+        handleCycleDayTimeRef.current();
       } else if (e.code === 'KeyM') {
         e.preventDefault();
         setMuted((prev) => {
@@ -453,12 +609,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [phase, activeModal, inventory, localPlayer, persistProfileAndInventory]);
 
-  // Auth handlers
-  const handleLogin = async (email: string, password: string) => {
+  // Nickname + Password Auth handlers
+  const handleLogin = async (nickname: string, password: string) => {
     setAuthBusy(true);
     setAuthError(null);
     try {
-      const session = await loginFirebaseFarmer(email, password);
+      const session = await loginFirebaseFarmer(nickname, password);
       enterWorldSession(session);
     } catch (err) {
       setAuthError(mapFirebaseErrorToUkrainian(err));
@@ -467,11 +623,11 @@ export default function App() {
     }
   };
 
-  const handleRegister = async (nickname: string, email: string, password: string) => {
+  const handleRegister = async (nickname: string, password: string) => {
     setAuthBusy(true);
     setAuthError(null);
     try {
-      const session = await registerFirebaseFarmer(nickname, email, password);
+      const session = await registerFirebaseFarmer(nickname, password);
       enterWorldSession(session);
     } catch (err) {
       setAuthError(mapFirebaseErrorToUkrainian(err));
@@ -486,7 +642,6 @@ export default function App() {
     enterWorldSession(session);
   };
 
-  // Economy handlers
   const handleBuyItem = (itemId: string, qty: number) => {
     if (!localPlayer) return;
     const res = buyShopItem(localPlayer.coins, inventory, itemId, qty);
@@ -554,7 +709,7 @@ export default function App() {
     const res = purchaseLandSquare(localPlayer, plotKey, plots);
     if (!res.ok || !res.data) {
       soundEngine.playError();
-      showToast(res.error || 'Не вдалося купити землю.');
+      showToast(res.error || 'Не вдалося розширити землю.');
       return;
     }
     setPlots((prev) => ({ ...prev, [plotKey]: res.data!.plot }));
@@ -563,7 +718,11 @@ export default function App() {
     const center = gridToWorldCenter(res.data.plot.gx, res.data.plot.gz);
     worldRef.current?.spawnParticles(center.x, center.z, '#4ade80', 18);
     soundEngine.playCoin();
-    showToast(`Землю розширено! Тепер у вас ${res.data.player.ownedCount} кв. (ціна наступного: ${getLandSquarePrice(res.data.player.ownedCount)} 🪙)`);
+    showToast(
+      res.data.isFreeStarter
+        ? `Зайнято безкоштовну ділянку! Залишилось обрати: ${res.data.player.freeClaimsRemaining}`
+        : `Землю розширено! Ділянок: ${res.data.player.ownedCount} (наступна: ${getLandSquarePrice(res.data.player.ownedCount)} 🪙)`,
+    );
   };
 
   const handleVisitFarmer = (target: PlayerProfile) => {
@@ -573,7 +732,7 @@ export default function App() {
     let destZ = target.z;
     if (targetPlots.length > 0) {
       const c = gridToWorldCenter(targetPlots[0].gx, targetPlots[0].gz);
-      destX = c.x - 2.2;
+      destX = c.x - 2.6;
       destZ = c.z;
     }
     worldRef.current?.teleportLocalPlayer(destX, destZ);
@@ -607,6 +766,7 @@ export default function App() {
   };
 
   const focusedKey = hoveredKey || standingKey;
+  const focusedVIdx = hoveredKey ? hoveredVIdx : standingVIdx;
 
   return (
     <main className="relative w-screen h-screen overflow-hidden">
@@ -624,7 +784,7 @@ export default function App() {
         className="fixed inset-0 pointer-events-none overflow-hidden z-5"
       />
 
-      {/* Title & Login/Registration Overlay */}
+      {/* Title & Nickname+Password Auth Overlay */}
       {phase === 'title' && (
         <TitleAuthOverlay
           onLogin={handleLogin}
@@ -643,6 +803,9 @@ export default function App() {
           plots={plots}
           activeSlotItemId={localPlayer.activeSlotItemId}
           focusedSquareKey={focusedKey}
+          focusedVoxelIdx={focusedVIdx}
+          dayTimeMode={dayTimeMode}
+          dayPhaseLabel={dayPhaseLabel}
           chatMessages={chatMessages}
           muted={muted}
           toastMessage={toastMessage}
@@ -650,8 +813,10 @@ export default function App() {
             persistProfileAndInventory({ ...localPlayer, activeSlotItemId: itemId }, inventory)
           }
           onActionAtFocused={() => {
-            if (focusedKey) handleSquareAction(focusedKey);
+            if (focusedKey) handleSquareAction(focusedKey, focusedVIdx);
           }}
+          onAutoClaimStarter={handleAutoClaimStarter}
+          onCycleDayTime={handleCycleDayTime}
           onOpenShop={(tab = 'tools') => {
             setShopInitialTab(tab);
             setActiveModal('shop');

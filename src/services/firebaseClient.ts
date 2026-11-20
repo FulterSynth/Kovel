@@ -24,12 +24,12 @@ import {
 } from 'firebase/database';
 import {
   PLAYER_PALETTE,
+  STARTER_FREE_PLOTS,
   STARTING_COINS,
-  TILE_SIZE,
   createSeededNpcPlayers,
   createSeededWorldPlots,
 } from '../game/catalog';
-import { findFreeStarterPlot, gridToWorldCenter, purchaseLandSquare } from '../game/rules';
+import { normalizePlot } from '../game/rules';
 import type { ChatMessage, InventoryItem, LandSquare, PlayerProfile } from '../game/types';
 
 export const firebaseConfig = {
@@ -59,26 +59,40 @@ export function getFirebaseServices(): { app: FirebaseApp; auth: Auth; db: Datab
   };
 }
 
+/**
+ * Maps any Unicode/Cyrillic/Latin nickname deterministically to a valid ASCII Firebase Auth identifier
+ * so players register & sign in strictly by Nickname + Password.
+ */
+export function nicknameToAuthEmail(nickname: string): string {
+  const normalized = nickname.trim().toLowerCase();
+  const bytes = new TextEncoder().encode(normalized);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return `u_${hex}@kovel.game`;
+}
+
 export function mapFirebaseErrorToUkrainian(err: unknown): string {
   const code = (err as { code?: string })?.code ?? '';
   switch (code) {
     case 'auth/invalid-email':
-      return 'Некоректний формат електронної пошти.';
+      return 'Некоректний нікнейм для входу.';
     case 'auth/user-not-found':
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
-      return 'Неправильний email або пароль.';
+      return 'Неправильний нікнейм або пароль.';
     case 'auth/email-already-in-use':
-      return 'Цей email вже зареєстрований. Спробуйте увійти.';
+      return 'Гравець із таким нікнеймом вже існує! Оберіть інший нік або увійдіть.';
     case 'auth/weak-password':
       return 'Пароль має містити щонайменше 6 символів.';
     case 'auth/too-many-requests':
       return 'Забагато спроб входу. Зачекайте хвилинку.';
     case 'auth/network-request-failed':
-      return 'Немає зв’язку з сервером Firebase. Перевірте інтернет або оберіть Демо-режим.';
+      return 'Немає зв’язку з сервером Firebase. Перевірте інтернет або оберіть Оглядовий режим.';
     case 'auth/operation-not-allowed':
     case 'auth/configuration-not-found':
-      return 'У проєкті Firebase ще не увімкнено вхід по Email/Паролю. Можете зайти через Локальний Демо-режим.';
+      return 'У Firebase Console ще не увімкнено Email/Password вхід. Можете зайти через Оглядовий режим.';
     default:
       return (err as Error)?.message || 'Помилка авторизації Firebase.';
   }
@@ -99,59 +113,54 @@ export interface SessionInitData {
   mode: 'firebase' | 'demo';
 }
 
+function mergeNormalizedPlots(
+  basePlots: Record<string, LandSquare>,
+  remotePlots: Record<string, LandSquare>,
+) {
+  for (const [k, p] of Object.entries(remotePlots)) {
+    if (p) basePlots[k] = normalizePlot(p);
+  }
+}
+
 export async function registerFirebaseFarmer(
   nickname: string,
-  email: string,
   password: string,
 ): Promise<SessionInitData> {
   const { auth, db } = getFirebaseServices();
-  const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  const internalEmail = nicknameToAuthEmail(nickname);
+  const cred = await createUserWithEmailAndPassword(auth, internalEmail, password);
   await updateProfile(cred.user, { displayName: nickname.trim() });
 
   const now = Date.now();
   const uid = cred.user.uid;
   const basePlots = createSeededWorldPlots(now);
 
-  // Pull existing plots from RTDB if accessible
   try {
     const snap = await get(ref(db, 'plots'));
     if (snap.exists()) {
-      const remotePlots = snap.val() as Record<string, LandSquare>;
-      Object.assign(basePlots, remotePlots);
+      mergeNormalizedPlots(basePlots, snap.val() as Record<string, LandSquare>);
     }
   } catch {
-    // Fallback to seeded plots if read blocked
+    // Fallback to seeded plots
   }
 
-  const starterPlot = findFreeStarterPlot(basePlots);
-  const color = pickColorForUid(uid);
-  const spawnCenter = starterPlot ? gridToWorldCenter(starterPlot.gx, starterPlot.gz) : { x: 0, z: 0 };
-
-  let profile: PlayerProfile = {
+  const profile: PlayerProfile = {
     uid,
     nickname: nickname.trim(),
     coins: STARTING_COINS,
-    x: spawnCenter.x,
-    z: spawnCenter.z,
+    x: 1.5,
+    z: 1.5,
     yaw: 0.4,
-    color,
+    color: pickColorForUid(uid),
     isMoving: false,
     activeSlotItemId: null,
     ownedCount: 0,
+    freeClaimsRemaining: STARTER_FREE_PLOTS,
     totalHarvested: 0,
     bestToolTier: 0,
     lastSeen: now,
     isOnline: true,
   };
-
-  if (starterPlot) {
-    const claim = purchaseLandSquare(profile, starterPlot.key, basePlots);
-    if (claim.ok && claim.data) {
-      profile = claim.data.player;
-      basePlots[starterPlot.key] = claim.data.plot;
-      await set(ref(db, `plots/${starterPlot.key}`), claim.data.plot).catch(() => {});
-    }
-  }
 
   await set(ref(db, `players/${uid}`), profile).catch(() => {});
   await set(ref(db, `users/${uid}/inventory`), []).catch(() => {});
@@ -165,11 +174,12 @@ export async function registerFirebaseFarmer(
 }
 
 export async function loginFirebaseFarmer(
-  email: string,
+  nickname: string,
   password: string,
 ): Promise<SessionInitData> {
   const { auth, db } = getFirebaseServices();
-  const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+  const internalEmail = nicknameToAuthEmail(nickname);
+  const cred = await signInWithEmailAndPassword(auth, internalEmail, password);
   return hydrateFirebaseFarmer(cred.user, db);
 }
 
@@ -185,10 +195,8 @@ export async function hydrateFirebaseFarmer(
   try {
     const plotsSnap = await get(ref(db, 'plots'));
     if (plotsSnap.exists()) {
-      const remotePlots = plotsSnap.val() as Record<string, LandSquare>;
-      Object.assign(basePlots, remotePlots);
+      mergeNormalizedPlots(basePlots, plotsSnap.val() as Record<string, LandSquare>);
     } else {
-      // Seed neighbor farms once if RTDB plots node is completely empty
       const seededOnly: Record<string, LandSquare> = {};
       for (const [k, v] of Object.entries(basePlots)) {
         if (v.ownerId) seededOnly[k] = v;
@@ -205,9 +213,13 @@ export async function hydrateFirebaseFarmer(
   try {
     const pSnap = await get(ref(db, `players/${uid}`));
     if (pSnap.exists()) {
-      profile = pSnap.val() as PlayerProfile;
-      profile.isOnline = true;
-      profile.lastSeen = now;
+      const loaded = pSnap.val() as PlayerProfile;
+      profile = {
+        ...loaded,
+        freeClaimsRemaining: loaded.freeClaimsRemaining ?? Math.max(0, STARTER_FREE_PLOTS - (loaded.ownedCount || 0)),
+        isOnline: true,
+        lastSeen: now,
+      };
     }
     const iSnap = await get(ref(db, `users/${uid}/inventory`));
     if (iSnap.exists()) {
@@ -219,32 +231,23 @@ export async function hydrateFirebaseFarmer(
   }
 
   if (!profile) {
-    const starterPlot = findFreeStarterPlot(basePlots);
-    const spawnCenter = starterPlot ? gridToWorldCenter(starterPlot.gx, starterPlot.gz) : { x: 0, z: 0 };
     profile = {
       uid,
-      nickname: user.displayName || user.email?.split('@')[0] || 'Фермер',
+      nickname: user.displayName || 'Фермер',
       coins: STARTING_COINS,
-      x: spawnCenter.x,
-      z: spawnCenter.z,
+      x: 1.5,
+      z: 1.5,
       yaw: 0.4,
       color: pickColorForUid(uid),
       isMoving: false,
       activeSlotItemId: null,
       ownedCount: 0,
+      freeClaimsRemaining: STARTER_FREE_PLOTS,
       totalHarvested: 0,
       bestToolTier: 0,
       lastSeen: now,
       isOnline: true,
     };
-    if (starterPlot) {
-      const claim = purchaseLandSquare(profile, starterPlot.key, basePlots);
-      if (claim.ok && claim.data) {
-        profile = claim.data.player;
-        basePlots[starterPlot.key] = claim.data.plot;
-        await set(ref(db, `plots/${starterPlot.key}`), claim.data.plot).catch(() => {});
-      }
-    }
     await set(ref(db, `players/${uid}`), profile).catch(() => {});
   }
 
@@ -260,31 +263,23 @@ export function createDemoSession(nickname = 'Коваль_Фермер'): Sessi
   const now = Date.now();
   const basePlots = createSeededWorldPlots(now);
   const uid = 'demo_local_player';
-  const starterPlot = findFreeStarterPlot(basePlots);
-  const spawnCenter = starterPlot ? gridToWorldCenter(starterPlot.gx, starterPlot.gz) : { x: 0, z: 0 };
-  let profile: PlayerProfile = {
+  const profile: PlayerProfile = {
     uid,
-    nickname,
+    nickname: nickname.trim() || 'Коваль_Фермер',
     coins: STARTING_COINS,
-    x: spawnCenter.x,
-    z: spawnCenter.z,
+    x: 1.5,
+    z: 1.5,
     yaw: 0.4,
     color: '#e06d44',
     isMoving: false,
     activeSlotItemId: null,
     ownedCount: 0,
+    freeClaimsRemaining: STARTER_FREE_PLOTS,
     totalHarvested: 0,
     bestToolTier: 0,
     lastSeen: now,
     isOnline: true,
   };
-  if (starterPlot) {
-    const claim = purchaseLandSquare(profile, starterPlot.key, basePlots);
-    if (claim.ok && claim.data) {
-      profile = claim.data.player;
-      basePlots[starterPlot.key] = claim.data.plot;
-    }
-  }
   return {
     profile,
     inventory: [],
@@ -352,7 +347,12 @@ export class WorldSyncChannel {
         ref(db, 'plots'),
         (snap) => {
           if (snap.exists()) {
-            callbacks.onPlots(snap.val() as Record<string, LandSquare>);
+            const raw = snap.val() as Record<string, LandSquare>;
+            const normalized: Record<string, LandSquare> = {};
+            for (const [k, p] of Object.entries(raw)) {
+              if (p) normalized[k] = normalizePlot(p);
+            }
+            callbacks.onPlots(normalized);
           }
         },
         () => {},
@@ -373,14 +373,13 @@ export class WorldSyncChannel {
 
       this.unsubs.push(unsubPlayers, unsubPlots, unsubChat);
     } else {
-      // Demo mode + BroadcastChannel sync across browser tabs
       callbacks.onPlayers(createSeededNpcPlayers(Date.now()));
       if (this.bc) {
         const handler = (ev: MessageEvent) => {
           const data = ev.data;
           if (!data || data.sender === this.uid) return;
           if (data.type === 'plot' && data.plot) {
-            callbacks.onPlots({ [data.plot.key]: data.plot });
+            callbacks.onPlots({ [data.plot.key]: normalizePlot(data.plot) });
           } else if (data.type === 'chat' && data.msg) {
             callbacks.onChat([data.msg]);
           }

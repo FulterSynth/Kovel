@@ -287,11 +287,19 @@ export function ShopModal({
                   <LandPlotSvg className="w-8 h-8" />
                   <div>
                     <div className="text-sm font-extrabold text-amber-100">
-                      Розширення земельної ділянки
+                      Розширення землі (1 ділянка = 9 вокселів)
                     </div>
                     <div className="text-xs text-stone-300">
-                      У вас квадратів: <strong className="text-emerald-300">{player.ownedCount}</strong> · Ціна наступного квадрату:{' '}
-                      <strong className="text-amber-300">{nextLandPrice} монет</strong>
+                      {player.freeClaimsRemaining > 0 ? (
+                        <>
+                          Залишилось <strong className="text-emerald-300">{player.freeClaimsRemaining}</strong> безкоштовних сусідніх ділянок на старт!
+                        </>
+                      ) : (
+                        <>
+                          У вас ділянок: <strong className="text-emerald-300">{player.ownedCount}</strong> ({player.ownedCount * 9} вокселів) · Наступна:{' '}
+                          <strong className="text-amber-300">{nextLandPrice} монет</strong>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -302,19 +310,21 @@ export function ShopModal({
                     onClick={() => onBuyLand(purchasablePlots[0].key)}
                     className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-extrabold disabled:opacity-45 cursor-pointer"
                   >
-                    Швидко купити сусідній квадрат ({nextLandPrice} 🪙)
+                    {player.freeClaimsRemaining > 0
+                      ? 'Взяти безкоштовну сусідню (0 🪙)'
+                      : `Купити сусідній квадрат (${nextLandPrice} 🪙)`}
                   </button>
                 )}
               </div>
 
-              {/* 16x16 Shared Land Map Grid */}
+              {/* 24x24 Shared Land Map Grid */}
               <div className="rounded-xl border border-stone-700 bg-stone-950 p-3">
                 <div className="flex flex-wrap items-center gap-3 text-[11px] text-stone-300 mb-2.5">
                   <span className="flex items-center gap-1">
                     <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> Ваша земля
                   </span>
                   <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Можна купити ({nextLandPrice} 🪙)
+                    <span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Доступно по сусідству ({nextLandPrice} 🪙)
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-3 h-3 rounded-sm bg-sky-500 inline-block" /> Земля сусідів
@@ -324,11 +334,11 @@ export function ShopModal({
                   </span>
                 </div>
                 <div
-                  className="grid gap-1 max-w-[440px] mx-auto"
-                  style={{ gridTemplateColumns: 'repeat(16, minmax(0, 1fr))' }}
+                  className="grid gap-[2px] max-w-[480px] mx-auto"
+                  style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}
                 >
-                  {Array.from({ length: 16 }).map((_, r) =>
-                    Array.from({ length: 16 }).map((__, c) => {
+                  {Array.from({ length: 24 }).map((_, r) =>
+                    Array.from({ length: 24 }).map((__, c) => {
                       const gz = GRID_MIN + r;
                       const gx = GRID_MIN + c;
                       if (isTownPlazaTile(gx, gz)) {
@@ -353,8 +363,12 @@ export function ShopModal({
                             type="button"
                             disabled={player.coins < nextLandPrice}
                             onClick={() => onBuyLand(key)}
-                            title={`Купити квадрат (${gx}, ${gz}) за ${nextLandPrice} монет`}
-                            aria-label={`Купити квадрат ${gx} ${gz} за ${nextLandPrice} монет`}
+                            title={
+                              player.freeClaimsRemaining > 0
+                                ? `Обрати безкоштовну ділянку (${gx}, ${gz})`
+                                : `Купити квадрат (${gx}, ${gz}) за ${nextLandPrice} монет`
+                            }
+                            aria-label={`Ділянка ${gx} ${gz} за ${nextLandPrice} монет`}
                             className="aspect-square rounded-[2px] bg-amber-400 hover:bg-amber-300 disabled:opacity-60 cursor-pointer"
                           />
                         );

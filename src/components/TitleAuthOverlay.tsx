@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { TitleCrestSvg, CoinSvg, LandPlotSvg } from './VoxelIcons';
 
 interface TitleAuthOverlayProps {
-  onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (nickname: string, email: string, password: string) => Promise<void>;
+  onLogin: (nickname: string, password: string) => Promise<void>;
+  onRegister: (nickname: string, password: string) => Promise<void>;
   onStartDemo: (nickname: string) => void;
   authBusy: boolean;
   authError: string | null;
@@ -18,7 +18,6 @@ export function TitleAuthOverlay({
 }: TitleAuthOverlayProps) {
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [nickname, setNickname] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -26,31 +25,24 @@ export function TitleAuthOverlay({
     e.preventDefault();
     setLocalError(null);
 
+    const cleanNick = nickname.trim();
+    if (cleanNick.length < 2 || cleanNick.length > 16) {
+      setLocalError('Нікнейм має бути від 2 до 16 символів.');
+      return;
+    }
+
     if (tab === 'register') {
-      const cleanNick = nickname.trim();
-      if (cleanNick.length < 2 || cleanNick.length > 16) {
-        setLocalError('Нікнейм має бути від 2 до 16 символів.');
-        return;
-      }
-      if (!email.trim().includes('@')) {
-        setLocalError('Введіть коректну електронну пошту.');
-        return;
-      }
       if (password.length < 6) {
         setLocalError('Пароль має містити щонайменше 6 символів.');
         return;
       }
-      await onRegister(cleanNick, email, password);
+      await onRegister(cleanNick, password);
     } else {
-      if (!email.trim().includes('@')) {
-        setLocalError('Введіть електронну пошту.');
-        return;
-      }
       if (password.length < 1) {
         setLocalError('Введіть пароль.');
         return;
       }
-      await onLogin(email, password);
+      await onLogin(cleanNick, password);
     }
   };
 
@@ -64,7 +56,7 @@ export function TitleAuthOverlay({
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col justify-between p-5 sm:p-8 pointer-events-none">
-      {/* Left Asymmetric Auth & Title Lockup leaving right 60% live 3D voxel world unobstructed */}
+      {/* Left Asymmetric Auth & Title Lockup */}
       <div className="flex-1 flex items-center">
         <div
           className="w-full max-w-[400px] pointer-events-auto rounded-2xl p-6 shadow-2xl border-2"
@@ -88,11 +80,11 @@ export function TitleAuthOverlay({
             }}
           >
             <span className="flex items-center gap-1.5">
-              <LandPlotSvg className="w-4 h-4" />1 квадрат безкоштовно
+              <LandPlotSvg className="w-4 h-4" />4 сусідні ділянки (по 9 вокселів)
             </span>
             <span className="flex items-center gap-1.5">
               <CoinSvg className="w-4 h-4" />
-              20 стартових монет
+              20 монет
             </span>
           </div>
 
@@ -129,40 +121,24 @@ export function TitleAuthOverlay({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-            {tab === 'register' && (
-              <div>
-                <label htmlFor="auth-nickname" className="block text-xs font-bold uppercase tracking-wider text-amber-200/90 mb-1">
-                  Нікнейм у грі (над головою)
-                </label>
-                <input
-                  id="auth-nickname"
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  placeholder="Напр. Волинянин_99"
-                  maxLength={16}
-                  className="w-full px-3 py-2 rounded-lg bg-stone-900 border border-amber-700/60 text-amber-50 placeholder-stone-500 text-sm focus:outline-none focus:border-amber-400"
-                />
-              </div>
-            )}
-
             <div>
-              <label htmlFor="auth-email" className="block text-xs font-bold uppercase tracking-wider text-amber-200/90 mb-1">
-                Електронна пошта
+              <label htmlFor="auth-nickname" className="block text-xs font-bold uppercase tracking-wider text-amber-200/90 mb-1">
+                Нікнейм у грі
               </label>
               <input
-                id="auth-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="farmer@kovel.ua"
+                id="auth-nickname"
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="Напр. Волинянин_99"
+                maxLength={16}
                 className="w-full px-3 py-2 rounded-lg bg-stone-900 border border-amber-700/60 text-amber-50 placeholder-stone-500 text-sm focus:outline-none focus:border-amber-400"
               />
             </div>
 
             <div>
               <label htmlFor="auth-password" className="block text-xs font-bold uppercase tracking-wider text-amber-200/90 mb-1">
-                Пароль
+                Пароль {tab === 'register' ? '(мін. 6 символів)' : ''}
               </label>
               <input
                 id="auth-password"
@@ -191,8 +167,8 @@ export function TitleAuthOverlay({
               {authBusy
                 ? 'Підключення до Firebase...'
                 : tab === 'register'
-                  ? 'Створити ферму та увійти'
-                  : 'Увійти у світ'}
+                  ? 'Зареєструватися та почати'
+                  : 'Увійти за ніком'}
             </button>
           </form>
 
@@ -219,7 +195,7 @@ export function TitleAuthOverlay({
             color: '#fef3c7',
           }}
         >
-          WASD / Стрілки — Рух · Клік / E — Дія · Q / E — Камера · I — Інвентар · B — Крамниця · Enter — Чат
+          WASD / Стрілки — Рух · Клік / E — Дія · Q — Камера · T — Час доби · I — Інвентар · B — Крамниця · Enter — Чат
         </p>
       </div>
     </div>

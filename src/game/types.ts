@@ -1,5 +1,7 @@
 export type GamePhase = 'title' | 'playing' | 'paused';
 
+export type DayTimeMode = 'auto' | 'dawn' | 'day' | 'sunset' | 'night';
+
 export type CropId = 'radish' | 'wheat' | 'carrot' | 'sunflower' | 'pumpkin';
 
 export type ToolFamily = 'hoe' | 'watering_can';
@@ -13,7 +15,7 @@ export type InventorySortKey = 'type' | 'price' | 'name' | 'quantity' | 'rarity'
 export interface ItemStats {
   speedMultiplier?: number;
   yieldBonusPct?: number;
-  waterRadius?: number;
+  areaVoxels?: number;
   growthSeconds?: number;
   sellPrice?: number;
   durabilityLabel?: string;
@@ -36,6 +38,14 @@ export interface InventoryItem {
 
 export type SoilState = 'grass' | 'tilled' | 'watered';
 
+export interface VoxelCell {
+  soil: SoilState;
+  cropId: CropId | null;
+  plantedAt: number | null;
+  wateredAt: number | null;
+  growthBoost: number;
+}
+
 export interface LandSquare {
   key: string;
   gx: number;
@@ -43,11 +53,7 @@ export interface LandSquare {
   ownerId: string | null;
   ownerName: string | null;
   ownerColor: string | null;
-  soil: SoilState;
-  cropId: CropId | null;
-  plantedAt: number | null;
-  wateredAt: number | null;
-  growthBoost: number;
+  voxels: VoxelCell[]; // 9 voxels (3x3) per land square
 }
 
 export interface PlayerProfile {
@@ -61,6 +67,7 @@ export interface PlayerProfile {
   isMoving: boolean;
   activeSlotItemId: string | null;
   ownedCount: number;
+  freeClaimsRemaining: number;
   totalHarvested: number;
   bestToolTier: number;
   lastSeen: number;
@@ -88,6 +95,7 @@ export interface ToolDefinition {
   upgradeCost: number | null;
   speedMultiplier: number;
   yieldBonusPct: number;
+  areaVoxels: number;
   description: string;
   durabilityLabel: string;
 }
